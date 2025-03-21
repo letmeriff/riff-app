@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@langchain/community": "^0.0.10",
-    "@langchain/core": "^0.1.0",
+    "@langchain/anthropic": "0.3.0",
+    "@langchain/community": "0.3.0",
+    "@langchain/core": "0.3.0",
+    "@langchain/openai": "0.3.0",
     "@supabase/supabase-js": "^2.39.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.17",
