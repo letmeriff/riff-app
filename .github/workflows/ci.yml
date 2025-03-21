@@ -31,7 +31,10 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          # Ensure react-scripts is properly linked
+          npm link react-scripts
 
       - name: Install backend dependencies
         working-directory: backend
@@ -76,7 +79,10 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          # Ensure react-scripts is properly linked
+          npm link react-scripts
 
       - name: Pull Vercel Environment Information
         working-directory: frontend
