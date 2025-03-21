@@ -36,7 +36,10 @@ jobs:
           # Ensure react-scripts is properly linked
           npm link react-scripts
           # Ensure testing packages are properly installed
-          npm install --save-dev @testing-library/jest-dom@latest
+          # Remove newer version first
+          npm uninstall @testing-library/jest-dom
+          # Install compatible version
+          npm install --save-dev @testing-library/jest-dom@5.16.5
 
       - name: Install backend dependencies
         working-directory: backend
@@ -86,7 +89,10 @@ jobs:
           # Ensure react-scripts is properly linked
           npm link react-scripts
           # Ensure testing packages are properly installed
-          npm install --save-dev @testing-library/jest-dom@latest
+          # Remove newer version first
+          npm uninstall @testing-library/jest-dom
+          # Install compatible version
+          npm install --save-dev @testing-library/jest-dom@5.16.5
 
       - name: Pull Vercel Environment Information
         working-directory: frontend
