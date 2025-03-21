@@ -28,12 +28,12 @@ jobs:
           cache: 'npm'
 
       - name: Install root dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Setup frontend environment
         working-directory: frontend
         run: |
-          npm ci
+          npm ci --legacy-peer-deps
           # Create .env file for tests if needed
           echo "REACT_APP_API_URL=http://localhost:8000" > .env
           echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env
@@ -41,7 +41,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Run linting for frontend
         working-directory: frontend
@@ -86,7 +86,7 @@ jobs:
       - name: Setup frontend environment
         working-directory: frontend
         run: |
-          npm ci
+          npm ci --legacy-peer-deps
           # Create .env file for build
           echo "REACT_APP_API_URL=https://api.staging.riffsound.app" > .env
           echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env
@@ -110,7 +110,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build backend
         working-directory: backend
