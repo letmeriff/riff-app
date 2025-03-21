@@ -12,6 +12,7 @@ import ReactFlow, {
   NodeRemoveChange,
   NodeChange,
   NodeTypes,
+  NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import FloatingMenu from '../components/FloatingMenu';
@@ -25,7 +26,11 @@ const nodeTypes: NodeTypes = {
 
 const initialEdges: Edge[] = [];
 
-const CanvasPage: React.FC = () => {
+interface CanvasPageProps {
+  onNodeSelect: (nodeId: string | null, nodeTitle: string | null) => void;
+}
+
+const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
   const { user } = useAuth();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -91,13 +96,22 @@ const CanvasPage: React.FC = () => {
         if (change.type === 'remove') {
           try {
             await deleteNode(parseInt(change.id));
+            // Deselect if the deleted node was selected
+            onNodeSelect(null, null);
           } catch (error) {
             console.error('Error deleting node:', error);
           }
         }
       }
     },
-    []
+    [onNodeSelect]
+  );
+
+  const onNodeClick: NodeMouseHandler = useCallback(
+    (event, node) => {
+      onNodeSelect(node.id, node.data.label);
+    },
+    [onNodeSelect]
   );
 
   const simulateContentChange = () => {
@@ -141,6 +155,7 @@ const CanvasPage: React.FC = () => {
         }}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
         fitView
       >
