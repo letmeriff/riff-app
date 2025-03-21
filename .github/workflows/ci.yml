@@ -31,13 +31,21 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          # Ensure ESLint plugins are installed in the frontend workspace
+          npm install --save-dev eslint-plugin-react@latest
 
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
 
-      - name: Run linting
+      - name: Run linting for frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run linting for backend
+        working-directory: backend
         run: npm run lint
 
       - name: Run formatting check
