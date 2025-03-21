@@ -11,11 +11,17 @@ import ReactFlow, {
   Connection,
   NodeRemoveChange,
   NodeChange,
+  NodeTypes,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import FloatingMenu from '../components/FloatingMenu';
+import ChatNode from '../components/ChatNode';
 import { useAuth } from '../contexts/AuthContext';
 import { createNode, fetchNodes, deleteNode } from '../services/nodeService';
+
+const nodeTypes: NodeTypes = {
+  chatNode: ChatNode,
+};
 
 const initialEdges: Edge[] = [];
 
@@ -37,9 +43,16 @@ const CanvasPage: React.FC = () => {
         const chatNodes = await fetchNodes(user.id);
         const reactFlowNodes: Node[] = chatNodes.map((chatNode) => ({
           id: chatNode.node_id.toString(),
-          type: 'default',
+          type: 'chatNode',
           position: { x: Math.random() * 500, y: Math.random() * 500 },
-          data: { label: chatNode.title },
+          data: {
+            label: chatNode.title,
+            nodeId: chatNode.node_id,
+            users: [], // Placeholder for user presence (Phase 5)
+            pulledConnections: [], // Placeholder for connections (Phase 4)
+            pulledByConnections: [], // Placeholder for connections (Phase 4)
+            attachments: [], // Placeholder for attachments (Phase 6)
+          },
         }));
         setNodes(reactFlowNodes);
       } catch (error) {
@@ -55,9 +68,16 @@ const CanvasPage: React.FC = () => {
       const newChatNode = await createNode(user.id, `Node ${nodes.length + 1}`);
       const newNode: Node = {
         id: newChatNode.node_id.toString(),
-        type: 'default',
+        type: 'chatNode',
         position: { x: Math.random() * 500, y: Math.random() * 500 },
-        data: { label: newChatNode.title },
+        data: {
+          label: newChatNode.title,
+          nodeId: newChatNode.node_id,
+          users: [],
+          pulledConnections: [],
+          pulledByConnections: [],
+          attachments: [],
+        },
       };
       setNodes((nds: Node[]) => [...nds, newNode]);
     } catch (error) {
@@ -80,6 +100,31 @@ const CanvasPage: React.FC = () => {
     []
   );
 
+  const simulateContentChange = () => {
+    setNodes((nds) =>
+      nds.map((node) =>
+        node.id === nodes[0]?.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                users: [
+                  { id: '1', email: 'user1@example.com' },
+                  { id: '2', email: 'user2@example.com' },
+                ],
+                pulledConnections: [
+                  { nodeId: '2', hasUpdates: true },
+                  { nodeId: '3', hasUpdates: false },
+                ],
+                pulledByConnections: [{ nodeId: '4' }],
+                attachments: [{ file_url: 'test.pdf', file_type: 'pdf' }],
+              },
+            }
+          : node
+      )
+    );
+  };
+
   return (
     <div style={{ height: '100%', width: '100%' }}>
       <ReactFlow
@@ -96,9 +141,22 @@ const CanvasPage: React.FC = () => {
         }}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        nodeTypes={nodeTypes}
         fitView
       >
         <FloatingMenu onCreateNode={onCreateNode} />
+        <button
+          onClick={simulateContentChange}
+          style={{
+            position: 'absolute',
+            top: '50px',
+            left: '10px',
+            zIndex: 1000,
+            padding: '5px 10px',
+          }}
+        >
+          Simulate Content Change
+        </button>
         <Background />
         <Controls />
         <MiniMap />
