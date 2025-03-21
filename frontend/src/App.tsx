@@ -1,60 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
-import { supabase } from './services/supabase';
+import CanvasPage from './pages/CanvasPage';
 import './styles/auth.css';
 import './styles/app.css';
 
-interface ChatNode {
-  node_id: number;
-  title: string;
-  model?: string;
-  flavor?: string;
-  created_at: string;
-}
-
 const AppContent: React.FC = () => {
   const { user, signOut } = useAuth();
-  const [nodes, setNodes] = useState<ChatNode[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (user) {
-      fetchNodes();
-    }
-  }, [user]);
-
-  const fetchNodes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('chat_nodes')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setNodes(data || []);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching nodes:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch nodes');
-    }
-  };
-
-  const createTestNode = async () => {
-    if (!user) return;
-    try {
-      const { error } = await supabase
-        .from('chat_nodes')
-        .insert({ title: 'Test Node', user_id: user.id });
-
-      if (error) throw error;
-      await fetchNodes(); // Refresh the list
-    } catch (err) {
-      console.error('Error creating node:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create node');
-    }
-  };
 
   if (!user) {
     return (
@@ -69,43 +22,28 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="app-container">
-      <header>
-        <h1>Welcome to RIFF</h1>
-        <div className="user-info">
-          <span>Logged in as: {user.email}</span>
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {/* Canvas (61.8%) - Golden Ratio */}
+      <div style={{ width: '61.8%', height: '100%' }}>
+        <CanvasPage />
+      </div>
+
+      {/* Chat UI (38.2%) - Placeholder for now */}
+      <div
+        style={{
+          width: '38.2%',
+          height: '100%',
+          background: '#f0f0f0',
+          padding: '20px',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2>Chat UI Placeholder</h2>
           <button onClick={signOut}>Logout</button>
         </div>
-      </header>
-
-      <main>
-        <div className="actions">
-          <button onClick={createTestNode}>Create Test Node</button>
-        </div>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <div className="nodes-list">
-          <h2>Your Chat Nodes</h2>
-          {nodes.length === 0 ? (
-            <p>No chat nodes found. Create one to get started!</p>
-          ) : (
-            <ul>
-              {nodes.map((node) => (
-                <li key={node.node_id}>
-                  <strong>{node.title}</strong>
-                  {node.model && <span> - Model: {node.model}</span>}
-                  {node.flavor && <span> - Flavor: {node.flavor}</span>}
-                  <br />
-                  <small>
-                    Created: {new Date(node.created_at).toLocaleString()}
-                  </small>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </main>
+        <p>This area will contain the chat interface in the next step.</p>
+      </div>
     </div>
   );
 };
@@ -118,4 +56,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; // Testing staging deployment
+export default App;
