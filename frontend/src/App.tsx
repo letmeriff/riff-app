@@ -97,7 +97,9 @@ const AppContent: React.FC = () => {
                   {node.model && <span> - Model: {node.model}</span>}
                   {node.flavor && <span> - Flavor: {node.flavor}</span>}
                   <br />
-                  <small>Created: {new Date(node.created_at).toLocaleString()}</small>
+                  <small>
+                    Created: {new Date(node.created_at).toLocaleString()}
+                  </small>
                 </li>
               ))}
             </ul>

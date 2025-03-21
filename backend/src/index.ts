@@ -33,17 +33,18 @@ app.get('/api/test-supabase', authMiddleware, async (req, res) => {
     res.json({
       status: 'success',
       message: 'Successfully connected to Supabase',
-      data
+      data,
     });
   } catch (err) {
     console.error('Supabase test error:', err);
     res.status(500).json({
       status: 'error',
-      message: err instanceof Error ? err.message : 'Failed to connect to Supabase'
+      message:
+        err instanceof Error ? err.message : 'Failed to connect to Supabase',
     });
   }
 });
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
-}); 
+});

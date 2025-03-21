@@ -18,6 +18,7 @@ The project is organized as a monorepo with two main packages:
 ## Environment Variables
 
 ### Frontend (.env)
+
 ```
 REACT_APP_SUPABASE_URL=your-supabase-url
 REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key
@@ -25,6 +26,7 @@ REACT_APP_BACKEND_URL=http://localhost:3001
 ```
 
 ### Backend (.env)
+
 ```
 PORT=3001
 SUPABASE_URL=your-supabase-url
@@ -34,12 +36,14 @@ SUPABASE_KEY=your-supabase-service-key
 ## Getting Started
 
 1. Clone the repository:
+
    ```bash
    git clone <repository-url>
    cd riff-app
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
@@ -47,12 +51,14 @@ SUPABASE_KEY=your-supabase-service-key
 3. Start the development servers:
 
    In one terminal:
+
    ```bash
    cd frontend
    npm start
    ```
 
    In another terminal:
+
    ```bash
    cd backend
    npm start
@@ -139,16 +145,19 @@ The following secrets need to be configured in GitHub:
 ## Testing
 
 Run all tests:
+
 ```bash
 npm test
 ```
 
 Run frontend tests:
+
 ```bash
 npm run test:frontend
 ```
 
 Run backend tests:
+
 ```bash
 npm run test:backend
 ```
@@ -192,6 +201,7 @@ To run the project locally:
 ## Testing
 
 Run tests with:
+
 ```bash
 npm test
 ```
@@ -199,4 +209,4 @@ npm test
 ## Deployment
 
 - Staging: Automatically deployed on pull requests
-- Production: Automatically deployed on releases 
+- Production: Automatically deployed on releases

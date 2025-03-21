@@ -10,7 +10,7 @@ jest.mock('../services/supabase', () => ({
     auth: {
       getSession: jest.fn(),
       onAuthStateChange: jest.fn(() => ({
-        data: { subscription: { unsubscribe: jest.fn() } }
+        data: { subscription: { unsubscribe: jest.fn() } },
       })),
       signUp: jest.fn(),
       signInWithPassword: jest.fn(),
@@ -34,8 +34,12 @@ const TestComponent = () => {
         </>
       ) : (
         <>
-          <button onClick={() => signUp('test@example.com', 'password')}>Sign Up</button>
-          <button onClick={() => signIn('test@example.com', 'password')}>Sign In</button>
+          <button onClick={() => signUp('test@example.com', 'password')}>
+            Sign Up
+          </button>
+          <button onClick={() => signIn('test@example.com', 'password')}>
+            Sign In
+          </button>
         </>
       )}
     </div>
@@ -46,18 +50,20 @@ describe('AuthContext', () => {
   beforeEach(() => {
     // Reset all mocks before each test
     jest.clearAllMocks();
-    
+
     // Default mock implementations
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
       data: { session: null },
       error: null,
     });
-    
-    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation((callback) => {
-      return {
-        data: { subscription: { unsubscribe: jest.fn() } }
-      };
-    });
+
+    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation(
+      (callback) => {
+        return {
+          data: { subscription: { unsubscribe: jest.fn() } },
+        };
+      }
+    );
   });
 
   it('handles signup', async () => {
@@ -109,10 +115,10 @@ describe('AuthContext', () => {
   it('handles signout', async () => {
     // Mock initial authenticated state
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { 
-        session: { 
-          user: { email: 'test@example.com' } 
-        }
+      data: {
+        session: {
+          user: { email: 'test@example.com' },
+        },
       },
       error: null,
     });
@@ -142,10 +148,10 @@ describe('AuthContext', () => {
   it('displays user email when logged in', async () => {
     // Mock authenticated state
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { 
-        session: { 
-          user: { email: 'test@example.com' } 
-        }
+      data: {
+        session: {
+          user: { email: 'test@example.com' },
+        },
       },
       error: null,
     });
@@ -157,7 +163,9 @@ describe('AuthContext', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('user-email')).toHaveTextContent('test@example.com');
+      expect(screen.getByTestId('user-email')).toHaveTextContent(
+        'test@example.com'
+      );
     });
   });
-}); 
+});

@@ -7,22 +7,22 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react/recommended',
     'plugin:react/jsx-runtime',
-    'prettier'
+    'prettier',
   ],
   env: {
     browser: true,
     node: true,
-    es2021: true
+    es2021: true,
   },
   settings: {
     react: {
-      version: 'detect'
-    }
+      version: 'detect',
+    },
   },
   rules: {
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
-    'react/prop-types': 'off'
+    'react/prop-types': 'off',
   },
-  ignorePatterns: ['dist/', 'build/', 'node_modules/', '*.config.js']
-}; 
+  ignorePatterns: ['dist/', 'build/', 'node_modules/', '*.config.js'],
+};
