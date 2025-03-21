@@ -11,6 +11,7 @@ env:
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
   DEPLOYMENT_ENV: staging
+  NODE_OPTIONS: --max-old-space-size=4096
 
 jobs:
   lint-and-test:
@@ -29,9 +30,14 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install frontend dependencies
+      - name: Setup frontend environment
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          # Create .env file for tests if needed
+          echo "REACT_APP_API_URL=http://localhost:8000" > .env
+          echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env
+          echo "REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}" >> .env
 
       - name: Install backend dependencies
         working-directory: backend
@@ -48,10 +54,12 @@ jobs:
       - name: Run formatting check
         run: npm run format:check
 
-      # Temporarily skipping frontend tests to resolve CI issues
-      # - name: Run frontend tests
-      #   working-directory: frontend
-      #   run: npm test -- --watchAll=false --passWithNoTests
+      - name: Run frontend tests
+        working-directory: frontend
+        run: |
+          # Ensure node_modules/.bin is in PATH
+          export PATH=$PATH:$(pwd)/node_modules/.bin
+          CI=true npm test -- --watchAll=false --passWithNoTests --transformIgnorePatterns "node_modules/(?!(@testing-library)/)/"
 
       - name: Run backend tests
         working-directory: backend
@@ -75,9 +83,14 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Install frontend dependencies
+      - name: Setup frontend environment
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          # Create .env file for build
+          echo "REACT_APP_API_URL=https://api.staging.riffsound.app" > .env
+          echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env
+          echo "REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}" >> .env
 
       - name: Pull Vercel Environment Information
         working-directory: frontend

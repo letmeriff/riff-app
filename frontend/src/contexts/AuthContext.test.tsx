@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom'; // Added explicit import for clarity
 import { AuthProvider, AuthContext } from './AuthContext';
 import { supabase } from '../services/supabase';
 

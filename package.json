@@ -28,7 +28,9 @@
     "concurrently": "^8.2.2",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jest": "^27.6.0",
     "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-testing-library": "^5.11.1",
     "prettier": "^3.2.5"
   }
 }
