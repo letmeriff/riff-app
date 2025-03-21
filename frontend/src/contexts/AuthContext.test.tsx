@@ -1,9 +1,8 @@
-import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom'; // Added explicit import for clarity
 import { AuthProvider, AuthContext } from './AuthContext';
 import { supabase } from '../services/supabase';
-import { AuthContextType } from './AuthContext';
 
 // Mock the Supabase client
 jest.mock('../services/supabase', () => ({
@@ -11,7 +10,7 @@ jest.mock('../services/supabase', () => ({
     auth: {
       getSession: jest.fn(),
       onAuthStateChange: jest.fn(() => ({
-        data: { subscription: { unsubscribe: jest.fn() } }
+        data: { subscription: { unsubscribe: jest.fn() } },
       })),
       signUp: jest.fn(),
       signInWithPassword: jest.fn(),
@@ -35,8 +34,12 @@ const TestComponent = () => {
         </>
       ) : (
         <>
-          <button onClick={() => signUp('test@example.com', 'password')}>Sign Up</button>
-          <button onClick={() => signIn('test@example.com', 'password')}>Sign In</button>
+          <button onClick={() => signUp('test@example.com', 'password')}>
+            Sign Up
+          </button>
+          <button onClick={() => signIn('test@example.com', 'password')}>
+            Sign In
+          </button>
         </>
       )}
     </div>
@@ -47,16 +50,16 @@ describe('AuthContext', () => {
   beforeEach(() => {
     // Reset all mocks before each test
     jest.clearAllMocks();
-    
+
     // Default mock implementations
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
       data: { session: null },
       error: null,
     });
-    
-    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation((callback) => {
+
+    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation(() => {
       return {
-        data: { subscription: { unsubscribe: jest.fn() } }
+        data: { subscription: { unsubscribe: jest.fn() } },
       };
     });
   });
@@ -74,9 +77,7 @@ describe('AuthContext', () => {
     );
 
     const signUpButton = screen.getByText('Sign Up');
-    await act(async () => {
-      fireEvent.click(signUpButton);
-    });
+    fireEvent.click(signUpButton);
 
     await waitFor(() => {
       expect(supabase.auth.signUp).toHaveBeenCalledWith({
@@ -99,9 +100,7 @@ describe('AuthContext', () => {
     );
 
     const signInButton = screen.getByText('Sign In');
-    await act(async () => {
-      fireEvent.click(signInButton);
-    });
+    fireEvent.click(signInButton);
 
     await waitFor(() => {
       expect(supabase.auth.signInWithPassword).toHaveBeenCalledWith({
@@ -114,10 +113,10 @@ describe('AuthContext', () => {
   it('handles signout', async () => {
     // Mock initial authenticated state
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { 
-        session: { 
-          user: { email: 'test@example.com' } 
-        }
+      data: {
+        session: {
+          user: { email: 'test@example.com' },
+        },
       },
       error: null,
     });
@@ -126,22 +125,18 @@ describe('AuthContext', () => {
       error: null,
     });
 
-    await act(async () => {
-      render(
-        <AuthProvider>
-          <TestComponent />
-        </AuthProvider>
-      );
-    });
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Sign Out')).toBeInTheDocument();
     });
 
     const signOutButton = screen.getByText('Sign Out');
-    await act(async () => {
-      fireEvent.click(signOutButton);
-    });
+    fireEvent.click(signOutButton);
 
     await waitFor(() => {
       expect(supabase.auth.signOut).toHaveBeenCalled();
@@ -151,24 +146,24 @@ describe('AuthContext', () => {
   it('displays user email when logged in', async () => {
     // Mock authenticated state
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { 
-        session: { 
-          user: { email: 'test@example.com' } 
-        }
+      data: {
+        session: {
+          user: { email: 'test@example.com' },
+        },
       },
       error: null,
     });
 
-    await act(async () => {
-      render(
-        <AuthProvider>
-          <TestComponent />
-        </AuthProvider>
-      );
-    });
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
 
     await waitFor(() => {
-      expect(screen.getByTestId('user-email')).toHaveTextContent('test@example.com');
+      expect(screen.getByTestId('user-email')).toHaveTextContent(
+        'test@example.com'
+      );
     });
   });
-}); 
+});

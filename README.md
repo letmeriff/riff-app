@@ -18,6 +18,7 @@ The project is organized as a monorepo with two main packages:
 ## Environment Variables
 
 ### Frontend (.env)
+
 ```
 REACT_APP_SUPABASE_URL=your-supabase-url
 REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key
@@ -25,6 +26,7 @@ REACT_APP_BACKEND_URL=http://localhost:3001
 ```
 
 ### Backend (.env)
+
 ```
 PORT=3001
 SUPABASE_URL=your-supabase-url
@@ -34,12 +36,14 @@ SUPABASE_KEY=your-supabase-service-key
 ## Getting Started
 
 1. Clone the repository:
+
    ```bash
    git clone <repository-url>
    cd riff-app
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
@@ -47,12 +51,14 @@ SUPABASE_KEY=your-supabase-service-key
 3. Start the development servers:
 
    In one terminal:
+
    ```bash
    cd frontend
    npm start
    ```
 
    In another terminal:
+
    ```bash
    cd backend
    npm start
@@ -139,16 +145,19 @@ The following secrets need to be configured in GitHub:
 ## Testing
 
 Run all tests:
+
 ```bash
 npm test
 ```
 
 Run frontend tests:
+
 ```bash
 npm run test:frontend
 ```
 
 Run backend tests:
+
 ```bash
 npm run test:backend
 ```
@@ -157,4 +166,47 @@ npm run test:backend
 
 - Linting: `npm run lint`
 - Formatting: `npm run format`
-- Format check: `npm run format:check` 
+- Format check: `npm run format:check`
+
+## Test Staging Deployment
+
+This change is to test our staging deployment workflow.
+
+## Features
+
+- User authentication with Supabase
+- Real-time collaboration
+- Modern React frontend
+- Express.js backend
+- CI/CD with GitHub Actions
+- Automated deployments to staging and production
+
+## Development
+
+To run the project locally:
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   cd frontend && npm install
+   cd ../backend && npm install
+   ```
+3. Set up environment variables (see `.env.example` files)
+4. Start the development servers:
+   ```bash
+   npm run dev
+   ```
+
+## Testing
+
+Run tests with:
+
+```bash
+npm test
+```
+
+## Deployment
+
+- Staging: Automatically deployed on pull requests
+- Production: Automatically deployed on releases

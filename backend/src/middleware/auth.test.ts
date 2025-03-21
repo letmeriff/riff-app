@@ -11,7 +11,12 @@ jest.mock('../config/supabase', () => ({
   },
 }));
 
-const mockRequest = (headers: any = {}): Partial<Request> => ({
+interface RequestHeaders {
+  authorization?: string;
+  [key: string]: string | undefined;
+}
+
+const mockRequest = (headers: RequestHeaders = {}): Partial<Request> => ({
   headers,
 });
 
@@ -41,7 +46,9 @@ describe('authMiddleware', () => {
   });
 
   it('returns 401 if token is invalid', async () => {
-    const req = mockRequest({ authorization: 'Bearer invalid-token' }) as Request;
+    const req = mockRequest({
+      authorization: 'Bearer invalid-token',
+    }) as Request;
     const res = mockResponse() as Response;
 
     (supabase.auth.getUser as jest.Mock).mockResolvedValue({
@@ -76,7 +83,9 @@ describe('authMiddleware', () => {
     const req = mockRequest({ authorization: 'Bearer token' }) as Request;
     const res = mockResponse() as Response;
 
-    (supabase.auth.getUser as jest.Mock).mockRejectedValue(new Error('Network error'));
+    (supabase.auth.getUser as jest.Mock).mockRejectedValue(
+      new Error('Network error')
+    );
 
     await authMiddleware(req, res, mockNext);
 
@@ -84,4 +93,4 @@ describe('authMiddleware', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Authentication failed' });
     expect(mockNext).not.toHaveBeenCalled();
   });
-}); 
+});

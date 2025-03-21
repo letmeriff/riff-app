@@ -16,17 +16,21 @@
     "test": "npm run test:frontend && npm run test:backend",
     "test:frontend": "npm run test --workspace=frontend -- --watchAll=false",
     "test:backend": "npm run test --workspace=backend",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "npm run lint --workspace=frontend",
+    "lint:backend": "npm run lint --workspace=backend",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.27.0",
-    "@typescript-eslint/parser": "^8.27.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
     "concurrently": "^8.2.2",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jest": "^27.6.0",
     "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-testing-library": "^5.11.1",
     "prettier": "^3.2.5"
   }
 }

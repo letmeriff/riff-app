@@ -1,8 +1,11 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { supabase } from './config/supabase';
 import { authMiddleware } from './middleware/auth';
+import modelRoutes from './routes/modelRoutes';
+import chatRoutes from './routes/chatRoutes';
+import flavorRoutes from './routes/flavorRoutes';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -16,13 +19,18 @@ app.get('/', (req, res) => {
 });
 
 // Protected routes
-app.get('/api/test-supabase', authMiddleware, async (req, res) => {
+app.get('/api/test-supabase', authMiddleware, async (req: Request, res: Response) => {
   try {
     // Only fetch nodes belonging to the authenticated user
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
     const { data, error } = await supabase
       .from('chat_nodes')
       .select('*')
-      .eq('user_id', req.user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(5);
 
@@ -33,17 +41,23 @@ app.get('/api/test-supabase', authMiddleware, async (req, res) => {
     res.json({
       status: 'success',
       message: 'Successfully connected to Supabase',
-      data
+      data,
     });
   } catch (err) {
     console.error('Supabase test error:', err);
     res.status(500).json({
       status: 'error',
-      message: err instanceof Error ? err.message : 'Failed to connect to Supabase'
+      message:
+        err instanceof Error ? err.message : 'Failed to connect to Supabase',
     });
   }
 });
 
+// API routes
+app.use('/api/models', modelRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/flavors', flavorRoutes);
+
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
-}); 
+});
