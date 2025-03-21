@@ -1,0 +1,120 @@
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #ddd;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.user-info span {
+  color: #666;
+}
+
+.user-info button {
+  padding: 8px 16px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.user-info button:hover {
+  background-color: #c82333;
+}
+
+.actions {
+  margin-bottom: 20px;
+}
+
+.actions button {
+  padding: 10px 20px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.actions button:hover {
+  background-color: #218838;
+}
+
+.nodes-list {
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nodes-list h2 {
+  margin-bottom: 20px;
+  color: #333;
+}
+
+.nodes-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nodes-list li {
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.nodes-list li:last-child {
+  border-bottom: none;
+}
+
+.nodes-list li strong {
+  color: #333;
+  font-size: 18px;
+}
+
+.nodes-list li span {
+  color: #666;
+  margin-left: 10px;
+}
+
+.nodes-list li small {
+  color: #999;
+}
+
+.auth-container {
+  max-width: 800px;
+  margin: 40px auto;
+  padding: 20px;
+}
+
+.auth-container h1 {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.auth-forms {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .auth-forms {
+    grid-template-columns: 1fr;
+  }
+} 

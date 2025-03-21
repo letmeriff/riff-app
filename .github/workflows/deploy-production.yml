@@ -1,0 +1,40 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      # Note: Actual deployment is handled by Vercel and Render
+      - name: Notify deployment
+        run: echo "Deployment to production triggered via Vercel and Render" 

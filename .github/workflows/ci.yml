@@ -1,0 +1,82 @@
+name: CI and Deploy to Staging
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run formatting check
+        run: npm run format -- --check
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test -- --watchAll=false --passWithNoTests
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test --passWithNoTests
+
+  deploy-staging:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      # Note: Actual deployment is handled by Vercel and Render
+      - name: Notify deployment
+        run: echo "Deployment to staging triggered via Vercel and Render" 
