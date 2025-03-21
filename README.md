@@ -157,4 +157,46 @@ npm run test:backend
 
 - Linting: `npm run lint`
 - Formatting: `npm run format`
-- Format check: `npm run format:check` 
+- Format check: `npm run format:check`
+
+## Test Staging Deployment
+
+This change is to test our staging deployment workflow.
+
+## Features
+
+- User authentication with Supabase
+- Real-time collaboration
+- Modern React frontend
+- Express.js backend
+- CI/CD with GitHub Actions
+- Automated deployments to staging and production
+
+## Development
+
+To run the project locally:
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   cd frontend && npm install
+   cd ../backend && npm install
+   ```
+3. Set up environment variables (see `.env.example` files)
+4. Start the development servers:
+   ```bash
+   npm run dev
+   ```
+
+## Testing
+
+Run tests with:
+```bash
+npm test
+```
+
+## Deployment
+
+- Staging: Automatically deployed on pull requests
+- Production: Automatically deployed on releases 
