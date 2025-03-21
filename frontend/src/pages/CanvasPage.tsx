@@ -53,6 +53,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
           data: {
             label: chatNode.title,
             nodeId: chatNode.node_id,
+            model: chatNode.model,
+            flavor: chatNode.flavor,
             users: [], // Placeholder for user presence (Phase 5)
             pulledConnections: [], // Placeholder for connections (Phase 4)
             pulledByConnections: [], // Placeholder for connections (Phase 4)
@@ -67,10 +69,10 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
     loadNodes();
   }, [user, setNodes]);
 
-  const onCreateNode = useCallback(async () => {
+  const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;
     try {
-      const newChatNode = await createNode(user.id, `Node ${nodes.length + 1}`);
+      const newChatNode = await createNode(user.id, title, modelName, flavorName);
       const newNode: Node = {
         id: newChatNode.node_id.toString(),
         type: 'chatNode',
@@ -78,6 +80,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
         data: {
           label: newChatNode.title,
           nodeId: newChatNode.node_id,
+          model: newChatNode.model,
+          flavor: newChatNode.flavor,
           users: [],
           pulledConnections: [],
           pulledByConnections: [],
@@ -88,7 +92,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
     } catch (error) {
       console.error('Error creating node:', error);
     }
-  }, [user, nodes.length, setNodes]);
+  }, [user, setNodes]);
 
   const onNodesDelete = useCallback(
     async (changes: NodeRemoveChange[]) => {

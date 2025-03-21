@@ -9,10 +9,20 @@ export interface ChatNode {
   created_at: string;
 }
 
-export const createNode = async (userId: string, title: string): Promise<ChatNode> => {
+export const createNode = async (
+  userId: string, 
+  title: string,
+  model?: string,
+  flavor?: string
+): Promise<ChatNode> => {
   const { data, error } = await supabase
     .from('chat_nodes')
-    .insert({ user_id: userId, title })
+    .insert({ 
+      user_id: userId, 
+      title,
+      model,
+      flavor
+    })
     .select()
     .single();
   if (error) throw error;

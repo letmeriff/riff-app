@@ -5,6 +5,7 @@ import { supabase } from './config/supabase';
 import { authMiddleware } from './middleware/auth';
 import modelRoutes from './routes/modelRoutes';
 import chatRoutes from './routes/chatRoutes';
+import flavorRoutes from './routes/flavorRoutes';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -55,6 +56,7 @@ app.get('/api/test-supabase', authMiddleware, async (req: Request, res: Response
 // API routes
 app.use('/api/models', modelRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/flavors', flavorRoutes);
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);

@@ -16,8 +16,9 @@ export class ChatService {
   private model: BaseChatModel | null = null;
   private nodeId: number;
   private userId: string;
+  private systemPrompt: string | null = null;
 
-  constructor(nodeId: number, userId: string, modelName: string, apiKey: string) {
+  constructor(nodeId: number, userId: string, modelName: string, apiKey: string, flavorName?: string) {
     this.nodeId = nodeId;
     this.userId = userId;
 
@@ -37,10 +38,35 @@ export class ChatService {
     } else {
       throw new Error(`Unsupported model: ${modelName}`);
     }
+
+    // If a flavor is provided, fetch and set its system prompt
+    if (flavorName) {
+      this.fetchFlavorSystemPrompt(flavorName);
+    }
+  }
+
+  // Fetch the flavor's system prompt
+  private async fetchFlavorSystemPrompt(flavorName: string): Promise<void> {
+    try {
+      const { data, error } = await supabase
+        .from('flavors')
+        .select('system_prompt')
+        .eq('name', flavorName)
+        .single();
+      
+      if (error) {
+        console.error('Error fetching flavor system prompt:', error);
+        return;
+      }
+      
+      this.systemPrompt = data?.system_prompt || null;
+    } catch (error) {
+      console.error('Error in fetchFlavorSystemPrompt:', error);
+    }
   }
 
   // Load chat history for the node
-  private async loadChatHistory(): Promise<(HumanMessage | AIMessage)[]> {
+  private async loadChatHistory(): Promise<(HumanMessage | AIMessage | SystemMessage)[]> {
     const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
@@ -48,11 +74,22 @@ export class ChatService {
       .order('timestamp', { ascending: true });
     if (error) throw error;
 
-    return data.map((msg: ChatMessage) =>
-      msg.is_user
-        ? new HumanMessage({ content: msg.content })
-        : new AIMessage({ content: msg.content })
+    // Start with system message if available
+    const messages: (HumanMessage | AIMessage | SystemMessage)[] = [];
+    if (this.systemPrompt) {
+      messages.push(new SystemMessage({ content: this.systemPrompt }));
+    }
+
+    // Add the conversation history
+    messages.push(
+      ...data.map((msg: ChatMessage) =>
+        msg.is_user
+          ? new HumanMessage({ content: msg.content })
+          : new AIMessage({ content: msg.content })
+      )
     );
+
+    return messages;
   }
 
   // Save a message to the database
@@ -75,11 +112,15 @@ export class ChatService {
     // Save the user message
     await this.saveMessage(userMessage, true);
 
-    // Load the chat history
+    // Load the chat history (including system prompt if available)
     const history = await this.loadChatHistory();
 
-    // Add the new user message to the history
-    history.push(new HumanMessage({ content: userMessage }));
+    // Add the new user message to the history if not already included
+    // (it should be included from loadChatHistory, but adding this check for robustness)
+    const lastMessage = history[history.length - 1];
+    if (!(lastMessage instanceof HumanMessage && lastMessage.content === userMessage)) {
+      history.push(new HumanMessage({ content: userMessage }));
+    }
 
     // Get the AI response
     const response = await this.model.invoke(history);
