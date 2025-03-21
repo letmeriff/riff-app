@@ -16,7 +16,9 @@
     "test": "npm run test:frontend && npm run test:backend",
     "test:frontend": "npm run test --workspace=frontend -- --watchAll=false",
     "test:backend": "npm run test --workspace=backend",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "npm run lint --workspace=frontend",
+    "lint:backend": "npm run lint --workspace=backend",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
