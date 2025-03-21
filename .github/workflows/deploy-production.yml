@@ -4,6 +4,12 @@ on:
   release:
     types: [published]
 
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+  DEPLOYMENT_ENV: production
+
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
@@ -19,13 +25,28 @@ jobs:
           node-version: '18'
           cache: 'npm'
 
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
+      - name: Pull Vercel Environment Information
+        working-directory: frontend
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy frontend to Vercel
+        id: deploy-frontend
+        working-directory: frontend
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "Deployed to $DEPLOYMENT_URL"
 
       - name: Install backend dependencies
         working-directory: backend
@@ -35,6 +56,63 @@ jobs:
         working-directory: backend
         run: npm run build
 
-      # Note: Actual deployment is handled by Vercel and Render
-      - name: Notify deployment
-        run: echo "Deployment to production triggered via Vercel and Render" 
+      - name: Deploy backend to Render
+        id: deploy-backend
+        run: |
+          DEPLOY_RESPONSE=$(curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_PROD_SERVICE_ID }}/deploys")
+          echo "deploy_id=$(echo $DEPLOY_RESPONSE | jq -r '.id')" >> $GITHUB_OUTPUT
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for deployments to complete..."
+          sleep 30  # Give services time to start deploying
+
+      - name: Create GitHub Release comment
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const frontendUrl = '${{ steps.deploy-frontend.outputs.deployment_url }}';
+            const backendDeployId = '${{ steps.deploy-backend.outputs.deploy_id }}';
+            
+            const releaseComment = `🚀 Production Deployment Status:
+            
+            Frontend: [View deployment](${frontendUrl})
+            Backend: [View deploy #${backendDeployId}](https://dashboard.render.com/web/${{ secrets.RENDER_PROD_SERVICE_ID }}/deploys/${backendDeployId})
+            
+            Environment: Production
+            Release: ${context.ref}
+            Triggered by: ${context.actor}`;
+            
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref,
+              name: `Release ${context.ref}`,
+              body: releaseComment,
+              draft: false,
+              prerelease: false
+            });
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const message = `❌ Production deployment failed!
+            
+            Environment: Production
+            Release: ${context.ref}
+            Triggered by: ${context.actor}
+            
+            Please check the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for more details.`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '❌ Production Deployment Failed',
+              body: message,
+              labels: ['deployment', 'production', 'failed']
+            }); 

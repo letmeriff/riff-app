@@ -70,4 +70,91 @@ SUPABASE_KEY=your-supabase-service-key
 
 ## License
 
-MIT 
+MIT
+
+## CI/CD Setup
+
+This project uses GitHub Actions for continuous integration and deployment. The workflow is set up as follows:
+
+### Staging Environment
+
+The staging environment is automatically updated when changes are pushed to the `main` branch. The workflow:
+
+1. Runs linting and tests
+2. Deploys the frontend to Vercel (preview environment)
+3. Deploys the backend to Render (staging service)
+4. Posts deployment status as a comment on PRs
+
+Trigger: Push to `main` branch or pull request
+
+### Production Environment
+
+The production environment is updated when a new release is published. The workflow:
+
+1. Deploys the frontend to Vercel (production)
+2. Deploys the backend to Render (production service)
+3. Updates the GitHub release with deployment information
+
+Trigger: Publishing a new release
+
+### Required Secrets
+
+The following secrets need to be configured in GitHub:
+
+- `VERCEL_TOKEN`: Vercel deployment token
+- `VERCEL_ORG_ID`: Vercel organization ID
+- `VERCEL_PROJECT_ID`: Vercel project ID
+- `RENDER_API_KEY`: Render API key
+- `RENDER_SERVICE_ID`: Render service ID (staging)
+- `RENDER_PROD_SERVICE_ID`: Render service ID (production)
+
+### Development Workflow
+
+1. Create a feature branch from `main`
+2. Make your changes and commit them
+3. Create a pull request to `main`
+4. Wait for CI checks to pass
+5. Get code review and approval
+6. Merge to `main` (deploys to staging)
+7. Create and publish a release (deploys to production)
+
+### Monitoring Deployments
+
+- Staging deployments can be monitored in PR comments
+- Production deployments are tracked in GitHub Releases
+- Both environments can be monitored in Vercel and Render dashboards
+
+## Local Development
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development servers:
+   ```bash
+   npm start
+   ```
+
+## Testing
+
+Run all tests:
+```bash
+npm test
+```
+
+Run frontend tests:
+```bash
+npm run test:frontend
+```
+
+Run backend tests:
+```bash
+npm run test:backend
+```
+
+## Code Quality
+
+- Linting: `npm run lint`
+- Formatting: `npm run format`
+- Format check: `npm run format:check` 

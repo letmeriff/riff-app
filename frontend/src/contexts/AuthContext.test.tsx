@@ -1,104 +1,174 @@
+import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { AuthProvider, useAuth } from './AuthContext';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { AuthProvider, AuthContext } from './AuthContext';
 import { supabase } from '../services/supabase';
+import { AuthContextType } from './AuthContext';
 
-// Mock Supabase client
+// Mock the Supabase client
 jest.mock('../services/supabase', () => ({
   supabase: {
     auth: {
+      getSession: jest.fn(),
+      onAuthStateChange: jest.fn(() => ({
+        data: { subscription: { unsubscribe: jest.fn() } }
+      })),
       signUp: jest.fn(),
       signInWithPassword: jest.fn(),
       signOut: jest.fn(),
-      getSession: jest.fn(() => Promise.resolve({ data: { session: null } })),
-      onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
     },
   },
 }));
 
-const TestComponent: React.FC = () => {
-  const { user, signUp, signIn, signOut } = useAuth();
+// Test component to interact with auth context
+const TestComponent = () => {
+  const auth = React.useContext(AuthContext);
+  if (!auth) throw new Error('Auth context not found');
+  const { user, signUp, signIn, signOut } = auth;
+
   return (
     <div>
-      <p>User: {user ? user.email : 'None'}</p>
-      <button onClick={() => signUp('test@example.com', 'password123')}>
-        Sign Up
-      </button>
-      <button onClick={() => signIn('test@example.com', 'password123')}>
-        Sign In
-      </button>
-      <button onClick={signOut}>Sign Out</button>
+      {user ? (
+        <>
+          <div data-testid="user-email">{user.email}</div>
+          <button onClick={() => signOut()}>Sign Out</button>
+        </>
+      ) : (
+        <>
+          <button onClick={() => signUp('test@example.com', 'password')}>Sign Up</button>
+          <button onClick={() => signIn('test@example.com', 'password')}>Sign In</button>
+        </>
+      )}
     </div>
   );
 };
 
 describe('AuthContext', () => {
   beforeEach(() => {
+    // Reset all mocks before each test
     jest.clearAllMocks();
+    
+    // Default mock implementations
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+    
+    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation((callback) => {
+      return {
+        data: { subscription: { unsubscribe: jest.fn() } }
+      };
+    });
   });
 
   it('handles signup', async () => {
-    (supabase.auth.signUp as jest.Mock).mockResolvedValue({ error: null });
+    (supabase.auth.signUp as jest.Mock).mockResolvedValue({
+      data: { user: { email: 'test@example.com' }, session: null },
+      error: null,
+    });
+
     render(
       <AuthProvider>
         <TestComponent />
       </AuthProvider>
     );
 
-    fireEvent.click(screen.getByText('Sign Up'));
+    const signUpButton = screen.getByText('Sign Up');
+    await act(async () => {
+      fireEvent.click(signUpButton);
+    });
+
     await waitFor(() => {
       expect(supabase.auth.signUp).toHaveBeenCalledWith({
         email: 'test@example.com',
-        password: 'password123',
+        password: 'password',
       });
     });
   });
 
   it('handles signin', async () => {
-    (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValue({ error: null });
+    (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValue({
+      data: { user: { email: 'test@example.com' }, session: {} },
+      error: null,
+    });
+
     render(
       <AuthProvider>
         <TestComponent />
       </AuthProvider>
     );
 
-    fireEvent.click(screen.getByText('Sign In'));
+    const signInButton = screen.getByText('Sign In');
+    await act(async () => {
+      fireEvent.click(signInButton);
+    });
+
     await waitFor(() => {
       expect(supabase.auth.signInWithPassword).toHaveBeenCalledWith({
         email: 'test@example.com',
-        password: 'password123',
+        password: 'password',
       });
     });
   });
 
   it('handles signout', async () => {
-    (supabase.auth.signOut as jest.Mock).mockResolvedValue({ error: null });
-    render(
-      <AuthProvider>
-        <TestComponent />
-      </AuthProvider>
-    );
+    // Mock initial authenticated state
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+      data: { 
+        session: { 
+          user: { email: 'test@example.com' } 
+        }
+      },
+      error: null,
+    });
 
-    fireEvent.click(screen.getByText('Sign Out'));
+    (supabase.auth.signOut as jest.Mock).mockResolvedValue({
+      error: null,
+    });
+
+    await act(async () => {
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Sign Out')).toBeInTheDocument();
+    });
+
+    const signOutButton = screen.getByText('Sign Out');
+    await act(async () => {
+      fireEvent.click(signOutButton);
+    });
+
     await waitFor(() => {
       expect(supabase.auth.signOut).toHaveBeenCalled();
     });
   });
 
   it('displays user email when logged in', async () => {
-    const mockUser = { email: 'test@example.com' };
+    // Mock authenticated state
     (supabase.auth.getSession as jest.Mock).mockResolvedValue({
-      data: { session: { user: mockUser } },
+      data: { 
+        session: { 
+          user: { email: 'test@example.com' } 
+        }
+      },
+      error: null,
     });
 
-    render(
-      <AuthProvider>
-        <TestComponent />
-      </AuthProvider>
-    );
+    await act(async () => {
+      render(
+        <AuthProvider>
+          <TestComponent />
+        </AuthProvider>
+      );
+    });
 
     await waitFor(() => {
-      expect(screen.getByText(`User: ${mockUser.email}`)).toBeInTheDocument();
+      expect(screen.getByTestId('user-email')).toHaveTextContent('test@example.com');
     });
   });
 }); 
