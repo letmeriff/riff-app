@@ -58,7 +58,7 @@ describe('AuthContext', () => {
     });
 
     (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation(
-      (callback) => {
+      () => {
         return {
           data: { subscription: { unsubscribe: jest.fn() } },
         };
