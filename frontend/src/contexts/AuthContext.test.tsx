@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AuthProvider, AuthContext } from './AuthContext';
 import { supabase } from '../services/supabase';
 import { AuthContextType } from './AuthContext';
@@ -74,9 +74,7 @@ describe('AuthContext', () => {
     );
 
     const signUpButton = screen.getByText('Sign Up');
-    await act(async () => {
-      fireEvent.click(signUpButton);
-    });
+    fireEvent.click(signUpButton);
 
     await waitFor(() => {
       expect(supabase.auth.signUp).toHaveBeenCalledWith({
@@ -99,9 +97,7 @@ describe('AuthContext', () => {
     );
 
     const signInButton = screen.getByText('Sign In');
-    await act(async () => {
-      fireEvent.click(signInButton);
-    });
+    fireEvent.click(signInButton);
 
     await waitFor(() => {
       expect(supabase.auth.signInWithPassword).toHaveBeenCalledWith({
@@ -126,22 +122,18 @@ describe('AuthContext', () => {
       error: null,
     });
 
-    await act(async () => {
-      render(
-        <AuthProvider>
-          <TestComponent />
-        </AuthProvider>
-      );
-    });
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Sign Out')).toBeInTheDocument();
     });
 
     const signOutButton = screen.getByText('Sign Out');
-    await act(async () => {
-      fireEvent.click(signOutButton);
-    });
+    fireEvent.click(signOutButton);
 
     await waitFor(() => {
       expect(supabase.auth.signOut).toHaveBeenCalled();
@@ -159,13 +151,11 @@ describe('AuthContext', () => {
       error: null,
     });
 
-    await act(async () => {
-      render(
-        <AuthProvider>
-          <TestComponent />
-        </AuthProvider>
-      );
-    });
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByTestId('user-email')).toHaveTextContent('test@example.com');

@@ -15,7 +15,7 @@ interface ChatNode {
 }
 
 const AppContent: React.FC = () => {
-  const { user, session, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [error, setError] = useState<string | null>(null);
 
