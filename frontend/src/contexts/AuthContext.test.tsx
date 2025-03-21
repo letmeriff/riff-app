@@ -57,13 +57,11 @@ describe('AuthContext', () => {
       error: null,
     });
 
-    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation(
-      () => {
-        return {
-          data: { subscription: { unsubscribe: jest.fn() } },
-        };
-      }
-    );
+    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementation(() => {
+      return {
+        data: { subscription: { unsubscribe: jest.fn() } },
+      };
+    });
   });
 
   it('handles signup', async () => {
