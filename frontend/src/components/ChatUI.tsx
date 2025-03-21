@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../services/supabase';
 
 interface ChatMessage {
-  id: number;
+  message_id: number;
+  node_id: number;
   content: string;
-  isUser: boolean;
+  is_user: boolean;
   timestamp: string;
 }
 
@@ -15,25 +17,95 @@ interface ChatUIProps {
 const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Reset messages when the node changes
+  // Scroll to bottom when messages change
   useEffect(() => {
-    setMessages([]);
-  }, [nodeId]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+  // Fetch messages when the node changes
+  useEffect(() => {
+    if (!nodeId) {
+      setMessages([]);
+      return;
+    }
 
-    const newMessage: ChatMessage = {
-      id: messages.length + 1,
-      content: input,
-      isUser: true,
-      timestamp: new Date().toISOString(),
+    const fetchMessages = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('node_id', parseInt(nodeId))
+          .order('timestamp', { ascending: true });
+        
+        if (error) throw error;
+        setMessages(data || []);
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      }
     };
 
-    setMessages((prev) => [...prev, newMessage]);
-    setInput('');
+    fetchMessages();
+
+    // Subscribe to new messages for real-time updates
+    const subscription = supabase
+      .channel(`chat_messages:node_${nodeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `node_id=eq.${nodeId}`,
+        },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new as ChatMessage]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [nodeId]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || !nodeId) return;
+
+    setLoading(true);
+    try {
+      // Get the token from localStorage
+      const token = localStorage.getItem('supabase.auth.token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
+      const response = await fetch(`http://localhost:3001/api/chat/${nodeId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message: input }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send message');
+      }
+
+      const { response: aiResponse } = await response.json();
+      console.log('AI Response:', aiResponse); // For debugging
+      setInput('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+      alert(error instanceof Error ? error.message : 'An error occurred sending your message');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -72,14 +144,15 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
       >
         {messages.map((message) => (
           <div
-            key={message.id}
+            key={message.message_id}
             style={{
-              alignSelf: message.isUser ? 'flex-end' : 'flex-start',
-              background: message.isUser ? '#007bff' : '#e0e0e0',
-              color: message.isUser ? '#fff' : '#000',
+              alignSelf: message.is_user ? 'flex-end' : 'flex-start',
+              background: message.is_user ? '#007bff' : '#e0e0e0',
+              color: message.is_user ? '#fff' : '#000',
               padding: '8px 12px',
               borderRadius: '10px',
               maxWidth: '70%',
+              wordBreak: 'break-word',
             }}
           >
             {message.content}
@@ -88,6 +161,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
             </div>
           </div>
         ))}
+        {loading && (
+          <div style={{ alignSelf: 'flex-start', color: '#777', padding: '8px' }}>
+            AI is typing...
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area and Buttons */}
@@ -127,7 +206,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
               border: '1px solid #ddd',
               borderRadius: '5px',
             }}
-            disabled={!nodeId}
+            disabled={!nodeId || loading}
           />
           <button
             type="submit"
@@ -137,9 +216,9 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
               color: '#fff',
               border: 'none',
               borderRadius: '5px',
-              cursor: nodeId ? 'pointer' : 'not-allowed',
+              cursor: nodeId && !loading ? 'pointer' : 'not-allowed',
             }}
-            disabled={!nodeId}
+            disabled={!nodeId || loading}
           >
             Send
           </button>
