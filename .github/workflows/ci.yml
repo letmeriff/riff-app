@@ -31,10 +31,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: |
-          npm ci
-          # Ensure ESLint plugins are installed in the frontend workspace
-          npm install --save-dev eslint-plugin-react@latest
+        run: npm ci
 
       - name: Install backend dependencies
         working-directory: backend
