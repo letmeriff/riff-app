@@ -1,9 +1,9 @@
 module.exports = {
   extends: [
-    'eslint:recommended', 
+    'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
     'plugin:jest/recommended',
-    'plugin:testing-library/react'
+    'plugin:testing-library/react',
   ],
   parser: '@typescript-eslint/parser',
   plugins: ['@typescript-eslint', 'jest', 'testing-library'],
@@ -18,12 +18,12 @@ module.exports = {
     browser: true,
     es2020: true,
     jest: true,
-    node: true
+    node: true,
   },
   settings: {
     jest: {
-      version: 'detect'
-    }
+      version: 'detect',
+    },
   },
   rules: {
     '@typescript-eslint/explicit-module-boundary-types': 'off',
@@ -32,14 +32,14 @@ module.exports = {
     'jest/no-focused-tests': 'error',
     'jest/no-identical-title': 'error',
     'jest/prefer-to-have-length': 'warn',
-    'jest/valid-expect': 'error'
+    'jest/valid-expect': 'error',
   },
   overrides: [
     {
       files: ['**/*.test.ts', '**/*.test.tsx'],
       env: {
-        jest: true
-      }
-    }
-  ]
+        jest: true,
+      },
+    },
+  ],
 };

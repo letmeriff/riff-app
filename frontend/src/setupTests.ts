@@ -5,7 +5,7 @@
 import '@testing-library/jest-dom';
 
 // Mock global fetch if needed
-global.fetch = jest.fn(() => 
+global.fetch = jest.fn(() =>
   Promise.resolve({
     json: () => Promise.resolve({}),
     ok: true,
@@ -21,9 +21,9 @@ beforeEach(() => {
 const originalConsoleError = console.error;
 console.error = (...args) => {
   if (
-    typeof args[0] === 'string' && 
-    (args[0].includes('ReactDOM.render is no longer supported') || 
-     args[0].includes('act(...) is not supported in production builds'))
+    typeof args[0] === 'string' &&
+    (args[0].includes('ReactDOM.render is no longer supported') ||
+      args[0].includes('act(...) is not supported in production builds'))
   ) {
     return;
   }
