@@ -11,7 +11,12 @@ jest.mock('../config/supabase', () => ({
   },
 }));
 
-const mockRequest = (headers: any = {}): Partial<Request> => ({
+interface RequestHeaders {
+  authorization?: string;
+  [key: string]: string | undefined;
+}
+
+const mockRequest = (headers: RequestHeaders = {}): Partial<Request> => ({
   headers,
 });
 

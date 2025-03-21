@@ -3,7 +3,6 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AuthProvider, AuthContext } from './AuthContext';
 import { supabase } from '../services/supabase';
-import { AuthContextType } from './AuthContext';
 
 // Mock the Supabase client
 jest.mock('../services/supabase', () => ({

@@ -1,12 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../config/supabase';
+import { User } from '@supabase/supabase-js';
 
 // Extend Express Request type to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
+declare module 'express' {
+  interface Request {
+    user?: User;
   }
 }
 
