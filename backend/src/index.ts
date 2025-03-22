@@ -8,6 +8,7 @@ import chatRoutes from './routes/chatRoutes';
 import flavorRoutes from './routes/flavorRoutes';
 import contextRoutes from './routes/contextRoutes';
 import summarizationRoutes from './routes/summarizationRoutes';
+import branchRoutes from './routes/branchRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 
 const app = express();
@@ -62,6 +63,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/flavors', flavorRoutes);
 app.use('/api/context', contextRoutes);
 app.use('/api/summarize', summarizationRoutes);
+app.use('/api/branch', branchRoutes);
 
 // Schedule the summarization job to run every 5 minutes
 const FIVE_MINUTES = 5 * 60 * 1000;

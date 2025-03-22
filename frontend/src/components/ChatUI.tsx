@@ -24,6 +24,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [selectedPullNode, setSelectedPullNode] = useState<string>('');
   const [pullLoading, setPullLoading] = useState(false);
   const [pullMode, setPullMode] = useState<'full' | 'summary'>('full');
+  const [branchLoading, setBranchLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch available nodes for the Pull dropdown
@@ -214,6 +215,53 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   };
 
+  const handleBranch = async () => {
+    if (!nodeId) return;
+    
+    setBranchLoading(true);
+    try {
+      // Get the current session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
+      if (!token) {
+        throw new Error('Authentication token not found. Please log in again.');
+      }
+      
+      const response = await fetch('http://localhost:3001/api/branch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ originNodeId: parseInt(nodeId) }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to branch node');
+      }
+
+      const { newNodeId } = await response.json();
+      alert(`Successfully created branched node with ID: ${newNodeId}`);
+      
+      // Refresh the nodes list to include the new branched node
+      const { data, error } = await supabase
+        .from('chat_nodes')
+        .select('*')
+        .eq('user_id', userId);
+      
+      if (error) throw error;
+      setNodes(data || []);
+      
+    } catch (error) {
+      console.error('Error branching node:', error);
+      alert(error instanceof Error ? error.message : 'An error occurred while branching the node');
+    } finally {
+      setBranchLoading(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -341,8 +389,19 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               {pullLoading ? 'Pulling...' : 'Pull'}
             </button>
           </div>
-          <button disabled style={{ padding: '5px 10px', background: '#ddd' }}>
-            Branch
+          <button
+            onClick={handleBranch}
+            style={{
+              padding: '5px 10px',
+              background: nodeId && !branchLoading ? '#007bff' : '#ddd',
+              color: nodeId && !branchLoading ? '#fff' : '#555',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: nodeId && !branchLoading ? 'pointer' : 'not-allowed',
+            }}
+            disabled={!nodeId || branchLoading}
+          >
+            {branchLoading ? 'Branching...' : 'Branch'}
           </button>
         </div>
 
