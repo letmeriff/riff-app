@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
+import { Server, Socket } from 'socket.io';
+import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from './config/supabase';
 import { authMiddleware } from './middleware/auth';
 import modelRoutes from './routes/modelRoutes';
@@ -11,8 +14,49 @@ import summarizationRoutes from './routes/summarizationRoutes';
 import branchRoutes from './routes/branchRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 
+// Define interfaces for the payload structures
+interface ChatNode {
+  node_id: number;
+  user_id: string;
+  title: string;
+  model: string;
+  flavor: string;
+  created_at: string;
+}
+
+interface ChatMessage {
+  message_id: number;
+  node_id: number;
+  content: string;
+  is_user: boolean;
+  timestamp: string;
+}
+
+// Add interfaces for the payload types
+interface ChatNodePayload {
+  new: ChatNode | null;
+  old: Partial<ChatNode> | null;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+}
+
+interface ChatMessagePayload {
+  new: ChatMessage | null;
+  old: Partial<ChatMessage> | null;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+}
+
 const app = express();
+const httpServer = createServer(app);
 const port = process.env.PORT || 3001;
+
+// Set up Socket.IO with CORS
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
 
 app.use(cors());
 app.use(express.json());
@@ -65,6 +109,92 @@ app.use('/api/context', contextRoutes);
 app.use('/api/summarize', summarizationRoutes);
 app.use('/api/branch', branchRoutes);
 
+// Socket.IO authentication middleware
+io.use(async (socket: Socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) {
+    return next(new Error('Authentication error: No token provided'));
+  }
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return next(new Error('Authentication error: Invalid token'));
+    }
+
+    socket.data.user = user;
+    next();
+  } catch (error) {
+    next(new Error('Authentication error: ' + (error instanceof Error ? error.message : 'Unknown error')));
+  }
+});
+
+// Handle Socket.IO connections
+io.on('connection', (socket: Socket) => {
+  console.log(`User connected: ${socket.data.user.id}`);
+
+  // Join a room based on the user ID
+  socket.join(`user:${socket.data.user.id}`);
+
+  socket.on('disconnect', () => {
+    console.log(`User disconnected: ${socket.data.user.id}`);
+  });
+});
+
+// Subscribe to Supabase changes and broadcast them via Socket.IO
+supabase
+  .channel('chat_nodes')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'chat_nodes' },
+    (payload) => {
+      // Cast the payload to our typed interface
+      const typedPayload = payload as unknown as ChatNodePayload;
+      // Broadcast to the appropriate user room
+      const userId = typedPayload.new?.user_id || typedPayload.old?.user_id;
+      if (userId) {
+        io.to(`user:${userId}`).emit('node-update', typedPayload);
+      }
+    }
+  )
+  .subscribe();
+
+supabase
+  .channel('chat_messages')
+  .on(
+    'postgres_changes',
+    { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+    async (payload) => {
+      try {
+        // Cast the payload to our typed interface
+        const typedPayload = payload as unknown as ChatMessagePayload;
+        
+        if (!typedPayload.new?.node_id) {
+          console.error('Missing node_id in new message payload');
+          return;
+        }
+        
+        // Get the user_id associated with the node
+        const { data: node, error } = await supabase
+          .from('chat_nodes')
+          .select('user_id')
+          .eq('node_id', typedPayload.new.node_id)
+          .single();
+        
+        if (error) {
+          console.error('Error fetching node user:', error);
+          return;
+        }
+        
+        // Broadcast the new message to the associated user's room
+        io.to(`user:${node.user_id}`).emit('message-update', typedPayload);
+      } catch (error) {
+        console.error('Error handling message change:', error);
+      }
+    }
+  )
+  .subscribe();
+
 // Schedule the summarization job to run every 5 minutes
 const FIVE_MINUTES = 5 * 60 * 1000;
 setInterval(processPendingSummaries, FIVE_MINUTES);
@@ -74,6 +204,6 @@ processPendingSummaries().catch(err =>
   console.error('Error running initial summarization job:', err)
 );
 
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });

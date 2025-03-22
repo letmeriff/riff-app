@@ -18,6 +18,7 @@ import 'reactflow/dist/style.css';
 import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import { useAuth } from '../contexts/AuthContext';
+import { useSocket } from '../contexts/SocketContext';
 import { createNode, fetchNodes, deleteNode } from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
@@ -34,6 +35,7 @@ interface CanvasPageProps {
 
 const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
   const { user } = useAuth();
+  const { socket } = useSocket();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
@@ -110,47 +112,60 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
     }
   }, [user, setNodes, checkForUpdates]);
 
-  // Load nodes on mount and set up subscriptions
+  // Load nodes on mount and set up socket listeners
   useEffect(() => {
     if (!user) return;
     
     loadNodesWithConnections();
     
-    // Single channel for all subscriptions
-    const channel = supabase.channel('real-time-updates');
-    
-    // Subscribe to changes in context_pulls table
-    channel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'context_pulls',
-      },
-      () => {
+    // Set up Socket.IO event listeners
+    if (socket) {
+      socket.on('node-update', (payload) => {
+        console.log('Socket: Node update received:', payload);
         loadNodesWithConnections();
-      }
-    );
-    
-    // Subscribe to changes in chat_messages table (for update detection)
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chat_messages',
-      },
-      () => {
-        loadNodesWithConnections();
-      }
-    );
-    
-    channel.subscribe();
+      });
+      
+      // Return cleanup function
+      return () => {
+        socket.off('node-update');
+      };
+    } else {
+      // Fallback to Supabase real-time if Socket.IO is not available
+      const channel = supabase.channel('real-time-updates');
+      
+      // Subscribe to changes in context_pulls table
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'context_pulls',
+        },
+        () => {
+          loadNodesWithConnections();
+        }
+      );
+      
+      // Subscribe to changes in chat_messages table (for update detection)
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+        },
+        () => {
+          loadNodesWithConnections();
+        }
+      );
+      
+      channel.subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user, loadNodesWithConnections]);
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user, loadNodesWithConnections, socket]);
 
   const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
+import { useSocket } from '../contexts/SocketContext';
 import { ChatNode } from '../services/nodeService';
 
 interface ChatMessage {
@@ -17,6 +18,7 @@ interface ChatUIProps {
 }
 
 const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
+  const { socket } = useSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -77,27 +79,42 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
     fetchMessages();
 
-    // Subscribe to new messages for real-time updates
-    const subscription = supabase
-      .channel(`chat_messages:node_${nodeId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `node_id=eq.${nodeId}`,
-        },
-        (payload) => {
+    // Set up real-time updates for messages
+    if (socket) {
+      // Use Socket.IO for real-time updates
+      socket.on('message-update', (payload) => {
+        console.log('Socket: Message update received:', payload);
+        if (payload.new && payload.new.node_id === parseInt(nodeId)) {
           setMessages((prev) => [...prev, payload.new as ChatMessage]);
         }
-      )
-      .subscribe();
+      });
 
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, [nodeId]);
+      return () => {
+        socket.off('message-update');
+      };
+    } else {
+      // Fallback to Supabase real-time if Socket.IO is not available
+      const subscription = supabase
+        .channel(`chat_messages:node_${nodeId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'chat_messages',
+            filter: `node_id=eq.${nodeId}`,
+          },
+          (payload) => {
+            setMessages((prev) => [...prev, payload.new as ChatMessage]);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(subscription);
+      };
+    }
+  }, [nodeId, socket]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();

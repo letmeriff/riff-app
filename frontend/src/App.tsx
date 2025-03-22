@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SocketProvider } from './contexts/SocketContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import CanvasPage from './pages/CanvasPage';
@@ -8,7 +9,7 @@ import './styles/auth.css';
 import './styles/app.css';
 
 const AppContent: React.FC = () => {
-  const { user, signOut } = useAuth();
+  const { user, session, signOut } = useAuth();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeTitle, setSelectedNodeTitle] = useState<string | null>(null);
 
@@ -30,26 +31,28 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
-      {/* Canvas (61.8%) - Golden Ratio */}
-      <div style={{ width: '61.8%', height: '100%' }}>
-        <CanvasPage onNodeSelect={handleNodeSelect} />
-      </div>
+    <SocketProvider token={session?.access_token || null}>
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+        {/* Canvas (61.8%) - Golden Ratio */}
+        <div style={{ width: '61.8%', height: '100%' }}>
+          <CanvasPage onNodeSelect={handleNodeSelect} />
+        </div>
 
-      {/* Chat UI (38.2%) */}
-      <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1 }}>
-          <ChatUI 
-            nodeId={selectedNodeId} 
-            nodeTitle={selectedNodeTitle} 
-            userId={user.id} 
-          />
-        </div>
-        <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd' }}>
-          <button onClick={signOut} style={{ padding: '5px 10px' }}>Logout</button>
+        {/* Chat UI (38.2%) */}
+        <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1 }}>
+            <ChatUI 
+              nodeId={selectedNodeId} 
+              nodeTitle={selectedNodeTitle} 
+              userId={user.id} 
+            />
+          </div>
+          <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd' }}>
+            <button onClick={signOut} style={{ padding: '5px 10px' }}>Logout</button>
+          </div>
         </div>
       </div>
-    </div>
+    </SocketProvider>
   );
 };
 
