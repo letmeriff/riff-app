@@ -7,6 +7,8 @@ import modelRoutes from './routes/modelRoutes';
 import chatRoutes from './routes/chatRoutes';
 import flavorRoutes from './routes/flavorRoutes';
 import contextRoutes from './routes/contextRoutes';
+import summarizationRoutes from './routes/summarizationRoutes';
+import { processPendingSummaries } from './services/summarizationJob';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -59,6 +61,16 @@ app.use('/api/models', modelRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/flavors', flavorRoutes);
 app.use('/api/context', contextRoutes);
+app.use('/api/summarize', summarizationRoutes);
+
+// Schedule the summarization job to run every 5 minutes
+const FIVE_MINUTES = 5 * 60 * 1000;
+setInterval(processPendingSummaries, FIVE_MINUTES);
+
+// Run the job once on startup
+processPendingSummaries().catch(err => 
+  console.error('Error running initial summarization job:', err)
+);
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);

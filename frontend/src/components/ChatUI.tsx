@@ -23,6 +23,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [nodes, setNodes] = useState<ChatNode[]>([]);
   const [selectedPullNode, setSelectedPullNode] = useState<string>('');
   const [pullLoading, setPullLoading] = useState(false);
+  const [pullMode, setPullMode] = useState<'full' | 'summary'>('full');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch available nodes for the Pull dropdown
@@ -149,6 +150,39 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         throw new Error('Authentication token not found. Please log in again.');
       }
       
+      if (pullMode === 'summary') {
+        // First, get summary of the selected node's chat history
+        const summaryResponse = await fetch(
+          `http://localhost:3001/api/summarize/${selectedPullNode}`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!summaryResponse.ok) {
+          const errorData = await summaryResponse.json();
+          throw new Error(errorData.error || 'Failed to get summary');
+        }
+
+        const { summary } = await summaryResponse.json();
+        
+        // Add the summary as a placeholder message in the current node
+        const { error: insertError } = await supabase
+          .from('chat_messages')
+          .insert({
+            node_id: parseInt(nodeId),
+            content: `Summary pulled from Node ${selectedPullNode}:\n${summary}`,
+            is_user: false,
+            timestamp: new Date().toISOString(),
+          });
+        
+        if (insertError) throw insertError;
+      }
+      
+      // Perform the context pull (will update the relationship in database)
       const response = await fetch('http://localhost:3001/api/context/pull', {
         method: 'POST',
         headers: {
@@ -158,6 +192,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         body: JSON.stringify({
           targetNodeId: parseInt(nodeId),
           originNodeId: parseInt(selectedPullNode),
+          mode: pullMode // Add mode parameter (backend can use this if needed)
         }),
       });
 
@@ -166,6 +201,9 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         throw new Error(errorData.error || 'Failed to pull context');
       }
 
+      // If we're pulling the full history, the backend will have inserted a message
+      // No need to do anything else, as our subscription will update the UI
+      
       // Reset the selected pull node
       setSelectedPullNode('');
     } catch (error) {
@@ -273,6 +311,20 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
                     {node.title} (ID: {node.node_id})
                   </option>
                 ))}
+            </select>
+            <select
+              value={pullMode}
+              onChange={(e) => setPullMode(e.target.value as 'full' | 'summary')}
+              style={{
+                padding: '5px',
+                width: '120px',
+                borderRadius: '4px',
+                border: '1px solid #ccc'
+              }}
+              disabled={!nodeId || pullLoading}
+            >
+              <option value="full">Full History</option>
+              <option value="summary">Summary</option>
             </select>
             <button
               onClick={handlePullContext}

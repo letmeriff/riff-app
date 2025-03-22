@@ -11,7 +11,7 @@ const router = express.Router();
  */
 router.post('/pull', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { targetNodeId, originNodeId } = req.body;
+    const { targetNodeId, originNodeId, mode = 'full' } = req.body;
 
     if (!targetNodeId || !originNodeId) {
       return res.status(400).json({ error: 'targetNodeId and originNodeId are required' });
@@ -44,6 +44,25 @@ router.post('/pull', authMiddleware, async (req: Request, res: Response) => {
     let context = '';
     let isIncremental = false;
     
+    // If mode is 'summary', we don't need to fetch messages here
+    // The frontend handles inserting the summary message via a separate API endpoint
+    if (mode === 'summary') {
+      // Just update/create the relationship for tracking purposes
+      if (existingPull) {
+        await updateContextPull(existingPull.id);
+      } else {
+        await createContextPull(targetNodeId, originNodeId);
+      }
+      
+      return res.json({ 
+        success: true,
+        message: "Summary was pulled via separate endpoint",
+        isIncremental: false,
+        mode: 'summary'
+      });
+    }
+    
+    // For 'full' mode, proceed with the original logic
     if (existingPull) {
       // Incremental update: fetch only new messages since the last pull
       const { data: newMessages, error: messagesError } = await supabase
@@ -107,7 +126,8 @@ router.post('/pull', authMiddleware, async (req: Request, res: Response) => {
     res.json({ 
       success: true,
       message: placeholderMessage,
-      isIncremental: isIncremental
+      isIncremental: isIncremental,
+      mode: 'full'
     });
   } catch (error: unknown) {
     console.error('Error pulling context:', error);
