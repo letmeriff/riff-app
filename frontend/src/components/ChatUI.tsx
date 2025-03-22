@@ -18,6 +18,11 @@ interface UserPresence {
   lastActive: string;
 }
 
+interface WritePermission {
+  currentWriter: { userId: string; email: string } | null;
+  queue: { userId: string; email: string; joinedAt: string }[];
+}
+
 interface ChatUIProps {
   nodeId: string | null; // Selected node's ID
   nodeTitle: string | null; // Selected node's title
@@ -35,6 +40,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [pullMode, setPullMode] = useState<'full' | 'summary'>('full');
   const [branchLoading, setBranchLoading] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [hasWritePermission, setHasWritePermission] = useState(false);
+  const [positionInQueue, setPositionInQueue] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -69,6 +76,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     if (!nodeId) {
       setMessages([]);
       setTypingUsers([]);
+      setHasWritePermission(false);
+      setPositionInQueue(0);
       return;
     }
 
@@ -111,9 +120,37 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         }
       });
 
+      // Listen for write permission updates
+      socket.on('write-permission-update', (payload) => {
+        console.log('Socket: Write permission update received:', payload);
+        if (payload.nodeId.toString() === nodeId) {
+          setHasWritePermission(payload.hasPermission);
+          setPositionInQueue(payload.positionInQueue);
+        }
+      });
+
+      // Listen for write permission broadcasts (when other users join/leave)
+      socket.on('write-permission-broadcast', (payload) => {
+        console.log('Socket: Write permission broadcast received:', payload);
+        if (payload.nodeId.toString() === nodeId) {
+          const permission = payload.permission as WritePermission;
+          
+          // Update local state based on the broadcast
+          const hasPermission = permission.currentWriter?.userId === userId;
+          const position = permission.currentWriter?.userId === userId 
+            ? 0 
+            : permission.queue.findIndex(entry => entry.userId === userId) + 1;
+          
+          setHasWritePermission(hasPermission);
+          setPositionInQueue(position === -1 ? 0 : position); // Handle case where user isn't in queue
+        }
+      });
+
       return () => {
         socket.off('message-update');
         socket.off('presence-update');
+        socket.off('write-permission-update');
+        socket.off('write-permission-broadcast');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
@@ -143,7 +180,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
 
-    if (!socket || !nodeId) return;
+    if (!socket || !nodeId || !hasWritePermission) return;
 
     // Emit typing event
     socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: true });
@@ -163,7 +200,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !nodeId) return;
+    if (!input.trim() || !nodeId || !hasWritePermission) return;
 
     setLoading(true);
     try {
@@ -310,7 +347,11 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       }
 
       const { newNodeId } = await response.json();
-      alert(`Successfully created branched node with ID: ${newNodeId}`);
+      
+      // Automatically switch to the new branched node
+      window.dispatchEvent(new CustomEvent('select-node', { 
+        detail: { nodeId: newNodeId.toString() } 
+      }));
       
       // Refresh the nodes list to include the new branched node
       const { data, error } = await supabase
@@ -347,9 +388,29 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           borderBottom: '1px solid #ddd',
           fontWeight: 'bold',
           fontSize: '18px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
-        {nodeId ? `Chat for ${nodeTitle} (ID: ${nodeId})` : 'Select a node to start chatting'}
+        <div>
+          {nodeId ? `Chat for ${nodeTitle} (ID: ${nodeId})` : 'Select a node to start chatting'}
+        </div>
+        {nodeId && (
+          <div style={{ 
+            fontSize: '12px', 
+            color: hasWritePermission ? '#4CAF50' : '#FF5722',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            background: hasWritePermission ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 87, 34, 0.1)'
+          }}>
+            {hasWritePermission 
+              ? 'You have write permission' 
+              : positionInQueue > 0 
+                ? `Waiting in queue (position: ${positionInQueue})` 
+                : 'Read-only mode'}
+          </div>
+        )}
       </div>
 
       {/* Message Display Area */}
@@ -392,6 +453,22 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             {typingUsers.length === 1 
               ? `${typingUsers[0]} is typing...` 
               : `${typingUsers.join(', ')} are typing...`}
+          </div>
+        )}
+        {!hasWritePermission && positionInQueue > 0 && (
+          <div style={{ 
+            alignSelf: 'center', 
+            color: '#FF5722', 
+            padding: '12px',
+            background: 'rgba(255, 87, 34, 0.05)',
+            borderRadius: '8px',
+            marginTop: '8px'
+          }}>
+            <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Waiting for write permission</div>
+            <div>Your position in queue: {positionInQueue}</div>
+            <div style={{ marginTop: '8px', fontSize: '12px' }}>
+              Tip: You can create your own parallel conversation by clicking the "Branch" button above.
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -485,26 +562,32 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             type="text"
             value={input}
             onChange={handleInputChange}
-            placeholder="Type a message..."
+            placeholder={hasWritePermission 
+              ? "Type a message..." 
+              : positionInQueue > 0
+                ? "Waiting for write permission..."
+                : "Read-only mode - branch to create your own chat"
+            }
             style={{
               flex: 1,
               padding: '8px',
               border: '1px solid #ddd',
               borderRadius: '5px',
+              backgroundColor: hasWritePermission ? '#fff' : '#f5f5f5'
             }}
-            disabled={!nodeId || loading}
+            disabled={!nodeId || loading || !hasWritePermission}
           />
           <button
             type="submit"
             style={{
               padding: '8px 16px',
-              background: '#007bff',
-              color: '#fff',
+              background: nodeId && !loading && hasWritePermission ? '#007bff' : '#ddd',
+              color: nodeId && !loading && hasWritePermission ? '#fff' : '#555',
               border: 'none',
               borderRadius: '5px',
-              cursor: nodeId && !loading ? 'pointer' : 'not-allowed',
+              cursor: nodeId && !loading && hasWritePermission ? 'pointer' : 'not-allowed',
             }}
-            disabled={!nodeId || loading}
+            disabled={!nodeId || loading || !hasWritePermission}
           >
             Send
           </button>

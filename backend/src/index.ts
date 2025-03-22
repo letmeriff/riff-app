@@ -15,6 +15,7 @@ import branchRoutes from './routes/branchRoutes';
 import presenceRoutes from './routes/presenceRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
+import { acquireWritePermission, releaseWritePermission, getWritePermission } from './services/writePermissionService';
 
 // Define interfaces for the payload structures
 interface ChatNode {
@@ -157,6 +158,16 @@ io.on('connection', (socket: Socket) => {
       // Broadcast updated presence to all users who should see this node
       // For now, just broadcasting back to the same user
       io.to(userRoom).emit('presence-update', { nodeId, presence });
+
+      // Request write permission
+      const { hasPermission, positionInQueue } = await acquireWritePermission(nodeId, userId, email);
+      
+      // Send permission status to the user
+      socket.emit('write-permission-update', { nodeId, hasPermission, positionInQueue });
+
+      // Broadcast updated write permission to all users
+      const writePermission = await getWritePermission(nodeId);
+      io.to(userRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
     } catch (error) {
       console.error('Error handling join-node event:', error);
     }
@@ -170,12 +181,19 @@ io.on('connection', (socket: Socket) => {
 
       // Remove the user from the node's presence
       await removeUserPresence(nodeId, userId);
+      
+      // Release write permission
+      await releaseWritePermission(nodeId, userId);
 
       // Get updated presence
       const presence = await getUserPresence(nodeId);
 
       // Broadcast updated presence
       io.to(userRoom).emit('presence-update', { nodeId, presence });
+
+      // Broadcast updated write permission to all users
+      const writePermission = await getWritePermission(nodeId);
+      io.to(userRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
     } catch (error) {
       console.error('Error handling leave-node event:', error);
     }

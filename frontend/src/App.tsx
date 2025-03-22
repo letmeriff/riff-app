@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import CanvasPage from './pages/CanvasPage';
 import ChatUI from './components/ChatUI';
+import { supabase } from './services/supabase';
 import './styles/auth.css';
 import './styles/app.css';
 
@@ -17,6 +18,46 @@ const AppContent: React.FC = () => {
     setSelectedNodeId(nodeId);
     setSelectedNodeTitle(nodeTitle);
   };
+
+  // Listen for custom event when a node is created via branching
+  useEffect(() => {
+    const handleSelectNodeEvent = (event: CustomEvent) => {
+      const { nodeId } = event.detail;
+      console.log('Custom event: select-node received with nodeId:', nodeId);
+      
+      setSelectedNodeId(nodeId);
+      
+      // Fetch the node title from Supabase
+      const fetchNodeTitle = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('chat_nodes')
+            .select('title')
+            .eq('node_id', parseInt(nodeId))
+            .single();
+          
+          if (error) {
+            console.error('Error fetching node title:', error);
+            return;
+          }
+          
+          setSelectedNodeTitle(data.title);
+        } catch (error) {
+          console.error('Error in fetchNodeTitle:', error);
+        }
+      };
+      
+      fetchNodeTitle();
+    };
+
+    // Add event listener
+    window.addEventListener('select-node', handleSelectNodeEvent as EventListener);
+    
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('select-node', handleSelectNodeEvent as EventListener);
+    };
+  }, []);
 
   if (!user) {
     return (
