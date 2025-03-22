@@ -12,7 +12,9 @@ import flavorRoutes from './routes/flavorRoutes';
 import contextRoutes from './routes/contextRoutes';
 import summarizationRoutes from './routes/summarizationRoutes';
 import branchRoutes from './routes/branchRoutes';
+import presenceRoutes from './routes/presenceRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
+import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
 
 // Define interfaces for the payload structures
 interface ChatNode {
@@ -108,6 +110,7 @@ app.use('/api/flavors', flavorRoutes);
 app.use('/api/context', contextRoutes);
 app.use('/api/summarize', summarizationRoutes);
 app.use('/api/branch', branchRoutes);
+app.use('/api/presence', presenceRoutes);
 
 // Socket.IO authentication middleware
 io.use(async (socket: Socket, next) => {
@@ -134,10 +137,73 @@ io.on('connection', (socket: Socket) => {
   console.log(`User connected: ${socket.data.user.id}`);
 
   // Join a room based on the user ID
-  socket.join(`user:${socket.data.user.id}`);
+  const userRoom = `user:${socket.data.user.id}`;
+  socket.join(userRoom);
+
+  // Handle join-node event
+  socket.on('join-node', async ({ nodeId }) => {
+    try {
+      const userId = socket.data.user.id;
+      const email = socket.data.user.email || 'unknown@example.com';
+
+      console.log(`User ${userId} (${email}) joined node ${nodeId}`);
+
+      // Update presence for the node
+      await updateUserPresence(nodeId, userId, email, false);
+
+      // Get updated presence
+      const presence = await getUserPresence(nodeId);
+
+      // Broadcast updated presence to all users who should see this node
+      // For now, just broadcasting back to the same user
+      io.to(userRoom).emit('presence-update', { nodeId, presence });
+    } catch (error) {
+      console.error('Error handling join-node event:', error);
+    }
+  });
+
+  // Handle leave-node event
+  socket.on('leave-node', async ({ nodeId }) => {
+    try {
+      const userId = socket.data.user.id;
+      console.log(`User ${userId} left node ${nodeId}`);
+
+      // Remove the user from the node's presence
+      await removeUserPresence(nodeId, userId);
+
+      // Get updated presence
+      const presence = await getUserPresence(nodeId);
+
+      // Broadcast updated presence
+      io.to(userRoom).emit('presence-update', { nodeId, presence });
+    } catch (error) {
+      console.error('Error handling leave-node event:', error);
+    }
+  });
+
+  // Handle typing event
+  socket.on('typing', async ({ nodeId, isTyping }) => {
+    try {
+      const userId = socket.data.user.id;
+      const email = socket.data.user.email || 'unknown@example.com';
+      console.log(`User ${userId} is ${isTyping ? 'typing' : 'not typing'} in node ${nodeId}`);
+
+      // Update typing status
+      await updateUserPresence(nodeId, userId, email, isTyping);
+
+      // Get updated presence
+      const presence = await getUserPresence(nodeId);
+
+      // Broadcast updated presence
+      io.to(userRoom).emit('presence-update', { nodeId, presence });
+    } catch (error) {
+      console.error('Error handling typing event:', error);
+    }
+  });
 
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.data.user.id}`);
+    // User presence will timeout automatically after 30 seconds
   });
 });
 

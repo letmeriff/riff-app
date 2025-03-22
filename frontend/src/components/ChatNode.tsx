@@ -1,14 +1,28 @@
 import React, { useRef, useEffect } from 'react';
 import { Handle, Position, NodeProps, useUpdateNodeInternals } from 'reactflow';
 
+interface UserPresence {
+  userId: string;
+  email: string;
+  isTyping: boolean;
+  lastActive: string;
+}
+
 interface ChatNodeData {
   label: string;
   nodeId: number;
-  users?: { id: string; email: string }[];
+  users?: UserPresence[];
   pulledConnections?: { nodeId: string; hasUpdates: boolean; pullId?: number }[];
   pulledByConnections?: { nodeId: string; pullId?: number }[];
   attachments?: { file_url: string; file_type: string }[];
 }
+
+// Helper function to get initials from email
+const getInitials = (email: string): string => {
+  if (!email) return '?';
+  // Get first letter of the part before the @ sign
+  return email.split('@')[0].charAt(0).toUpperCase();
+};
 
 const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -42,6 +56,7 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
         <div style={{ fontSize: '10px', color: '#777' }}>ID: {data.nodeId}</div>
       </div>
 
+      {/* User Presence Indicators */}
       <div
         style={{
           position: 'absolute',
@@ -53,21 +68,38 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
       >
         {data.users?.map((user) => (
           <div
-            key={user.id}
+            key={user.userId}
             style={{
               width: '20px',
               height: '20px',
               borderRadius: '50%',
-              background: '#4CAF50',
+              background: user.isTyping ? '#FF5722' : '#4CAF50', // Red when typing, green otherwise
               color: '#fff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '12px',
+              fontSize: '10px',
+              position: 'relative',
+              overflow: 'visible',
             }}
-            title={user.email}
+            title={`${user.email}${user.isTyping ? ' (typing...)' : ''}`}
           >
-            {user.email.charAt(0).toUpperCase()}
+            {getInitials(user.email)}
+            {user.isTyping && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '-8px',
+                  left: '0',
+                  width: '100%',
+                  textAlign: 'center',
+                  fontSize: '8px',
+                  color: '#FF5722',
+                }}
+              >
+                ✎
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -33,11 +33,19 @@ interface CanvasPageProps {
   onNodeSelect: (nodeId: string | null, nodeTitle: string | null) => void;
 }
 
+interface UserPresence {
+  userId: string;
+  email: string;
+  isTyping: boolean;
+  lastActive: string;
+}
+
 const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
   const { user } = useAuth();
   const { socket } = useSocket();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds: Edge[]) => addEdge(params, eds)),
@@ -88,6 +96,28 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
             nodeId: pull.target_node_id.toString(),
             pullId: pull.id
           }));
+
+          // Get current user presence for this node
+          let userPresence: UserPresence[] = [];
+          try {
+            // Get the current session token
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token;
+            
+            if (token) {
+              const response = await fetch(`http://localhost:3001/api/presence/${chatNode.node_id}`, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+              
+              if (response.ok) {
+                userPresence = await response.json();
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching user presence:', error);
+          }
           
           return {
             id: chatNode.node_id.toString(),
@@ -98,7 +128,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
               nodeId: chatNode.node_id,
               model: chatNode.model,
               flavor: chatNode.flavor,
-              users: [], // Placeholder for user presence (Phase 5)
+              users: userPresence, // User presence data
               pulledConnections: pulledConnectionsWithUpdates,
               pulledByConnections: pulledByConnectionsData,
               attachments: [], // Placeholder for attachments (Phase 6)
@@ -125,9 +155,28 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
         loadNodesWithConnections();
       });
       
+      socket.on('presence-update', (payload) => {
+        console.log('Socket: Presence update received:', payload);
+        // Update the specific node with new presence data
+        setNodes((nds) => 
+          nds.map((node) => 
+            node.id === payload.nodeId.toString() 
+            ? { 
+                ...node, 
+                data: { 
+                  ...node.data, 
+                  users: payload.presence
+                } 
+              } 
+            : node
+          )
+        );
+      });
+      
       // Return cleanup function
       return () => {
         socket.off('node-update');
+        socket.off('presence-update');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
@@ -167,6 +216,20 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
     }
   }, [user, loadNodesWithConnections, socket]);
 
+  // Handle node selection/deselection
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    // If a node was previously selected and is different from the current selection,
+    // emit leave-node event for the previous node
+    if (selectedNodeId && selectedNodeId !== null) {
+      // When component unmounts or selectedNodeId changes, leave the previous node
+      return () => {
+        socket.emit('leave-node', { nodeId: parseInt(selectedNodeId) });
+      };
+    }
+  }, [socket, selectedNodeId, user]);
+
   const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;
     try {
@@ -200,6 +263,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
             await deleteNode(parseInt(change.id));
             // Deselect if the deleted node was selected
             onNodeSelect(null, null);
+            setSelectedNodeId(null);
           } catch (error) {
             console.error('Error deleting node:', error);
           }
@@ -211,9 +275,21 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (event, node) => {
+      // If user is already in a node, first leave it
+      if (selectedNodeId && socket) {
+        socket.emit('leave-node', { nodeId: parseInt(selectedNodeId) });
+      }
+      
+      // Set the new selected node
+      setSelectedNodeId(node.id);
       onNodeSelect(node.id, node.data.label);
+      
+      // Join the new node
+      if (socket) {
+        socket.emit('join-node', { nodeId: parseInt(node.id) });
+      }
     },
-    [onNodeSelect]
+    [onNodeSelect, selectedNodeId, socket]
   );
 
   return (

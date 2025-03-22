@@ -11,6 +11,13 @@ interface ChatMessage {
   timestamp: string;
 }
 
+interface UserPresence {
+  userId: string;
+  email: string;
+  isTyping: boolean;
+  lastActive: string;
+}
+
 interface ChatUIProps {
   nodeId: string | null; // Selected node's ID
   nodeTitle: string | null; // Selected node's title
@@ -27,7 +34,9 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [pullLoading, setPullLoading] = useState(false);
   const [pullMode, setPullMode] = useState<'full' | 'summary'>('full');
   const [branchLoading, setBranchLoading] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
@@ -55,10 +64,11 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Fetch messages when the node changes
+  // Fetch messages when the node changes and set up real-time updates
   useEffect(() => {
     if (!nodeId) {
       setMessages([]);
+      setTypingUsers([]);
       return;
     }
 
@@ -89,8 +99,21 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         }
       });
 
+      socket.on('presence-update', (payload) => {
+        console.log('Socket: Presence update received in ChatUI:', payload);
+        if (payload.nodeId.toString() === nodeId) {
+          // Extract emails of users who are typing (excluding the current user)
+          const typing = payload.presence
+            .filter((p: UserPresence) => p.isTyping && p.userId !== userId)
+            .map((p: UserPresence) => p.email);
+          
+          setTypingUsers(typing);
+        }
+      });
+
       return () => {
         socket.off('message-update');
+        socket.off('presence-update');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
@@ -114,7 +137,29 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         supabase.removeChannel(subscription);
       };
     }
-  }, [nodeId, socket]);
+  }, [nodeId, socket, userId]);
+
+  // Handle input changes and emit typing events
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value);
+
+    if (!socket || !nodeId) return;
+
+    // Emit typing event
+    socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: true });
+
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set a timeout to stop typing indication after 2 seconds of inactivity
+    typingTimeoutRef.current = setTimeout(() => {
+      if (socket && nodeId) {
+        socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: false });
+      }
+    }, 2000);
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,6 +192,11 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       const { response: aiResponse } = await response.json();
       console.log('AI Response:', aiResponse); // For debugging
       setInput('');
+
+      // Stop typing indication after sending the message
+      if (socket) {
+        socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: false });
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       alert(error instanceof Error ? error.message : 'An error occurred sending your message');
@@ -337,6 +387,13 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             AI is typing...
           </div>
         )}
+        {typingUsers.length > 0 && (
+          <div style={{ alignSelf: 'flex-start', color: '#777', padding: '8px' }}>
+            {typingUsers.length === 1 
+              ? `${typingUsers[0]} is typing...` 
+              : `${typingUsers.join(', ')} are typing...`}
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -427,7 +484,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           <input
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             placeholder="Type a message..."
             style={{
               flex: 1,
