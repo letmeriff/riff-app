@@ -141,6 +141,9 @@ io.on('connection', (socket: Socket) => {
   const userRoom = `user:${socket.data.user.id}`;
   socket.join(userRoom);
 
+  // Keep track of nodes the user is viewing
+  const viewedNodes: number[] = [];
+
   // Handle join-node event
   socket.on('join-node', async ({ nodeId }) => {
     try {
@@ -149,15 +152,19 @@ io.on('connection', (socket: Socket) => {
 
       console.log(`User ${userId} (${email}) joined node ${nodeId}`);
 
+      // Join the node-specific room
+      const nodeRoom = `node:${nodeId}`;
+      socket.join(nodeRoom);
+      viewedNodes.push(nodeId);
+
       // Update presence for the node
       await updateUserPresence(nodeId, userId, email, false);
 
       // Get updated presence
       const presence = await getUserPresence(nodeId);
 
-      // Broadcast updated presence to all users who should see this node
-      // For now, just broadcasting back to the same user
-      io.to(userRoom).emit('presence-update', { nodeId, presence });
+      // Broadcast updated presence to all users in the node room
+      io.to(nodeRoom).emit('presence-update', { nodeId, presence });
 
       // Request write permission
       const { hasPermission, positionInQueue } = await acquireWritePermission(nodeId, userId, email);
@@ -165,9 +172,9 @@ io.on('connection', (socket: Socket) => {
       // Send permission status to the user
       socket.emit('write-permission-update', { nodeId, hasPermission, positionInQueue });
 
-      // Broadcast updated write permission to all users
+      // Broadcast updated write permission to all users in the node room
       const writePermission = await getWritePermission(nodeId);
-      io.to(userRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
+      io.to(nodeRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
     } catch (error) {
       console.error('Error handling join-node event:', error);
     }
@@ -179,6 +186,16 @@ io.on('connection', (socket: Socket) => {
       const userId = socket.data.user.id;
       console.log(`User ${userId} left node ${nodeId}`);
 
+      // Leave the node-specific room
+      const nodeRoom = `node:${nodeId}`;
+      socket.leave(nodeRoom);
+      
+      // Remove node from viewed nodes
+      const index = viewedNodes.indexOf(nodeId);
+      if (index !== -1) {
+        viewedNodes.splice(index, 1);
+      }
+
       // Remove the user from the node's presence
       await removeUserPresence(nodeId, userId);
       
@@ -188,12 +205,12 @@ io.on('connection', (socket: Socket) => {
       // Get updated presence
       const presence = await getUserPresence(nodeId);
 
-      // Broadcast updated presence
-      io.to(userRoom).emit('presence-update', { nodeId, presence });
+      // Broadcast updated presence to the node room
+      io.to(nodeRoom).emit('presence-update', { nodeId, presence });
 
-      // Broadcast updated write permission to all users
+      // Broadcast updated write permission to the node room
       const writePermission = await getWritePermission(nodeId);
-      io.to(userRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
+      io.to(nodeRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
     } catch (error) {
       console.error('Error handling leave-node event:', error);
     }
@@ -212,16 +229,42 @@ io.on('connection', (socket: Socket) => {
       // Get updated presence
       const presence = await getUserPresence(nodeId);
 
-      // Broadcast updated presence
-      io.to(userRoom).emit('presence-update', { nodeId, presence });
+      // Broadcast updated presence to the node room
+      const nodeRoom = `node:${nodeId}`;
+      io.to(nodeRoom).emit('presence-update', { nodeId, presence });
     } catch (error) {
       console.error('Error handling typing event:', error);
     }
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.data.user.id}`);
-    // User presence will timeout automatically after 30 seconds
+    
+    // Clean up all viewed nodes on disconnect
+    for (const nodeId of viewedNodes) {
+      try {
+        const userId = socket.data.user.id;
+        
+        // Remove the user from the node's presence
+        await removeUserPresence(nodeId, userId);
+        
+        // Release write permission
+        await releaseWritePermission(nodeId, userId);
+
+        // Get updated presence
+        const presence = await getUserPresence(nodeId);
+
+        // Broadcast updated presence to the node room
+        const nodeRoom = `node:${nodeId}`;
+        io.to(nodeRoom).emit('presence-update', { nodeId, presence });
+
+        // Broadcast updated write permission to the node room
+        const writePermission = await getWritePermission(nodeId);
+        io.to(nodeRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
+      } catch (error) {
+        console.error(`Error cleaning up node ${nodeId} on disconnect:`, error);
+      }
+    }
   });
 });
 
@@ -234,7 +277,17 @@ supabase
     (payload) => {
       // Cast the payload to our typed interface
       const typedPayload = payload as unknown as ChatNodePayload;
-      // Broadcast to all connected users
+      
+      // Get the node ID
+      const nodeId = typedPayload.new?.node_id || typedPayload.old?.node_id;
+      
+      if (nodeId) {
+        // Broadcast to the node-specific room
+        const nodeRoom = `node:${nodeId}`;
+        io.to(nodeRoom).emit('node-update', typedPayload);
+      }
+      
+      // Also broadcast to all users to ensure newly created nodes are visible to everyone
       io.emit('node-update', typedPayload);
     }
   )
@@ -255,8 +308,12 @@ supabase
           return;
         }
         
-        // Broadcast to all connected users
-        io.emit('message-update', typedPayload);
+        // Get the node ID
+        const nodeId = typedPayload.new.node_id;
+        
+        // Broadcast to the node-specific room
+        const nodeRoom = `node:${nodeId}`;
+        io.to(nodeRoom).emit('message-update', typedPayload);
       } catch (error) {
         console.error('Error handling message change:', error);
       }
