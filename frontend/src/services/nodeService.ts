@@ -9,6 +9,12 @@ export interface ChatNode {
   created_at: string;
 }
 
+export interface SupabasePayload<T> {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  new?: T;
+  old?: T;
+}
+
 export const createNode = async (
   userId: string, 
   title: string,
@@ -32,8 +38,7 @@ export const createNode = async (
 export const fetchNodes = async (userId: string): Promise<ChatNode[]> => {
   const { data, error } = await supabase
     .from('chat_nodes')
-    .select('*')
-    .eq('user_id', userId);
+    .select('*');
   if (error) throw error;
   return data;
 };

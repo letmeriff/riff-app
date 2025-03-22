@@ -234,11 +234,8 @@ supabase
     (payload) => {
       // Cast the payload to our typed interface
       const typedPayload = payload as unknown as ChatNodePayload;
-      // Broadcast to the appropriate user room
-      const userId = typedPayload.new?.user_id || typedPayload.old?.user_id;
-      if (userId) {
-        io.to(`user:${userId}`).emit('node-update', typedPayload);
-      }
+      // Broadcast to all connected users
+      io.emit('node-update', typedPayload);
     }
   )
   .subscribe();
@@ -258,20 +255,8 @@ supabase
           return;
         }
         
-        // Get the user_id associated with the node
-        const { data: node, error } = await supabase
-          .from('chat_nodes')
-          .select('user_id')
-          .eq('node_id', typedPayload.new.node_id)
-          .single();
-        
-        if (error) {
-          console.error('Error fetching node user:', error);
-          return;
-        }
-        
-        // Broadcast the new message to the associated user's room
-        io.to(`user:${node.user_id}`).emit('message-update', typedPayload);
+        // Broadcast to all connected users
+        io.emit('message-update', typedPayload);
       } catch (error) {
         console.error('Error handling message change:', error);
       }

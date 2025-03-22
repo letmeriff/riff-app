@@ -19,7 +19,7 @@ import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
-import { createNode, fetchNodes, deleteNode } from '../services/nodeService';
+import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, deleteNode } from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
 
@@ -151,9 +151,47 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     
     // Set up Socket.IO event listeners
     if (socket) {
-      socket.on('node-update', (payload) => {
+      socket.on('node-update', (payload: SupabasePayload<ChatNodeType>) => {
         console.log('Socket: Node update received:', payload);
-        loadNodesWithConnections();
+        
+        if (payload.eventType === 'INSERT' && payload.new) {
+          // Add the new node if it doesn't already exist
+          setNodes((nds) => {
+            if (nds.some((node) => node.id === payload.new?.node_id.toString())) {
+              return nds;
+            }
+            
+            // Ensure payload.new is defined
+            if (!payload.new) return nds;
+            
+            const newNode: Node = {
+              id: payload.new.node_id.toString(),
+              type: 'chatNode',
+              position: { x: Math.random() * 500, y: Math.random() * 500 },
+              data: {
+                label: payload.new.title,
+                nodeId: payload.new.node_id,
+                model: payload.new.model,
+                flavor: payload.new.flavor,
+                users: [],
+                pulledConnections: [],
+                pulledByConnections: [],
+                attachments: [],
+              },
+            };
+            return [...nds, newNode];
+          });
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          // Remove the deleted node
+          setNodes((nds) => nds.filter((node) => node.id !== payload.old!.node_id.toString()));
+          if (selectedNodeId === payload.old.node_id.toString()) {
+            onNodeSelect(null, null);
+            setSelectedNodeId(null);
+          }
+        } else {
+          // For other events, reload all nodes
+          loadNodesWithConnections();
+        }
       });
       
       socket.on('presence-update', (payload) => {
@@ -215,7 +253,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         supabase.removeChannel(channel);
       };
     }
-  }, [user, loadNodesWithConnections, socket]);
+  }, [user, loadNodesWithConnections, socket, selectedNodeId, onNodeSelect]);
 
   // Handle node selection/deselection
   useEffect(() => {
