@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Signup from './components/Signup';
 import CanvasPage from './pages/CanvasPage';
 import ChatUI from './components/ChatUI';
+import SettingsModal from './components/SettingsModal';
 import { supabase } from './services/supabase';
 import './styles/auth.css';
 import './styles/app.css';
@@ -13,10 +14,16 @@ const AppContent: React.FC = () => {
   const { user, session, signOut } = useAuth();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeTitle, setSelectedNodeTitle] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
 
   const handleNodeSelect = (nodeId: string | null, nodeTitle: string | null) => {
     setSelectedNodeId(nodeId);
     setSelectedNodeTitle(nodeTitle);
+  };
+
+  const handleOpenSettings = () => {
+    setIsSettingsOpen(true);
   };
 
   // Listen for custom event when a node is created via branching
@@ -59,6 +66,40 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  // Check if user has any API keys on login
+  useEffect(() => {
+    if (!user || hasCheckedApiKeys) return;
+
+    const checkApiKeys = async () => {
+      try {
+        const token = localStorage.getItem('supabase.auth.token');
+        if (!token) return;
+
+        const response = await fetch('http://localhost:3001/api/models', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.error('Failed to fetch models');
+          return;
+        }
+
+        const models = await response.json();
+        if (models.length === 0) {
+          // Open the settings modal if no API keys are found
+          setIsSettingsOpen(true);
+        }
+        setHasCheckedApiKeys(true);
+      } catch (error) {
+        console.error('Error checking API keys:', error);
+      }
+    };
+
+    checkApiKeys();
+  }, [user, hasCheckedApiKeys]);
+
   if (!user) {
     return (
       <div className="auth-container">
@@ -76,7 +117,7 @@ const AppContent: React.FC = () => {
       <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
         {/* Canvas (61.8%) - Golden Ratio */}
         <div style={{ width: '61.8%', height: '100%' }}>
-          <CanvasPage onNodeSelect={handleNodeSelect} />
+          <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
         </div>
 
         {/* Chat UI (38.2%) */}
@@ -88,11 +129,28 @@ const AppContent: React.FC = () => {
               userId={user.id} 
             />
           </div>
-          <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd' }}>
-            <button onClick={signOut} style={{ padding: '5px 10px' }}>Logout</button>
+          <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
+            <button 
+              onClick={handleOpenSettings}
+              style={{ padding: '5px 10px', marginRight: '10px' }}
+            >
+              Settings
+            </button>
+            <button 
+              onClick={signOut} 
+              style={{ padding: '5px 10px' }}
+            >
+              Logout
+            </button>
           </div>
         </div>
       </div>
+      
+      {/* Settings Modal */}
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
     </SocketProvider>
   );
 };

@@ -14,9 +14,10 @@ interface CreateNodeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (title: string, modelName: string, flavorName: string) => void;
+  onOpenSettings?: () => void; // Optional callback to open settings modal
 }
 
-const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCreate }) => {
+const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCreate, onOpenSettings }) => {
   const [title, setTitle] = useState('');
   const [modelName, setModelName] = useState('');
   const [flavorName, setFlavorName] = useState('');
@@ -24,6 +25,7 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
   const [flavors, setFlavors] = useState<Flavor[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noApiKeysWarning, setNoApiKeysWarning] = useState<boolean>(false);
 
   // Fetch models and flavors when the modal opens
   useEffect(() => {
@@ -32,6 +34,7 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
+      setNoApiKeysWarning(false);
       try {
         // Get the token from localStorage
         const token = localStorage.getItem('supabase.auth.token');
@@ -52,6 +55,11 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
         
         const modelsData = await modelsResponse.json();
         setModels(modelsData);
+        
+        // Show warning if no API keys found
+        if (modelsData.length === 0) {
+          setNoApiKeysWarning(true);
+        }
 
         // Fetch flavors
         const flavorsResponse = await fetch('http://localhost:3001/api/flavors', {
@@ -88,6 +96,13 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
     onClose();
   };
 
+  const handleOpenSettings = () => {
+    onClose(); // Close this modal first
+    if (onOpenSettings) {
+      onOpenSettings(); // Open the settings modal
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -122,6 +137,26 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
           </div>
         )}
         
+        {noApiKeysWarning && (
+          <div style={{ color: '#d97706', padding: '10px', background: '#fffbeb', borderRadius: '4px', marginBottom: '15px' }}>
+            <p><strong>No API keys found!</strong> You need to add an API key before creating a node.</p>
+            <button 
+              onClick={handleOpenSettings}
+              style={{
+                padding: '5px 10px',
+                background: '#d97706',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                marginTop: '5px',
+              }}
+            >
+              Add API Key
+            </button>
+          </div>
+        )}
+        
         {isLoading ? (
           <div>Loading...</div>
         ) : (
@@ -150,6 +185,7 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
                 onChange={(e) => setModelName(e.target.value)}
                 style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
                 required
+                disabled={models.length === 0}
               >
                 <option value="">Select a model</option>
                 {models.map((model) => (
@@ -158,6 +194,11 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
                   </option>
                 ))}
               </select>
+              {models.length === 0 && !noApiKeysWarning && !isLoading && (
+                <p style={{ color: 'red', fontSize: '0.8em', marginTop: '5px' }}>
+                  No models available. Please add an API key in Settings.
+                </p>
+              )}
             </div>
             
             <div style={{ marginBottom: '20px' }}>
@@ -196,13 +237,15 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
               </button>
               <button
                 type="submit"
+                disabled={models.length === 0}
                 style={{
                   padding: '8px 16px',
                   background: '#4299e1',
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
-                  cursor: 'pointer',
+                  cursor: models.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: models.length === 0 ? 0.7 : 1,
                 }}
               >
                 Create

@@ -31,6 +31,7 @@ const initialEdges: Edge[] = [];
 
 interface CanvasPageProps {
   onNodeSelect: (nodeId: string | null, nodeTitle: string | null) => void;
+  onOpenSettings?: () => void;
 }
 
 interface UserPresence {
@@ -40,7 +41,7 @@ interface UserPresence {
   lastActive: string;
 }
 
-const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
+const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings }) => {
   const { user } = useAuth();
   const { socket } = useSocket();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
@@ -312,7 +313,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
         nodeTypes={nodeTypes}
         fitView
       >
-        <FloatingMenu onCreateNode={onCreateNode} />
+        <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
         <Background />
         <Controls />
         <MiniMap />

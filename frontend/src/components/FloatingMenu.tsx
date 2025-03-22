@@ -3,9 +3,10 @@ import CreateNodeModal from './CreateNodeModal';
 
 interface FloatingMenuProps {
   onCreateNode: (title: string, modelName: string, flavorName: string) => void;
+  onOpenSettings?: () => void;
 }
 
-const FloatingMenu: React.FC<FloatingMenuProps> = ({ onCreateNode }) => {
+const FloatingMenu: React.FC<FloatingMenuProps> = ({ onCreateNode, onOpenSettings }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleNodeCreate = (title: string, modelName: string, flavorName: string) => {
@@ -45,6 +46,7 @@ const FloatingMenu: React.FC<FloatingMenuProps> = ({ onCreateNode }) => {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onCreate={handleNodeCreate}
+        onOpenSettings={onOpenSettings}
       />
     </>
   );
