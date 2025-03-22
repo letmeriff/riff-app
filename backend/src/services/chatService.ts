@@ -65,6 +65,55 @@ export class ChatService {
     }
   }
 
+  // Load pulled context from other nodes
+  private async loadPulledContext(): Promise<string | null> {
+    try {
+      // Fetch all context pulls for this node
+      const { data: contextPulls, error: pullError } = await supabase
+        .from('context_pulls')
+        .select('*')
+        .eq('target_node_id', this.nodeId);
+      
+      if (pullError) {
+        console.error('Error fetching context pulls:', pullError);
+        return null;
+      }
+      
+      if (!contextPulls || contextPulls.length === 0) {
+        return null;
+      }
+      
+      // For each origin node, fetch messages
+      let allPulledContext = '';
+      
+      for (const pull of contextPulls) {
+        const { data: messages, error: msgError } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('node_id', pull.origin_node_id)
+          .order('timestamp', { ascending: true });
+        
+        if (msgError) {
+          console.error(`Error fetching messages from node ${pull.origin_node_id}:`, msgError);
+          continue;
+        }
+        
+        if (messages && messages.length > 0) {
+          const nodeContext = messages
+            .map((msg) => `${msg.is_user ? 'User' : 'AI'}: ${msg.content}`)
+            .join('\n');
+          
+          allPulledContext += `\n\n--- Context from Node ${pull.origin_node_id} ---\n${nodeContext}`;
+        }
+      }
+      
+      return allPulledContext.trim() || null;
+    } catch (error) {
+      console.error('Error loading pulled context:', error);
+      return null;
+    }
+  }
+
   // Load chat history for the node
   private async loadChatHistory(): Promise<(HumanMessage | AIMessage | SystemMessage)[]> {
     const { data, error } = await supabase
@@ -76,8 +125,18 @@ export class ChatService {
 
     // Start with system message if available
     const messages: (HumanMessage | AIMessage | SystemMessage)[] = [];
+    
+    // Add system prompt if available
     if (this.systemPrompt) {
       messages.push(new SystemMessage({ content: this.systemPrompt }));
+    }
+    
+    // Add pulled context as a system message
+    const pulledContext = await this.loadPulledContext();
+    if (pulledContext) {
+      messages.push(new SystemMessage({ 
+        content: `This node has pulled context from other nodes. Use this as reference when appropriate:\n${pulledContext}`
+      }));
     }
 
     // Add the conversation history

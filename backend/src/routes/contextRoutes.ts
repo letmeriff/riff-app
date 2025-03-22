@@ -38,33 +38,61 @@ router.post('/pull', authMiddleware, async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'You do not have access to this node' });
     }
 
-    // Fetch the chat history from the origin node
-    const { data: originMessages, error: messagesError } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .eq('node_id', originNodeId)
-      .order('timestamp', { ascending: true });
-    
-    if (messagesError) throw messagesError;
-
-    // Format the chat history as a string
-    const context = originMessages
-      .map((msg) => `${msg.is_user ? 'User' : 'AI'}: ${msg.content}`)
-      .join('\n');
-
     // Check if a context pull relationship already exists
     const existingPull = await getContextPullByNodes(targetNodeId, originNodeId);
-
+    
+    let context = '';
+    let isIncremental = false;
+    
     if (existingPull) {
+      // Incremental update: fetch only new messages since the last pull
+      const { data: newMessages, error: messagesError } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('node_id', originNodeId)
+        .gt('timestamp', existingPull.last_pulled_at)
+        .order('timestamp', { ascending: true });
+      
+      if (messagesError) throw messagesError;
+
+      if (newMessages && newMessages.length > 0) {
+        context = newMessages
+          .map((msg) => `${msg.is_user ? 'User' : 'AI'}: ${msg.content}`)
+          .join('\n');
+        isIncremental = true;
+      } else {
+        context = 'No new messages since last pull';
+      }
+      
       // Update the last_pulled_at timestamp
       await updateContextPull(existingPull.id);
     } else {
+      // First pull: fetch the entire chat history
+      const { data: originMessages, error: messagesError } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('node_id', originNodeId)
+        .order('timestamp', { ascending: true });
+      
+      if (messagesError) throw messagesError;
+
+      if (originMessages && originMessages.length > 0) {
+        context = originMessages
+          .map((msg) => `${msg.is_user ? 'User' : 'AI'}: ${msg.content}`)
+          .join('\n');
+      } else {
+        context = 'No messages available in the origin node';
+      }
+      
       // Create a new context pull relationship
       await createContextPull(targetNodeId, originNodeId);
     }
 
-    // Add a system message to the target node's chat
-    const placeholderMessage = `Context pulled from Node ${originNodeId}:\n${context}`;
+    // Add a placeholder message to the target node's chat
+    const placeholderMessage = isIncremental 
+      ? `New context pulled from Node ${originNodeId}:\n${context}`
+      : `Context pulled from Node ${originNodeId}:\n${context}`;
+      
     const { error: insertError } = await supabase
       .from('chat_messages')
       .insert({
@@ -78,7 +106,8 @@ router.post('/pull', authMiddleware, async (req: Request, res: Response) => {
 
     res.json({ 
       success: true,
-      message: placeholderMessage 
+      message: placeholderMessage,
+      isIncremental: isIncremental
     });
   } catch (error: unknown) {
     console.error('Error pulling context:', error);
