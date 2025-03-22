@@ -103,10 +103,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
     setLoading(true);
     try {
-      // Get the token from localStorage
-      const token = localStorage.getItem('supabase.auth.token');
+      // Get the current session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
       if (!token) {
-        throw new Error('Authentication token not found');
+        throw new Error('Authentication token not found. Please log in again.');
       }
       
       const response = await fetch(`http://localhost:3001/api/chat/${nodeId}`, {
@@ -139,10 +141,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     
     setPullLoading(true);
     try {
-      // Get the token from localStorage
-      const token = localStorage.getItem('supabase.auth.token');
+      // Get the current session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
       if (!token) {
-        throw new Error('Authentication token not found');
+        throw new Error('Authentication token not found. Please log in again.');
       }
       
       const response = await fetch('http://localhost:3001/api/context/pull', {
