@@ -39,7 +39,11 @@ const AppContent: React.FC = () => {
       {/* Chat UI (38.2%) */}
       <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1 }}>
-          <ChatUI nodeId={selectedNodeId} nodeTitle={selectedNodeTitle} />
+          <ChatUI 
+            nodeId={selectedNodeId} 
+            nodeTitle={selectedNodeTitle} 
+            userId={user.id} 
+          />
         </div>
         <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd' }}>
           <button onClick={signOut} style={{ padding: '5px 10px' }}>Logout</button>

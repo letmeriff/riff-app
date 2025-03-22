@@ -19,6 +19,8 @@ import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import { useAuth } from '../contexts/AuthContext';
 import { createNode, fetchNodes, deleteNode } from '../services/nodeService';
+import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
+import { supabase } from '../services/supabase';
 
 const nodeTypes: NodeTypes = {
   chatNode: ChatNode,
@@ -40,33 +42,105 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
     [setEdges]
   );
 
-  // Load nodes from Supabase on mount
+  // Load nodes from Supabase on mount and set up subscription
   useEffect(() => {
     if (!user) return;
-    const loadNodes = async () => {
+    
+    const loadNodesWithConnections = async () => {
       try {
         const chatNodes = await fetchNodes(user.id);
-        const reactFlowNodes: Node[] = chatNodes.map((chatNode) => ({
-          id: chatNode.node_id.toString(),
-          type: 'chatNode',
-          position: { x: Math.random() * 500, y: Math.random() * 500 },
-          data: {
-            label: chatNode.title,
-            nodeId: chatNode.node_id,
-            model: chatNode.model,
-            flavor: chatNode.flavor,
-            users: [], // Placeholder for user presence (Phase 5)
-            pulledConnections: [], // Placeholder for connections (Phase 4)
-            pulledByConnections: [], // Placeholder for connections (Phase 4)
-            attachments: [], // Placeholder for attachments (Phase 6)
-          },
-        }));
+        const reactFlowNodes: Node[] = await Promise.all(
+          chatNodes.map(async (chatNode) => {
+            // Get nodes this node pulls from
+            const pulledConnections = await getContextPullsForNode(chatNode.node_id);
+            const pulledConnectionsWithUpdates = await Promise.all(
+              pulledConnections.map(async (pull) => {
+                // Check if there are updates since last pull
+                const { data: latestMessages } = await supabase
+                  .from('chat_messages')
+                  .select('timestamp')
+                  .eq('node_id', pull.origin_node_id)
+                  .gt('timestamp', pull.last_pulled_at)
+                  .limit(1);
+                
+                const hasUpdates = latestMessages && latestMessages.length > 0;
+                
+                return { 
+                  nodeId: pull.origin_node_id.toString(), 
+                  hasUpdates 
+                };
+              })
+            );
+            
+            // Get nodes that pull from this node
+            const pulledByConnections = await getNodesPullingFromNode(chatNode.node_id);
+            const pulledByConnectionsData = pulledByConnections.map((pull) => ({
+              nodeId: pull.target_node_id.toString()
+            }));
+            
+            return {
+              id: chatNode.node_id.toString(),
+              type: 'chatNode',
+              position: { x: Math.random() * 500, y: Math.random() * 500 },
+              data: {
+                label: chatNode.title,
+                nodeId: chatNode.node_id,
+                model: chatNode.model,
+                flavor: chatNode.flavor,
+                users: [], // Placeholder for user presence (Phase 5)
+                pulledConnections: pulledConnectionsWithUpdates,
+                pulledByConnections: pulledByConnectionsData,
+                attachments: [], // Placeholder for attachments (Phase 6)
+              },
+            };
+          })
+        );
         setNodes(reactFlowNodes);
       } catch (error) {
-        console.error('Error loading nodes:', error);
+        console.error('Error loading nodes with connections:', error);
       }
     };
-    loadNodes();
+    
+    loadNodesWithConnections();
+    
+    // Subscribe to changes in context_pulls table
+    const subscription = supabase
+      .channel('context_pulls_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'context_pulls',
+        },
+        () => {
+          // Reload nodes with updated connections
+          loadNodesWithConnections();
+        }
+      )
+      .subscribe();
+      
+    // Subscribe to changes in chat_messages table (for update detection)
+    const messagesSubscription = supabase
+      .channel('chat_messages_for_updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+        },
+        () => {
+          // Reload nodes to update the "hasUpdates" status
+          loadNodesWithConnections();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+      supabase.removeChannel(messagesSubscription);
+    };
   }, [user, setNodes]);
 
   const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
@@ -118,31 +192,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
     [onNodeSelect]
   );
 
-  const simulateContentChange = () => {
-    setNodes((nds) =>
-      nds.map((node) =>
-        node.id === nodes[0]?.id
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                users: [
-                  { id: '1', email: 'user1@example.com' },
-                  { id: '2', email: 'user2@example.com' },
-                ],
-                pulledConnections: [
-                  { nodeId: '2', hasUpdates: true },
-                  { nodeId: '3', hasUpdates: false },
-                ],
-                pulledByConnections: [{ nodeId: '4' }],
-                attachments: [{ file_url: 'test.pdf', file_type: 'pdf' }],
-              },
-            }
-          : node
-      )
-    );
-  };
-
   return (
     <div style={{ height: '100%', width: '100%' }}>
       <ReactFlow
@@ -164,18 +213,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect }) => {
         fitView
       >
         <FloatingMenu onCreateNode={onCreateNode} />
-        <button
-          onClick={simulateContentChange}
-          style={{
-            position: 'absolute',
-            top: '50px',
-            left: '10px',
-            zIndex: 1000,
-            padding: '5px 10px',
-          }}
-        >
-          Simulate Content Change
-        </button>
         <Background />
         <Controls />
         <MiniMap />

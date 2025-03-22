@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
+import { ChatNode } from '../services/nodeService';
 
 interface ChatMessage {
   message_id: number;
@@ -12,13 +13,38 @@ interface ChatMessage {
 interface ChatUIProps {
   nodeId: string | null; // Selected node's ID
   nodeTitle: string | null; // Selected node's title
+  userId: string; // Current user's ID
 }
 
-const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
+const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [nodes, setNodes] = useState<ChatNode[]>([]);
+  const [selectedPullNode, setSelectedPullNode] = useState<string>('');
+  const [pullLoading, setPullLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch available nodes for the Pull dropdown
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchNodes = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('chat_nodes')
+          .select('*')
+          .eq('user_id', userId);
+        
+        if (error) throw error;
+        setNodes(data || []);
+      } catch (error) {
+        console.error('Error fetching nodes:', error);
+      }
+    };
+
+    fetchNodes();
+  }, [userId]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -108,6 +134,44 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
     }
   };
 
+  const handlePullContext = async () => {
+    if (!nodeId || !selectedPullNode) return;
+    
+    setPullLoading(true);
+    try {
+      // Get the token from localStorage
+      const token = localStorage.getItem('supabase.auth.token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+      
+      const response = await fetch('http://localhost:3001/api/context/pull', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          targetNodeId: parseInt(nodeId),
+          originNodeId: parseInt(selectedPullNode),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to pull context');
+      }
+
+      // Reset the selected pull node
+      setSelectedPullNode('');
+    } catch (error) {
+      console.error('Error pulling context:', error);
+      alert(error instanceof Error ? error.message : 'An error occurred pulling context');
+    } finally {
+      setPullLoading(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -180,14 +244,47 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle }) => {
           gap: '10px',
         }}
       >
-        {/* Placeholder Buttons */}
+        {/* Action Buttons */}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button disabled style={{ padding: '5px 10px', background: '#ddd' }}>
             Attach
           </button>
-          <button disabled style={{ padding: '5px 10px', background: '#ddd' }}>
-            Pull
-          </button>
+          <div style={{ display: 'flex', gap: '5px', flex: 1 }}>
+            <select
+              value={selectedPullNode}
+              onChange={(e) => setSelectedPullNode(e.target.value)}
+              style={{ 
+                padding: '5px',
+                flex: 1,
+                borderRadius: '4px',
+                border: '1px solid #ccc'
+              }}
+              disabled={!nodeId || pullLoading}
+            >
+              <option value="">Select a node to pull from</option>
+              {nodes
+                .filter((node) => node.node_id.toString() !== nodeId)
+                .map((node) => (
+                  <option key={node.node_id} value={node.node_id}>
+                    {node.title} (ID: {node.node_id})
+                  </option>
+                ))}
+            </select>
+            <button
+              onClick={handlePullContext}
+              style={{
+                padding: '5px 10px',
+                background: selectedPullNode && !pullLoading ? '#007bff' : '#ddd',
+                color: selectedPullNode && !pullLoading ? '#fff' : '#555',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: selectedPullNode && !pullLoading ? 'pointer' : 'not-allowed',
+              }}
+              disabled={!selectedPullNode || pullLoading}
+            >
+              {pullLoading ? 'Pulling...' : 'Pull'}
+            </button>
+          </div>
           <button disabled style={{ padding: '5px 10px', background: '#ddd' }}>
             Branch
           </button>
