@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
 
 interface Model {
   id: number;
@@ -29,7 +30,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('supabase.auth.token');
+      // Get the current session token using Supabase's current method
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
       if (!token) {
         throw new Error('Authentication token not found');
       }
@@ -61,7 +65,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setSuccess(null);
 
     try {
-      const token = localStorage.getItem('supabase.auth.token');
+      // Get the current session token using Supabase's current method
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
       if (!token) {
         throw new Error('Authentication token not found');
       }
@@ -99,7 +106,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     setSuccess(null);
 
     try {
-      const token = localStorage.getItem('supabase.auth.token');
+      // Get the current session token using Supabase's current method
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
       if (!token) {
         throw new Error('Authentication token not found');
       }

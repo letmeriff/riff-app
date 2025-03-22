@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
 
 interface Model {
   id: number;
@@ -36,8 +37,10 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
       setError(null);
       setNoApiKeysWarning(false);
       try {
-        // Get the token from localStorage
-        const token = localStorage.getItem('supabase.auth.token');
+        // Get the current session token using Supabase's current method
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        
         if (!token) {
           throw new Error('Authentication token not found');
         }
