@@ -330,8 +330,10 @@ supabase
   .on(
     'postgres_changes',
     { event: '*', schema: 'public', table: 'chat_nodes' },
-    (payload) => {
-      const nodeId = payload.new?.node_id || payload.old?.node_id;
+    (payload: any) => {
+      const newNode = payload.new as ChatNode | null;
+      const oldNode = payload.old as Partial<ChatNode> | null;
+      const nodeId = newNode?.node_id || oldNode?.node_id;
       if (nodeId) {
         const nodeRoom = `node:${nodeId}`;
         io.to(nodeRoom).emit('node-update', payload);
