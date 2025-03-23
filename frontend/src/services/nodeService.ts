@@ -4,6 +4,7 @@ export interface ChatNode {
   node_id: number;
   title: string;
   user_id: string;
+  owner_id: string;
   model?: string;
   flavor?: string;
   created_at: string;
@@ -24,7 +25,8 @@ export const createNode = async (
   const { data, error } = await supabase
     .from('chat_nodes')
     .insert({ 
-      user_id: userId, 
+      user_id: userId,
+      owner_id: userId,
       title,
       model,
       flavor
@@ -45,5 +47,13 @@ export const fetchNodes = async (): Promise<ChatNode[]> => {
 
 export const deleteNode = async (nodeId: number): Promise<void> => {
   const { error } = await supabase.from('chat_nodes').delete().eq('node_id', nodeId);
+  if (error) throw error;
+};
+
+export const transferOwnership = async (nodeId: number, newOwnerId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('chat_nodes')
+    .update({ owner_id: newOwnerId })
+    .eq('node_id', nodeId);
   if (error) throw error;
 }; 

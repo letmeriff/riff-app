@@ -39,6 +39,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       .from('chat_nodes')
       .insert({
         user_id: userId,
+        owner_id: userId,
         title: `${originNode.title} (Branched)`,
         model: originNode.model,
         flavor: originNode.flavor,

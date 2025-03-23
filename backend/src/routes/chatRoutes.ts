@@ -1,65 +1,109 @@
 import express, { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
-import { ChatService } from '../services/chatService';
-import { getUserModels } from '../services/modelService';
 import { supabase } from '../config/supabase';
+import { generateAIResponse } from '../services/chatService';
 
 const router = express.Router();
 
+/**
+ * Send a message to a chat node and get an AI response
+ * POST /api/chat/:nodeId
+ */
 router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
   try {
+    // Parse the nodeId from URL parameters
+    const nodeId = parseInt(req.params.nodeId);
+    if (isNaN(nodeId)) {
+      return res.status(400).json({ error: 'Invalid node ID' });
+    }
+
+    // Ensure user is authenticated
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ error: 'User not authenticated' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
-    
-    const nodeId = parseInt(req.params.nodeId);
+
+    // Get the message content from request body
     const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'message is required' });
+    if (!message || typeof message !== 'string' || message.trim() === '') {
+      return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Fetch the node's model and flavor
+    // Fetch the node to verify ownership
     const { data: node, error: nodeError } = await supabase
       .from('chat_nodes')
-      .select('model, flavor')
+      .select('owner_id, model, flavor')
       .eq('node_id', nodeId)
       .single();
-
+    
     if (nodeError) {
-      return res.status(404).json({ error: 'Node not found' });
+      return res.status(404).json({ error: 'Chat node not found' });
+    }
+    
+    // Check if the user is the owner
+    if (node.owner_id !== userId) {
+      return res.status(403).json({ error: 'Only the node owner can send messages' });
     }
 
-    if (!node || !node.model) {
-      return res.status(400).json({ error: 'Node is missing model configuration' });
+    // Insert the user's message into the database
+    const { error: userMessageError } = await supabase
+      .from('chat_messages')
+      .insert({
+        node_id: nodeId,
+        content: message,
+        is_user: true,
+        timestamp: new Date().toISOString(),
+      });
+
+    if (userMessageError) {
+      throw userMessageError;
     }
 
-    const modelName = node.model;
-    const flavorName = node.flavor;
+    // Get recent conversation history for context
+    const { data: chatHistory, error: historyError } = await supabase
+      .from('chat_messages')
+      .select('content, is_user')
+      .eq('node_id', nodeId)
+      .order('timestamp', { ascending: true });
 
-    // Fetch the user's model configuration
-    const userModels = await getUserModels(userId);
-    const modelConfig = userModels.find((m) => m.model_name === modelName);
-    if (!modelConfig) {
-      return res.status(404).json({ error: `Model ${modelName} not found for user` });
+    if (historyError) {
+      throw historyError;
     }
 
-    // Initialize the ChatService with the model and flavor
-    const chatService = new ChatService(
-      nodeId, 
-      userId, 
-      modelName, 
-      modelConfig.api_key,
-      flavorName
+    // Generate the AI response (includes API call to LLM)
+    const aiModel = node.model || 'default';
+    const flavor = node.flavor || 'default';
+    const aiResponse = await generateAIResponse(
+      message,
+      chatHistory || [],
+      aiModel,
+      flavor
     );
 
-    // Process the message
-    const aiResponse = await chatService.processMessage(message);
-    res.json({ response: aiResponse });
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-    res.status(500).json({ error: errorMessage });
+    // Insert AI response to database
+    const { error: aiMessageError } = await supabase
+      .from('chat_messages')
+      .insert({
+        node_id: nodeId,
+        content: aiResponse,
+        is_user: false,
+        timestamp: new Date().toISOString(),
+      });
+
+    if (aiMessageError) {
+      throw aiMessageError;
+    }
+
+    // Send successful response
+    res.json({
+      success: true,
+      response: aiResponse,
+    });
+  } catch (error) {
+    console.error('Error in chat API:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'An unknown error occurred',
+    });
   }
 });
 

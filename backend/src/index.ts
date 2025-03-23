@@ -15,12 +15,12 @@ import branchRoutes from './routes/branchRoutes';
 import presenceRoutes from './routes/presenceRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
-import { acquireWritePermission, releaseWritePermission, getWritePermission } from './services/writePermissionService';
 
 // Define interfaces for the payload structures
 interface ChatNode {
   node_id: number;
   user_id: string;
+  owner_id: string;
   title: string;
   model: string;
   flavor: string;
@@ -53,7 +53,7 @@ const httpServer = createServer(app);
 const port = process.env.PORT || 3001;
 
 // Set up Socket.IO with CORS
-const io = new Server(httpServer, {
+export const io = new Server(httpServer, {
   cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
@@ -166,15 +166,24 @@ io.on('connection', (socket: Socket) => {
       // Broadcast updated presence to all users in the node room
       io.to(nodeRoom).emit('presence-update', { nodeId, presence });
 
-      // Request write permission
-      const { hasPermission, positionInQueue } = await acquireWritePermission(nodeId, userId, email);
+      // Check if user is the owner
+      const { data: node, error } = await supabase
+        .from('chat_nodes')
+        .select('owner_id')
+        .eq('node_id', nodeId)
+        .single();
       
-      // Send permission status to the user
-      socket.emit('write-permission-update', { nodeId, hasPermission, positionInQueue });
-
-      // Broadcast updated write permission to all users in the node room
-      const writePermission = await getWritePermission(nodeId);
-      io.to(nodeRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
+      if (error) {
+        console.error('Error fetching node owner:', error);
+        return;
+      }
+      
+      // Emit ownership info to the client
+      socket.emit('ownership-update', { 
+        nodeId, 
+        isOwner: node.owner_id === userId,
+        ownerId: node.owner_id
+      });
     } catch (error) {
       console.error('Error handling join-node event:', error);
     }
@@ -198,19 +207,12 @@ io.on('connection', (socket: Socket) => {
 
       // Remove the user from the node's presence
       await removeUserPresence(nodeId, userId);
-      
-      // Release write permission
-      await releaseWritePermission(nodeId, userId);
 
       // Get updated presence
       const presence = await getUserPresence(nodeId);
 
       // Broadcast updated presence to the node room
       io.to(nodeRoom).emit('presence-update', { nodeId, presence });
-
-      // Broadcast updated write permission to the node room
-      const writePermission = await getWritePermission(nodeId);
-      io.to(nodeRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
     } catch (error) {
       console.error('Error handling leave-node event:', error);
     }
@@ -237,6 +239,67 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
+  // Handle ownership transfer
+  socket.on('transfer-ownership', async ({ nodeId, newOwnerId }) => {
+    try {
+      const userId = socket.data.user.id;
+      
+      // Verify the current user is the owner
+      const { data: node, error } = await supabase
+        .from('chat_nodes')
+        .select('owner_id')
+        .eq('node_id', nodeId)
+        .single();
+      
+      if (error) {
+        console.error('Error fetching node owner:', error);
+        socket.emit('transfer-ownership-error', { 
+          nodeId, 
+          error: 'Failed to fetch node information'
+        });
+        return;
+      }
+      
+      if (node.owner_id !== userId) {
+        socket.emit('transfer-ownership-error', { 
+          nodeId, 
+          error: 'Only the current owner can transfer ownership'
+        });
+        return;
+      }
+      
+      // Transfer ownership
+      const { error: updateError } = await supabase
+        .from('chat_nodes')
+        .update({ owner_id: newOwnerId })
+        .eq('node_id', nodeId);
+      
+      if (updateError) {
+        console.error('Error updating node owner:', updateError);
+        socket.emit('transfer-ownership-error', { 
+          nodeId, 
+          error: 'Failed to transfer ownership'
+        });
+        return;
+      }
+      
+      // Broadcast ownership change to all users in the node
+      const nodeRoom = `node:${nodeId}`;
+      io.to(nodeRoom).emit('ownership-update', { 
+        nodeId, 
+        ownerId: newOwnerId
+      });
+      
+      console.log(`Ownership of node ${nodeId} transferred from ${userId} to ${newOwnerId}`);
+    } catch (error) {
+      console.error('Error handling ownership transfer:', error);
+      socket.emit('transfer-ownership-error', { 
+        nodeId, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.data.user.id}`);
     
@@ -248,47 +311,32 @@ io.on('connection', (socket: Socket) => {
         // Remove the user from the node's presence
         await removeUserPresence(nodeId, userId);
         
-        // Release write permission
-        await releaseWritePermission(nodeId, userId);
-
         // Get updated presence
         const presence = await getUserPresence(nodeId);
-
+        
         // Broadcast updated presence to the node room
         const nodeRoom = `node:${nodeId}`;
         io.to(nodeRoom).emit('presence-update', { nodeId, presence });
-
-        // Broadcast updated write permission to the node room
-        const writePermission = await getWritePermission(nodeId);
-        io.to(nodeRoom).emit('write-permission-broadcast', { nodeId, permission: writePermission });
       } catch (error) {
-        console.error(`Error cleaning up node ${nodeId} on disconnect:`, error);
+        console.error(`Error cleaning up node ${nodeId}:`, error);
       }
     }
   });
 });
 
-// Subscribe to Supabase changes and broadcast them via Socket.IO
+// Set up Supabase real-time subscriptions
 supabase
   .channel('chat_nodes')
   .on(
     'postgres_changes',
     { event: '*', schema: 'public', table: 'chat_nodes' },
     (payload) => {
-      // Cast the payload to our typed interface
-      const typedPayload = payload as unknown as ChatNodePayload;
-      
-      // Get the node ID
-      const nodeId = typedPayload.new?.node_id || typedPayload.old?.node_id;
-      
+      const nodeId = payload.new?.node_id || payload.old?.node_id;
       if (nodeId) {
-        // Broadcast to the node-specific room
         const nodeRoom = `node:${nodeId}`;
-        io.to(nodeRoom).emit('node-update', typedPayload);
+        io.to(nodeRoom).emit('node-update', payload);
       }
-      
-      // Also broadcast to all users to ensure newly created nodes are visible to everyone
-      io.emit('node-update', typedPayload);
+      io.emit('node-update', payload);
     }
   )
   .subscribe();
@@ -298,22 +346,13 @@ supabase
   .on(
     'postgres_changes',
     { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-    async (payload) => {
+    async (payload: any) => {
       try {
-        // Cast the payload to our typed interface
-        const typedPayload = payload as unknown as ChatMessagePayload;
-        
-        if (!typedPayload.new?.node_id) {
-          console.error('Missing node_id in new message payload');
-          return;
+        if (payload.new && typeof payload.new.node_id === 'number') {
+          const nodeId = payload.new.node_id;
+          const nodeRoom = `node:${nodeId}`;
+          io.to(nodeRoom).emit('message-update', payload);
         }
-        
-        // Get the node ID
-        const nodeId = typedPayload.new.node_id;
-        
-        // Broadcast to the node-specific room
-        const nodeRoom = `node:${nodeId}`;
-        io.to(nodeRoom).emit('message-update', typedPayload);
       } catch (error) {
         console.error('Error handling message change:', error);
       }
@@ -321,15 +360,11 @@ supabase
   )
   .subscribe();
 
-// Schedule the summarization job to run every 5 minutes
-const FIVE_MINUTES = 5 * 60 * 1000;
-setInterval(processPendingSummaries, FIVE_MINUTES);
+// Set up periodic summary job
+setInterval(processPendingSummaries, 5 * 60 * 1000);
+processPendingSummaries();
 
-// Run the job once on startup
-processPendingSummaries().catch(err => 
-  console.error('Error running initial summarization job:', err)
-);
-
+// Start the server
 httpServer.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });

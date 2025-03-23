@@ -190,4 +190,38 @@ export class ChatService {
 
     return aiMessage;
   }
-} 
+}
+
+/**
+ * Generate an AI response based on chat history
+ * Simplified function that simulates AI processing for this demo
+ */
+export const generateAIResponse = async (
+  userMessage: string,
+  chatHistory: Array<{ content: string; is_user: boolean }>,
+  modelName: string,
+  flavorName?: string
+): Promise<string> => {
+  try {
+    // In a real implementation, this would use the ChatService class above
+    // For this demo, we'll just simulate a response
+    
+    // Simple response simulation
+    const responses = [
+      `I understand what you're saying about "${userMessage.substring(0, 30)}...". Let me respond thoughtfully.`,
+      `That's an interesting point about "${userMessage.substring(0, 20)}...". Here's what I think...`,
+      `Thanks for sharing that. I'd like to add that ${modelName} models are particularly good at this kind of task.`,
+      `I'm processing your request using the ${flavorName || 'default'} approach. Here's what I found...`,
+      `Based on our conversation history, I'd respond that this relates to previous topics we've discussed.`
+    ];
+    
+    // Simulate some processing time
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Return a random response
+    return responses[Math.floor(Math.random() * responses.length)];
+  } catch (error) {
+    console.error('Error generating AI response:', error);
+    return 'I apologize, but I encountered an error processing your request.';
+  }
+}; 

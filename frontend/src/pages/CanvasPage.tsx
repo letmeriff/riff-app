@@ -212,10 +212,30 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         );
       });
       
+      socket.on('node-state-update', (payload) => {
+        console.log('Socket: Node state update received:', payload);
+        setNodes((nds) =>
+          nds.map((node) =>
+            node.id === payload.nodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    pulledConnections: payload.pulledConnections,
+                    pulledByConnections: payload.pulledByConnections,
+                    attachments: payload.attachments,
+                  },
+                }
+              : node
+          )
+        );
+      });
+      
       // Return cleanup function
       return () => {
         socket.off('node-update');
         socket.off('presence-update');
+        socket.off('node-state-update');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available

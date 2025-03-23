@@ -18,11 +18,6 @@ interface UserPresence {
   lastActive: string;
 }
 
-interface WritePermission {
-  currentWriter: { userId: string; email: string } | null;
-  queue: { userId: string; email: string; joinedAt: string }[];
-}
-
 interface ChatUIProps {
   nodeId: string | null; // Selected node's ID
   nodeTitle: string | null; // Selected node's title
@@ -40,21 +35,20 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [pullMode, setPullMode] = useState<'full' | 'summary'>('full');
   const [branchLoading, setBranchLoading] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const [hasWritePermission, setHasWritePermission] = useState(false);
-  const [positionInQueue, setPositionInQueue] = useState(0);
+  const [isOwner, setIsOwner] = useState(false);
+  const [presentUsers, setPresentUsers] = useState<UserPresence[]>([]);
+  const [selectedNewOwner, setSelectedNewOwner] = useState<string>('');
+  const [isTransferring, setIsTransferring] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
-    if (!userId) return;
-
     const fetchNodes = async () => {
       try {
         const { data, error } = await supabase
           .from('chat_nodes')
-          .select('*')
-          .eq('user_id', userId);
+          .select('*');
         
         if (error) throw error;
         setNodes(data || []);
@@ -64,7 +58,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     };
 
     fetchNodes();
-  }, [userId]);
+  }, []);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -76,8 +70,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     if (!nodeId) {
       setMessages([]);
       setTypingUsers([]);
-      setHasWritePermission(false);
-      setPositionInQueue(0);
+      setIsOwner(false);
+      setPresentUsers([]);
       return;
     }
 
@@ -96,7 +90,23 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       }
     };
 
+    const fetchNodeDetails = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('chat_nodes')
+          .select('owner_id')
+          .eq('node_id', parseInt(nodeId))
+          .single();
+        
+        if (error) throw error;
+        setIsOwner(data.owner_id === userId);
+      } catch (error) {
+        console.error('Error fetching node details:', error);
+      }
+    };
+
     fetchMessages();
+    fetchNodeDetails();
 
     // Set up real-time updates for messages
     if (socket) {
@@ -117,40 +127,31 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             .map((p: UserPresence) => p.email);
           
           setTypingUsers(typing);
+          setPresentUsers(payload.presence);
         }
       });
 
-      // Listen for write permission updates
-      socket.on('write-permission-update', (payload) => {
-        console.log('Socket: Write permission update received:', payload);
+      // Listen for ownership updates
+      socket.on('ownership-update', (payload) => {
+        console.log('Socket: Ownership update received:', payload);
         if (payload.nodeId.toString() === nodeId) {
-          setHasWritePermission(payload.hasPermission);
-          setPositionInQueue(payload.positionInQueue);
+          setIsOwner(payload.ownerId === userId);
         }
       });
 
-      // Listen for write permission broadcasts (when other users join/leave)
-      socket.on('write-permission-broadcast', (payload) => {
-        console.log('Socket: Write permission broadcast received:', payload);
+      socket.on('transfer-ownership-error', (payload) => {
         if (payload.nodeId.toString() === nodeId) {
-          const permission = payload.permission as WritePermission;
-          
-          // Update local state based on the broadcast
-          const hasPermission = permission.currentWriter?.userId === userId;
-          const position = permission.currentWriter?.userId === userId 
-            ? 0 
-            : permission.queue.findIndex(entry => entry.userId === userId) + 1;
-          
-          setHasWritePermission(hasPermission);
-          setPositionInQueue(position === -1 ? 0 : position); // Handle case where user isn't in queue
+          console.error('Ownership transfer error:', payload.error);
+          alert(`Failed to transfer ownership: ${payload.error}`);
+          setIsTransferring(false);
         }
       });
 
       return () => {
         socket.off('message-update');
         socket.off('presence-update');
-        socket.off('write-permission-update');
-        socket.off('write-permission-broadcast');
+        socket.off('ownership-update');
+        socket.off('transfer-ownership-error');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
@@ -180,7 +181,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
 
-    if (!socket || !nodeId || !hasWritePermission) return;
+    if (!socket || !nodeId || !isOwner) return;
 
     // Emit typing event
     socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: true });
@@ -200,7 +201,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !nodeId || !hasWritePermission) return;
+    if (!input.trim() || !nodeId || !isOwner) return;
 
     setLoading(true);
     try {
@@ -255,8 +256,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         throw new Error('Authentication token not found. Please log in again.');
       }
       
+      // For summary mode, first get a summary of the selected node
       if (pullMode === 'summary') {
-        // First, get summary of the selected node's chat history
         const summaryResponse = await fetch(
           `http://localhost:3001/api/summarize/${selectedPullNode}`,
           {
@@ -266,20 +267,20 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             },
           }
         );
-
+        
         if (!summaryResponse.ok) {
           const errorData = await summaryResponse.json();
-          throw new Error(errorData.error || 'Failed to get summary');
+          throw new Error(errorData.error || 'Failed to generate summary');
         }
-
+        
         const { summary } = await summaryResponse.json();
         
-        // Add the summary as a placeholder message in the current node
+        // Add summary message directly
         const { error: insertError } = await supabase
           .from('chat_messages')
           .insert({
             node_id: parseInt(nodeId),
-            content: `Summary pulled from Node ${selectedPullNode}:\n${summary}`,
+            content: `Summary pulled from Node ${selectedPullNode}:\n\n${summary}`,
             is_user: false,
             timestamp: new Date().toISOString(),
           });
@@ -287,8 +288,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         if (insertError) throw insertError;
       }
       
-      // Perform the context pull (will update the relationship in database)
-      const response = await fetch('http://localhost:3001/api/context/pull', {
+      // Always establish the pull relationship
+      const pullResponse = await fetch('http://localhost:3001/api/context/pull', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -297,23 +298,20 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         body: JSON.stringify({
           targetNodeId: parseInt(nodeId),
           originNodeId: parseInt(selectedPullNode),
-          mode: pullMode // Add mode parameter (backend can use this if needed)
+          mode: pullMode
         }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
+      
+      if (!pullResponse.ok) {
+        const errorData = await pullResponse.json();
         throw new Error(errorData.error || 'Failed to pull context');
       }
-
-      // If we're pulling the full history, the backend will have inserted a message
-      // No need to do anything else, as our subscription will update the UI
       
-      // Reset the selected pull node
+      // Reset the pull node selection
       setSelectedPullNode('');
     } catch (error) {
       console.error('Error pulling context:', error);
-      alert(error instanceof Error ? error.message : 'An error occurred pulling context');
+      alert(error instanceof Error ? error.message : 'An error occurred while pulling context');
     } finally {
       setPullLoading(false);
     }
@@ -340,33 +338,44 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         },
         body: JSON.stringify({ originNodeId: parseInt(nodeId) }),
       });
-
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to branch node');
       }
-
+      
       const { newNodeId } = await response.json();
       
-      // Automatically switch to the new branched node
-      window.dispatchEvent(new CustomEvent('select-node', { 
-        detail: { nodeId: newNodeId.toString() } 
-      }));
-      
-      // Refresh the nodes list to include the new branched node
-      const { data, error } = await supabase
-        .from('chat_nodes')
-        .select('*')
-        .eq('user_id', userId);
-      
-      if (error) throw error;
-      setNodes(data || []);
-      
+      // Dispatch a custom event to notify other components that node selection should change
+      window.dispatchEvent(
+        new CustomEvent('select-node', { 
+          detail: { nodeId: newNodeId.toString() } 
+        })
+      );
     } catch (error) {
       console.error('Error branching node:', error);
       alert(error instanceof Error ? error.message : 'An error occurred while branching the node');
     } finally {
       setBranchLoading(false);
+    }
+  };
+
+  const handleTransferOwnership = () => {
+    if (!nodeId || !isOwner || !selectedNewOwner || !socket) return;
+    
+    setIsTransferring(true);
+    try {
+      socket.emit('transfer-ownership', {
+        nodeId: parseInt(nodeId),
+        newOwnerId: selectedNewOwner
+      });
+      
+      // Reset the selection
+      setSelectedNewOwner('');
+    } catch (error) {
+      console.error('Error initiating ownership transfer:', error);
+      alert(error instanceof Error ? error.message : 'An error occurred while transferring ownership');
+      setIsTransferring(false);
     }
   };
 
@@ -380,7 +389,6 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         padding: '10px',
       }}
     >
-      {/* Header Bar */}
       <div
         style={{
           padding: '10px',
@@ -397,23 +405,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           {nodeId ? `Chat for ${nodeTitle} (ID: ${nodeId})` : 'Select a node to start chatting'}
         </div>
         {nodeId && (
-          <div style={{ 
-            fontSize: '12px', 
-            color: hasWritePermission ? '#4CAF50' : '#FF5722',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            background: hasWritePermission ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 87, 34, 0.1)'
-          }}>
-            {hasWritePermission 
-              ? 'You have write permission' 
-              : positionInQueue > 0 
-                ? `Waiting in queue (position: ${positionInQueue})` 
-                : 'Read-only mode'}
+          <div style={{ fontSize: '14px', color: '#777' }}>
+            {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
           </div>
         )}
       </div>
 
-      {/* Message Display Area */}
       <div
         style={{
           flex: 1,
@@ -434,7 +431,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               padding: '8px 12px',
               borderRadius: '10px',
               maxWidth: '70%',
-              wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
             }}
           >
             {message.content}
@@ -444,37 +441,18 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           </div>
         ))}
         {loading && (
-          <div style={{ alignSelf: 'flex-start', color: '#777', padding: '8px' }}>
+          <div style={{ alignSelf: 'flex-start', color: '#777' }}>
             AI is typing...
           </div>
         )}
         {typingUsers.length > 0 && (
-          <div style={{ alignSelf: 'flex-start', color: '#777', padding: '8px' }}>
-            {typingUsers.length === 1 
-              ? `${typingUsers[0]} is typing...` 
-              : `${typingUsers.join(', ')} are typing...`}
-          </div>
-        )}
-        {!hasWritePermission && positionInQueue > 0 && (
-          <div style={{ 
-            alignSelf: 'center', 
-            color: '#FF5722', 
-            padding: '12px',
-            background: 'rgba(255, 87, 34, 0.05)',
-            borderRadius: '8px',
-            marginTop: '8px'
-          }}>
-            <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Waiting for write permission</div>
-            <div>Your position in queue: {positionInQueue}</div>
-            <div style={{ marginTop: '8px', fontSize: '12px' }}>
-              Tip: You can create your own parallel conversation by clicking the "Branch" button above.
-            </div>
+          <div style={{ alignSelf: 'flex-start', color: '#777' }}>
+            {typingUsers.join(', ')} {typingUsers.length > 1 ? 'are' : 'is'} typing...
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area and Buttons */}
       <div
         style={{
           padding: '10px',
@@ -485,21 +463,16 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           gap: '10px',
         }}
       >
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <button disabled style={{ padding: '5px 10px', background: '#ddd' }}>
             Attach
           </button>
-          <div style={{ display: 'flex', gap: '5px', flex: 1 }}>
+          
+          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
             <select
               value={selectedPullNode}
               onChange={(e) => setSelectedPullNode(e.target.value)}
-              style={{ 
-                padding: '5px',
-                flex: 1,
-                borderRadius: '4px',
-                border: '1px solid #ccc'
-              }}
+              style={{ padding: '5px' }}
               disabled={!nodeId || pullLoading}
             >
               <option value="">Select a node to pull from</option>
@@ -514,13 +487,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             <select
               value={pullMode}
               onChange={(e) => setPullMode(e.target.value as 'full' | 'summary')}
-              style={{
-                padding: '5px',
-                width: '120px',
-                borderRadius: '4px',
-                border: '1px solid #ccc'
-              }}
-              disabled={!nodeId || pullLoading}
+              style={{ padding: '5px' }}
+              disabled={!nodeId || pullLoading || !selectedPullNode}
             >
               <option value="full">Full History</option>
               <option value="summary">Summary</option>
@@ -530,9 +498,9 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               style={{
                 padding: '5px 10px',
                 background: selectedPullNode && !pullLoading ? '#007bff' : '#ddd',
-                color: selectedPullNode && !pullLoading ? '#fff' : '#555',
+                color: selectedPullNode && !pullLoading ? '#fff' : '#000',
                 border: 'none',
-                borderRadius: '4px',
+                borderRadius: '5px',
                 cursor: selectedPullNode && !pullLoading ? 'pointer' : 'not-allowed',
               }}
               disabled={!selectedPullNode || pullLoading}
@@ -540,56 +508,90 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               {pullLoading ? 'Pulling...' : 'Pull'}
             </button>
           </div>
+          
           <button
             onClick={handleBranch}
             style={{
               padding: '5px 10px',
               background: nodeId && !branchLoading ? '#007bff' : '#ddd',
-              color: nodeId && !branchLoading ? '#fff' : '#555',
+              color: nodeId && !branchLoading ? '#fff' : '#000',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '5px',
               cursor: nodeId && !branchLoading ? 'pointer' : 'not-allowed',
             }}
             disabled={!nodeId || branchLoading}
           >
             {branchLoading ? 'Branching...' : 'Branch'}
           </button>
+          
+          {isOwner && presentUsers.length > 1 && (
+            <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+              <select
+                value={selectedNewOwner}
+                onChange={(e) => setSelectedNewOwner(e.target.value)}
+                style={{ padding: '5px' }}
+                disabled={isTransferring}
+              >
+                <option value="">Transfer ownership to...</option>
+                {presentUsers
+                  .filter((user) => user.userId !== userId)
+                  .map((user) => (
+                    <option key={user.userId} value={user.userId}>
+                      {user.email}
+                    </option>
+                  ))}
+              </select>
+              <button
+                onClick={handleTransferOwnership}
+                style={{
+                  padding: '5px 10px',
+                  background: selectedNewOwner && !isTransferring ? '#007bff' : '#ddd',
+                  color: selectedNewOwner && !isTransferring ? '#fff' : '#000',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: selectedNewOwner && !isTransferring ? 'pointer' : 'not-allowed',
+                }}
+                disabled={!selectedNewOwner || isTransferring}
+              >
+                {isTransferring ? 'Transferring...' : 'Transfer'}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Text Input */}
         <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '10px' }}>
           <input
             type="text"
             value={input}
             onChange={handleInputChange}
-            placeholder={hasWritePermission 
-              ? "Type a message..." 
-              : positionInQueue > 0
-                ? "Waiting for write permission..."
-                : "Read-only mode - branch to create your own chat"
+            placeholder={
+              nodeId 
+                ? isOwner 
+                  ? 'Type a message...' 
+                  : 'Only the node owner can write messages'
+                : 'Select a node to start chatting'
             }
             style={{
               flex: 1,
               padding: '8px',
               border: '1px solid #ddd',
               borderRadius: '5px',
-              backgroundColor: hasWritePermission ? '#fff' : '#f5f5f5'
             }}
-            disabled={!nodeId || loading || !hasWritePermission}
+            disabled={!nodeId || loading || !isOwner}
           />
           <button
             type="submit"
             style={{
               padding: '8px 16px',
-              background: nodeId && !loading && hasWritePermission ? '#007bff' : '#ddd',
-              color: nodeId && !loading && hasWritePermission ? '#fff' : '#555',
+              background: nodeId && !loading && isOwner ? '#007bff' : '#ddd',
+              color: nodeId && !loading && isOwner ? '#fff' : '#000',
               border: 'none',
               borderRadius: '5px',
-              cursor: nodeId && !loading && hasWritePermission ? 'pointer' : 'not-allowed',
+              cursor: nodeId && !loading && isOwner ? 'pointer' : 'not-allowed',
             }}
-            disabled={!nodeId || loading || !hasWritePermission}
+            disabled={!nodeId || loading || !isOwner}
           >
-            Send
+            {loading ? 'Sending...' : 'Send'}
           </button>
         </form>
       </div>
