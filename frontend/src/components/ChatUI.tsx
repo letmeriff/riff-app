@@ -77,13 +77,18 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
     const fetchMessages = async () => {
       try {
+        console.log(`Fetching messages for node ${nodeId}`);
         const { data, error } = await supabase
           .from('chat_messages')
           .select('*')
           .eq('node_id', parseInt(nodeId))
           .order('timestamp', { ascending: true });
         
-        if (error) throw error;
+        if (error) {
+          console.error('Error fetching messages:', error);
+          throw error;
+        }
+        console.log(`Fetched ${data?.length || 0} messages for node ${nodeId}`);
         setMessages(data || []);
       } catch (error) {
         console.error('Error fetching messages:', error);
@@ -92,14 +97,20 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
     const fetchNodeDetails = async () => {
       try {
+        console.log(`Fetching node details for node ${nodeId}`);
         const { data, error } = await supabase
           .from('chat_nodes')
           .select('owner_id')
           .eq('node_id', parseInt(nodeId))
           .single();
         
-        if (error) throw error;
-        setIsOwner(data.owner_id === userId);
+        if (error) {
+          console.error('Error fetching node details:', error);
+          throw error;
+        }
+        const isOwnerValue = data.owner_id === userId;
+        console.log(`User ${userId} is ${isOwnerValue ? '' : 'not '}the owner of node ${nodeId}`);
+        setIsOwner(isOwnerValue);
       } catch (error) {
         console.error('Error fetching node details:', error);
       }
@@ -113,8 +124,19 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       // Use Socket.IO for real-time updates
       socket.on('message-update', (payload) => {
         console.log('Socket: Message update received:', payload);
+        console.log('Current nodeId:', nodeId, 'Payload node_id:', payload.new?.node_id);
         if (payload.new && payload.new.node_id === parseInt(nodeId)) {
-          setMessages((prev) => [...prev, payload.new as ChatMessage]);
+          setMessages((prev) => {
+            // Check if this message is already in the list to avoid duplicates
+            if (prev.some((msg) => msg.message_id === payload.new.message_id)) {
+              console.log('Message already exists in state, not adding again');
+              return prev;
+            }
+            console.log('Adding new message to state');
+            return [...prev, payload.new as ChatMessage];
+          });
+        } else {
+          console.log('Message is for a different node, ignoring');
         }
       });
 
@@ -419,6 +441,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           display: 'flex',
           flexDirection: 'column',
           gap: '10px',
+          maxHeight: 'calc(100vh - 220px)', // Fixed height with space for header and controls
         }}
       >
         {messages.map((message) => (

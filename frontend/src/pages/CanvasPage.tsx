@@ -19,7 +19,7 @@ import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
-import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, deleteNode } from '../services/nodeService';
+import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, deleteNode, updateNodePosition } from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
 
@@ -119,11 +119,17 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           } catch (error) {
             console.error('Error fetching user presence:', error);
           }
+
+          // Use stored positions or default to random if not available
+          const position = {
+            x: chatNode.position_x !== undefined ? chatNode.position_x : Math.random() * 500,
+            y: chatNode.position_y !== undefined ? chatNode.position_y : Math.random() * 500
+          };
           
           return {
             id: chatNode.node_id.toString(),
             type: 'chatNode',
-            position: { x: Math.random() * 500, y: Math.random() * 500 },
+            position: position,
             data: {
               label: chatNode.title,
               nodeId: chatNode.node_id,
@@ -138,10 +144,32 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         })
       );
       setNodes(reactFlowNodes);
+
+      // Create edges based on context pulls
+      const { data: contextPulls, error } = await supabase
+        .from('context_pulls')
+        .select('target_node_id, origin_node_id');
+      
+      if (error) throw error;
+      
+      const newEdges: Edge[] = (contextPulls || []).map((pull, index) => ({
+        id: `edge-${pull.origin_node_id}-${pull.target_node_id}`,
+        source: pull.origin_node_id.toString(),
+        target: pull.target_node_id.toString(),
+        type: 'straight',
+        animated: true,
+        style: { 
+          strokeWidth: 2, 
+          stroke: '#555', 
+          strokeDasharray: '5, 5' 
+        },
+      }));
+      
+      setEdges(newEdges);
     } catch (error) {
       console.error('Error loading nodes with connections:', error);
     }
-  }, [user, setNodes, checkForUpdates]);
+  }, [user, setNodes, checkForUpdates, setEdges]);
 
   // Load nodes on mount and set up socket listeners
   useEffect(() => {
@@ -164,10 +192,16 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             // Ensure payload.new is defined
             if (!payload.new) return nds;
             
+            // Use stored positions or default to random if not available
+            const position = {
+              x: payload.new.position_x !== undefined ? payload.new.position_x : Math.random() * 500,
+              y: payload.new.position_y !== undefined ? payload.new.position_y : Math.random() * 500
+            };
+            
             const newNode: Node = {
               id: payload.new.node_id.toString(),
               type: 'chatNode',
-              position: { x: Math.random() * 500, y: Math.random() * 500 },
+              position: position,
               data: {
                 label: payload.new.title,
                 nodeId: payload.new.node_id,
@@ -188,6 +222,29 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             onNodeSelect(null, null);
             setSelectedNodeId(null);
           }
+        } else if (payload.eventType === 'UPDATE' && payload.new) {
+          // Update node with new data including position
+          setNodes((nds) => nds.map(node => {
+            if (node.id === payload.new!.node_id.toString()) {
+              // Update the node with new data
+              const position = {
+                x: payload.new!.position_x !== undefined ? payload.new!.position_x : node.position.x,
+                y: payload.new!.position_y !== undefined ? payload.new!.position_y : node.position.y
+              };
+              
+              return {
+                ...node,
+                position: position,
+                data: {
+                  ...node.data,
+                  label: payload.new!.title,
+                  model: payload.new!.model,
+                  flavor: payload.new!.flavor
+                }
+              };
+            }
+            return node;
+          }));
         } else {
           // For other events, reload all nodes
           loadNodesWithConnections();
@@ -212,23 +269,54 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         );
       });
       
-      socket.on('node-state-update', (payload) => {
+      socket.on('node-state-update', async (payload) => {
         console.log('Socket: Node state update received:', payload);
+        console.log('Current nodes:', nodes.map(n => n.id));
+        console.log('Looking for node:', payload.nodeId);
+        
         setNodes((nds) =>
-          nds.map((node) =>
-            node.id === payload.nodeId
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    pulledConnections: payload.pulledConnections,
-                    pulledByConnections: payload.pulledByConnections,
-                    attachments: payload.attachments,
-                  },
-                }
-              : node
-          )
+          nds.map((node) => {
+            if (node.id === payload.nodeId) {
+              console.log('Updating node state for node:', node.id);
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  pulledConnections: payload.pulledConnections,
+                  pulledByConnections: payload.pulledByConnections,
+                  attachments: payload.attachments,
+                },
+              };
+            }
+            return node;
+          })
         );
+        
+        // Update edges based on the new context pulls
+        try {
+          const { data: contextPulls, error } = await supabase
+            .from('context_pulls')
+            .select('target_node_id, origin_node_id');
+          
+          if (error) throw error;
+          
+          const newEdges: Edge[] = (contextPulls || []).map((pull) => ({
+            id: `edge-${pull.origin_node_id}-${pull.target_node_id}`,
+            source: pull.origin_node_id.toString(),
+            target: pull.target_node_id.toString(),
+            type: 'straight',
+            animated: true,
+            style: { 
+              strokeWidth: 2, 
+              stroke: '#555', 
+              strokeDasharray: '5, 5' 
+            },
+          }));
+          
+          setEdges(newEdges);
+        } catch (error) {
+          console.error('Error updating edges:', error);
+        }
       });
       
       // Return cleanup function
@@ -296,7 +384,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       const newNode: Node = {
         id: newChatNode.node_id.toString(),
         type: 'chatNode',
-        position: { x: Math.random() * 500, y: Math.random() * 500 },
+        position: { x: newChatNode.position_x || Math.random() * 500, y: newChatNode.position_y || Math.random() * 500 },
         data: {
           label: newChatNode.title,
           nodeId: newChatNode.node_id,
@@ -358,6 +446,18 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         edges={edges}
         onNodesChange={(changes: NodeChange[]) => {
           onNodesChange(changes);
+
+          // Handle node position updates when nodes are moved
+          changes.forEach(async (change) => {
+            if (change.type === 'position' && change.position && change.dragging === false) {
+              try {
+                await updateNodePosition(parseInt(change.id), change.position);
+              } catch (error) {
+                console.error('Error updating node position:', error);
+              }
+            }
+          });
+
           const removeChanges = changes.filter(
             (change: NodeChange): change is NodeRemoveChange => change.type === 'remove'
           );

@@ -7,6 +7,8 @@ export interface ChatNode {
   owner_id: string;
   model?: string;
   flavor?: string;
+  position_x?: number;
+  position_y?: number;
   created_at: string;
 }
 
@@ -22,6 +24,9 @@ export const createNode = async (
   model?: string,
   flavor?: string
 ): Promise<ChatNode> => {
+  const initialPositionX = Math.random() * 500;
+  const initialPositionY = Math.random() * 500;
+
   const { data, error } = await supabase
     .from('chat_nodes')
     .insert({ 
@@ -29,7 +34,9 @@ export const createNode = async (
       owner_id: userId,
       title,
       model,
-      flavor
+      flavor,
+      position_x: initialPositionX,
+      position_y: initialPositionY
     })
     .select()
     .single();
@@ -47,6 +54,14 @@ export const fetchNodes = async (): Promise<ChatNode[]> => {
 
 export const deleteNode = async (nodeId: number): Promise<void> => {
   const { error } = await supabase.from('chat_nodes').delete().eq('node_id', nodeId);
+  if (error) throw error;
+};
+
+export const updateNodePosition = async (nodeId: number, position: { x: number; y: number }): Promise<void> => {
+  const { error } = await supabase
+    .from('chat_nodes')
+    .update({ position_x: position.x, position_y: position.y })
+    .eq('node_id', nodeId);
   if (error) throw error;
 };
 

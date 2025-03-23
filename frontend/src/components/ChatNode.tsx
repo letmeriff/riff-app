@@ -111,19 +111,21 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
             <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
               Pulls from:
             </div>
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
               {data.pulledConnections.map((conn) => (
                 <div
                   key={conn.nodeId}
                   style={{
-                    width: '20px',
-                    height: '10px',
+                    padding: '3px 5px',
                     background: '#FFD700',
                     position: 'relative',
                     cursor: 'help',
+                    borderRadius: '3px',
+                    fontSize: '10px',
                   }}
                   title={`Pulls from Node ${conn.nodeId}${conn.hasUpdates ? ' - Has new updates!' : ''}`}
                 >
+                  Node {conn.nodeId}
                   {conn.hasUpdates && (
                     <div
                       style={{
@@ -132,8 +134,8 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
                         borderRadius: '50%',
                         background: '#FF0000',
                         position: 'absolute',
-                        top: '-2px',
-                        right: '-2px',
+                        top: '3px',
+                        right: '3px',
                       }}
                       title="New updates available"
                     />
@@ -150,18 +152,22 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
             <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
               Pulled by:
             </div>
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '5px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
               {data.pulledByConnections.map((conn) => (
                 <div
                   key={conn.nodeId}
                   style={{
-                    width: '20px',
-                    height: '10px',
+                    padding: '3px 5px',
                     background: '#1E90FF',
                     cursor: 'help',
+                    borderRadius: '3px',
+                    fontSize: '10px',
+                    color: 'white',
                   }}
                   title={`Pulled by Node ${conn.nodeId}`}
-                />
+                >
+                  Node {conn.nodeId}
+                </div>
               ))}
             </div>
           </div>
