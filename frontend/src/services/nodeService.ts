@@ -35,7 +35,7 @@ export const createNode = async (
   return data;
 };
 
-export const fetchNodes = async (userId: string): Promise<ChatNode[]> => {
+export const fetchNodes = async (): Promise<ChatNode[]> => {
   const { data, error } = await supabase
     .from('chat_nodes')
     .select('*');

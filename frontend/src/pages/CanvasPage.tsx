@@ -70,7 +70,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     if (!user) return;
     
     try {
-      const chatNodes = await fetchNodes(user.id);
+      const chatNodes = await fetchNodes();
       const reactFlowNodes: Node[] = await Promise.all(
         chatNodes.map(async (chatNode) => {
           // Get nodes this node pulls from
