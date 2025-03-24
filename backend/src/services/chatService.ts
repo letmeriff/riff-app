@@ -38,6 +38,7 @@ export class ChatService {
     modelName: string, 
     apiKey: string, 
     flavorName?: string,
+    frameworkName?: string,
     messageAttachments?: { attachment_id: number; file_type: string; file_name: string }[]
   ) {
     this.nodeId = nodeId;
@@ -62,14 +63,14 @@ export class ChatService {
       throw new Error(`Unsupported model: ${modelName}`);
     }
 
-    // If a flavor is provided, fetch and set its system prompt
-    if (flavorName) {
-      this.fetchFlavorSystemPrompt(flavorName);
-    }
+    // Fetch system prompts from flavor and framework
+    this.fetchCombinedSystemPrompt(flavorName, frameworkName);
   }
 
   // Fetch the flavor's system prompt
-  private async fetchFlavorSystemPrompt(flavorName: string): Promise<void> {
+  private async fetchFlavorSystemPrompt(flavorName?: string): Promise<string | null> {
+    if (!flavorName) return null;
+    
     try {
       const { data, error } = await supabase
         .from('flavors')
@@ -79,12 +80,65 @@ export class ChatService {
       
       if (error) {
         console.error('Error fetching flavor system prompt:', error);
+        return null;
+      }
+      
+      return data?.system_prompt || null;
+    } catch (error) {
+      console.error('Error in fetchFlavorSystemPrompt:', error);
+      return null;
+    }
+  }
+
+  // Fetch the framework's system prompt
+  private async fetchFrameworkSystemPrompt(frameworkName?: string): Promise<string | null> {
+    if (!frameworkName) return null;
+    
+    try {
+      const { data, error } = await supabase
+        .from('frameworks')
+        .select('system_prompt')
+        .eq('name', frameworkName)
+        .single();
+      
+      if (error) {
+        console.error('Error fetching framework system prompt:', error);
+        return null;
+      }
+      
+      return data?.system_prompt || null;
+    } catch (error) {
+      console.error('Error in fetchFrameworkSystemPrompt:', error);
+      return null;
+    }
+  }
+
+  // Fetch and combine system prompts from flavor and framework
+  private async fetchCombinedSystemPrompt(flavorName?: string, frameworkName?: string): Promise<void> {
+    try {
+      const flavorPrompt = await this.fetchFlavorSystemPrompt(flavorName);
+      const frameworkPrompt = await this.fetchFrameworkSystemPrompt(frameworkName);
+      
+      if (!flavorPrompt && !frameworkPrompt) {
+        this.systemPrompt = null;
         return;
       }
       
-      this.systemPrompt = data?.system_prompt || null;
+      if (!flavorPrompt) {
+        this.systemPrompt = frameworkPrompt;
+        return;
+      }
+      
+      if (!frameworkPrompt) {
+        this.systemPrompt = flavorPrompt;
+        return;
+      }
+      
+      // Combine both prompts
+      this.systemPrompt = `${flavorPrompt}\n\nAdditionally, follow this framework:\n${frameworkPrompt}`;
     } catch (error) {
-      console.error('Error in fetchFlavorSystemPrompt:', error);
+      console.error('Error in fetchCombinedSystemPrompt:', error);
+      this.systemPrompt = null;
     }
   }
 

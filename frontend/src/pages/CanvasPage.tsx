@@ -211,6 +211,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
               nodeId: chatNode.node_id,
               model: chatNode.model,
               flavor: chatNode.flavor,
+              framework: chatNode.framework,
               users: userPresence,
               pulledConnections: pulledConnectionsWithUpdates,
               pulledByConnections: pulledByConnectionsData,
@@ -286,6 +287,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
                 nodeId: payload.new.node_id,
                 model: payload.new.model,
                 flavor: payload.new.flavor,
+                framework: payload.new.framework,
                 users: [],
                 pulledConnections: [],
                 pulledByConnections: [],
@@ -320,7 +322,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
                   ...node.data,
                   label: payload.new!.title,
                   model: payload.new!.model,
-                  flavor: payload.new!.flavor
+                  flavor: payload.new!.flavor,
+                  framework: payload.new!.framework
                 }
               };
             }
@@ -508,7 +511,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
                             ...node.data,
                             label: payload.new.title,
                             model: payload.new.model,
-                            flavor: payload.new.flavor
+                            flavor: payload.new.flavor,
+                            framework: payload.new.framework
                           }
                         };
                       }
@@ -566,11 +570,11 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     }
   }, [socket, selectedNodeId, user]);
 
-  const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
+  const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string, frameworkName: string) => {
     if (!user) return;
     try {
       // Create node in database
-      const newChatNode = await createNode(user.id, title, modelName, flavorName);
+      const newChatNode = await createNode(user.id, title, modelName, flavorName, frameworkName);
       
       // Ensure position values are valid numbers
       const position = { 
@@ -594,6 +598,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           nodeId: newChatNode.node_id,
           model: newChatNode.model,
           flavor: newChatNode.flavor,
+          framework: newChatNode.framework,
           users: [],
           pulledConnections: [],
           pulledByConnections: [],

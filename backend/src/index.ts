@@ -9,6 +9,7 @@ import { authMiddleware } from './middleware/auth';
 import modelRoutes from './routes/modelRoutes';
 import chatRoutes from './routes/chatRoutes';
 import flavorRoutes from './routes/flavorRoutes';
+import frameworkRoutes from './routes/frameworkRoutes';
 import contextRoutes from './routes/contextRoutes';
 import summarizationRoutes from './routes/summarizationRoutes';
 import branchRoutes from './routes/branchRoutes';
@@ -25,6 +26,7 @@ interface ChatNode {
   title: string;
   model: string;
   flavor: string;
+  framework?: string;
   created_at: string;
 }
 
@@ -128,6 +130,7 @@ app.get('/api/test-supabase', authMiddleware, async (req: Request, res: Response
 app.use('/api/models', modelRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/flavors', flavorRoutes);
+app.use('/api/frameworks', frameworkRoutes);
 app.use('/api/context', contextRoutes);
 app.use('/api/summarize', summarizationRoutes);
 app.use('/api/branch', branchRoutes);
