@@ -408,30 +408,29 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        background: '#f0f0f0',
-        padding: '10px',
+        width: '100%',
+        overflow: 'hidden'
       }}
     >
       <div
         style={{
           padding: '10px',
-          background: '#fff',
           borderBottom: '1px solid #ddd',
-          fontWeight: 'bold',
-          fontSize: '18px',
+          background: '#f8f9fa',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexShrink: 0
         }}
       >
         <div>
-          {nodeId ? `Chat for ${nodeTitle} (ID: ${nodeId})` : 'Select a node to start chatting'}
+          <h3 style={{ margin: '0 0 5px 0' }}>{nodeTitle || 'No node selected'}</h3>
+          {nodeId && (
+            <div style={{ fontSize: '14px', color: '#777' }}>
+              {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
+            </div>
+          )}
         </div>
-        {nodeId && (
-          <div style={{ fontSize: '14px', color: '#777' }}>
-            {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
-          </div>
-        )}
       </div>
 
       <div
@@ -442,6 +441,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           display: 'flex',
           flexDirection: 'column',
           gap: '10px',
+          minHeight: 0  // This is important for flex child to properly scroll
         }}
       >
         {messages.map((message) => (
@@ -484,6 +484,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           display: 'flex',
           flexDirection: 'column',
           gap: '10px',
+          flexShrink: 0
         }}
       >
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>

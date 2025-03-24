@@ -118,22 +118,37 @@ const AppContent: React.FC = () => {
 
   return (
     <SocketProvider token={session?.access_token || null}>
-      <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      <div style={{ 
+        display: 'flex', 
+        height: '100vh', 
+        width: '100vw', 
+        overflow: 'hidden',
+        position: 'fixed', 
+        top: 0,
+        left: 0
+      }}>
         {/* Canvas (61.8%) - Golden Ratio */}
-        <div style={{ width: '61.8%', height: '100%' }}>
+        <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
           <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
         </div>
 
         {/* Chat UI (38.2%) */}
-        <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <ChatUI 
               nodeId={selectedNodeId} 
               nodeTitle={selectedNodeTitle} 
               userId={user.id} 
             />
           </div>
-          <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ 
+            padding: '10px', 
+            background: '#fff', 
+            borderTop: '1px solid #ddd', 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            flexShrink: 0
+          }}>
             <ConnectionStatus />
             <div>
               <button 

@@ -15,6 +15,7 @@ import branchRoutes from './routes/branchRoutes';
 import presenceRoutes from './routes/presenceRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
+import { authenticateJwtMiddleware } from './middleware/auth';
 
 // Define interfaces for the payload structures
 interface ChatNode {
@@ -129,6 +130,67 @@ app.use('/api/context', contextRoutes);
 app.use('/api/summarize', summarizationRoutes);
 app.use('/api/branch', branchRoutes);
 app.use('/api/presence', presenceRoutes);
+
+// API endpoint for saving node position during page unload
+app.post('/api/save-node-position', authMiddleware, async (req, res) => {
+  try {
+    const { nodeId, position } = req.body;
+    
+    if (!nodeId || !position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+      return res.status(400).json({ error: 'Invalid node position data' });
+    }
+    
+    console.log(`API: Saving position for node ${nodeId}: x=${position.x}, y=${position.y}`);
+    
+    // Update the position in the database
+    const { error } = await supabase
+      .from('chat_nodes')
+      .update({ 
+        position_x: position.x, 
+        position_y: position.y 
+      })
+      .eq('node_id', nodeId);
+    
+    if (error) {
+      console.error('Error updating node position:', error);
+      return res.status(500).json({ error: 'Failed to update node position' });
+    }
+    
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving node position:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Endpoint for beacon API (fallback)
+app.post('/api/save-position', async (req, res) => {
+  try {
+    const { nodeId, position_x, position_y } = req.body;
+    
+    if (!nodeId || typeof position_x !== 'number' || typeof position_y !== 'number') {
+      return res.status(400).json({ error: 'Invalid node position data' });
+    }
+    
+    console.log(`Beacon API: Saving position for node ${nodeId}: x=${position_x}, y=${position_y}`);
+    
+    // Update position in database
+    const { error } = await supabase
+      .from('chat_nodes')
+      .update({ position_x, position_y })
+      .eq('node_id', nodeId);
+    
+    if (error) {
+      console.error('Error updating node position:', error);
+      return res.status(500).json({ error: 'Failed to update node position' });
+    }
+    
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error in beacon save position:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Socket.IO authentication middleware
 io.use(async (socket: Socket, next) => {

@@ -58,11 +58,27 @@ export const deleteNode = async (nodeId: number): Promise<void> => {
 };
 
 export const updateNodePosition = async (nodeId: number, position: { x: number; y: number }): Promise<void> => {
-  const { error } = await supabase
+  // Ensure we have valid numbers for positions
+  const validX = isNaN(position.x) ? 0 : position.x;
+  const validY = isNaN(position.y) ? 0 : position.y;
+  
+  console.log(`Saving position to database for node ${nodeId}: x=${validX}, y=${validY}`);
+  
+  const { data, error } = await supabase
     .from('chat_nodes')
-    .update({ position_x: position.x, position_y: position.y })
-    .eq('node_id', nodeId);
-  if (error) throw error;
+    .update({ 
+      position_x: validX, 
+      position_y: validY 
+    })
+    .eq('node_id', nodeId)
+    .select();
+  
+  if (error) {
+    console.error(`Error updating node position in database:`, error);
+    throw error;
+  }
+  
+  console.log(`Position update successful for node ${nodeId}. DB returned:`, data);
 };
 
 export const transferOwnership = async (nodeId: number, newOwnerId: string): Promise<void> => {

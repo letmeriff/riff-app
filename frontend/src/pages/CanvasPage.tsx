@@ -15,6 +15,7 @@ import ReactFlow, {
   NodeMouseHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import '../styles/reactflow.css';
 import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,9 +72,11 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     if (!user) return;
     
     try {
+      console.log('Loading nodes with connections from database...');
       const chatNodes = await fetchNodes();
+      console.log('Fetched nodes from database:', chatNodes);
       
-      // First get the existing node positions from local state to preserve them if needed
+      // Get existing positions to preserve client state when reloading
       const existingNodePositions = new Map<string, { x: number; y: number }>();
       setNodes((nds) => {
         nds.forEach(node => {
@@ -142,17 +145,26 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             // Use existing position from React Flow state
             position = existingNodePositions.get(nodeId)!;
             console.log(`Using existing position for node ${nodeId}: x=${position.x}, y=${position.y}`);
-          } else if (chatNode.position_x !== null && chatNode.position_y !== null) {
+          } else if (chatNode.position_x !== null && chatNode.position_y !== null && 
+                     typeof chatNode.position_x === 'number' && typeof chatNode.position_y === 'number') {
             // Use position from database
             position = {
-              x: chatNode.position_x ?? 0,
-              y: chatNode.position_y ?? 0
+              x: chatNode.position_x,
+              y: chatNode.position_y
             };
             console.log(`Using database position for node ${nodeId}: x=${position.x}, y=${position.y}`);
           } else {
             // Default position
-            position = { x: 0, y: 0 };
-            console.log(`Using default position for node ${nodeId}: x=0, y=0`);
+            position = { x: 100, y: 100 };
+            console.log(`Using default position for node ${nodeId}: x=100, y=100`);
+            
+            // Update the position in the database as well
+            try {
+              await updateNodePosition(chatNode.node_id, position);
+              console.log(`Updated default position for node ${nodeId} in database`);
+            } catch (error) {
+              console.error(`Error updating default position for node ${nodeId}:`, error);
+            }
           }
           
           return {
@@ -224,9 +236,11 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             
             // Use stored positions or default to random if not available
             const position = {
-              x: payload.new.position_x ?? 0, // Default to 0 if undefined
-              y: payload.new.position_y ?? 0  // Default to 0 if undefined
+              x: payload.new.position_x ?? 0,
+              y: payload.new.position_y ?? 0
             };
+            
+            console.log(`Node insert event: Using position from database for node ${payload.new.node_id}: x=${position.x}, y=${position.y}`);
             
             const newNode: Node = {
               id: payload.new.node_id.toString(),
@@ -258,9 +272,11 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             if (node.id === payload.new!.node_id.toString()) {
               // Update the node with new data
               const position = {
-                x: payload.new!.position_x ?? 0, // Default to 0 if undefined
-                y: payload.new!.position_y ?? 0  // Default to 0 if undefined
+                x: payload.new!.position_x ?? 0,
+                y: payload.new!.position_y ?? 0
               };
+              
+              console.log(`Node update event: Using position from database for node ${payload.new!.node_id}: x=${position.x}, y=${position.y}`);
               
               return {
                 ...node,
@@ -349,10 +365,13 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         setNodes((nds) =>
           nds.map((node) => {
             if (node.id === nodeId) {
-              console.log(`Updating position of node ${nodeId} from socket event`);
+              console.log(`Updating position of node ${nodeId} from socket event: x=${position.x}, y=${position.y}`);
               return {
                 ...node,
-                position: position,
+                position: {
+                  x: position.x,
+                  y: position.y
+                },
               };
             }
             return node;
@@ -410,27 +429,58 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             {
               event: 'UPDATE',
               schema: 'public',
-              table: 'chat_nodes',
-              filter: `position_x=neq.position_x`,
+              table: 'chat_nodes'
             },
             (payload) => {
-              console.log('Supabase: Node position change detected', payload);
+              console.log('Supabase: Node update detected', payload);
               if (payload.new && typeof payload.new.node_id === 'number') {
-                setNodes((nds) =>
-                  nds.map((node) => {
-                    if (node.id === payload.new.node_id.toString()) {
-                      const position = {
-                        x: payload.new.position_x ?? 0,
-                        y: payload.new.position_y ?? 0
-                      };
-                      return {
-                        ...node,
-                        position
-                      };
-                    }
-                    return node;
-                  })
-                );
+                // Skip the update if we're still in the same cycle 
+                // to avoid a feedback loop between local changes and database events
+                if (updatingPositionNodeId === payload.new.node_id.toString()) {
+                  console.log('Ignoring update from Supabase for node we just updated locally');
+                  return;
+                }
+                
+                // Check if this is a position update
+                if (payload.old && 
+                    (payload.old.position_x !== payload.new.position_x || 
+                     payload.old.position_y !== payload.new.position_y)) {
+                  console.log('Supabase: Position change detected');
+                  setNodes((nds) =>
+                    nds.map((node) => {
+                      if (node.id === payload.new.node_id.toString()) {
+                        const position = {
+                          x: payload.new.position_x ?? 0,
+                          y: payload.new.position_y ?? 0
+                        };
+                        console.log(`Supabase realtime: Updating position for node ${payload.new.node_id}: x=${position.x}, y=${position.y}`);
+                        return {
+                          ...node,
+                          position
+                        };
+                      }
+                      return node;
+                    })
+                  );
+                } else {
+                  // Handle other types of updates
+                  setNodes((nds) =>
+                    nds.map((node) => {
+                      if (node.id === payload.new.node_id.toString()) {
+                        return {
+                          ...node,
+                          data: {
+                            ...node.data,
+                            label: payload.new.title,
+                            model: payload.new.model,
+                            flavor: payload.new.flavor
+                          }
+                        };
+                      }
+                      return node;
+                    })
+                  );
+                }
               }
             }
           )
@@ -484,11 +534,26 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;
     try {
+      // Create node in database
       const newChatNode = await createNode(user.id, title, modelName, flavorName);
+      
+      // Ensure position values are valid numbers
+      const position = { 
+        x: typeof newChatNode.position_x === 'number' ? newChatNode.position_x : 0, 
+        y: typeof newChatNode.position_y === 'number' ? newChatNode.position_y : 0 
+      };
+      
+      console.log('Created new node with position from database:', { 
+        nodeId: newChatNode.node_id, 
+        x: position.x, 
+        y: position.y
+      });
+      
+      // Create the React Flow node with position
       const newNode: Node = {
         id: newChatNode.node_id.toString(),
         type: 'chatNode',
-        position: { x: newChatNode.position_x ?? 0, y: newChatNode.position_y ?? 0 },
+        position: position,
         data: {
           label: newChatNode.title,
           nodeId: newChatNode.node_id,
@@ -500,7 +565,14 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           attachments: [],
         },
       };
+      
+      // Update nodes in local state
       setNodes((nds: Node[]) => [...nds, newNode]);
+      
+      // Ensure position is correctly registered in the database by explicitly saving it again
+      // This helps prevent any issues with the initial save
+      await updateNodePosition(newChatNode.node_id, position);
+      console.log(`Verified position for new node ${newChatNode.node_id}: x=${position.x}, y=${position.y}`);
     } catch (error) {
       console.error('Error creating node:', error);
     }
@@ -526,55 +598,47 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
 
   const handleNodesChange = useCallback(
     async (changes: NodeChange[]) => {
-      onNodesChange(changes); // Apply changes to local state
+      // Apply changes to local state
+      onNodesChange(changes);
 
-      // Process position updates
-      for (const change of changes) {
-        if (
-          change.type === 'position' &&
-          change.position &&
-          !change.dragging // Only save when dragging ends
-        ) {
-          const nodeId = parseInt(change.id);
-          const { x, y } = change.position;
+      // Find position changes where dragging has just ended (dragging is false)
+      const dragEndChanges = changes.filter(
+        (change): change is NodeChange & { type: 'position'; position: { x: number; y: number }; dragging: boolean } => 
+          change.type === 'position' && 
+          change.position !== undefined &&
+          change.dragging === false
+      );
+
+      // When a drag ends, immediately save the position to database
+      for (const change of dragEndChanges) {
+        const nodeId = parseInt(change.id);
+        const { x, y } = change.position;
+        
+        try {
+          console.log(`Drag ended for node ${nodeId} - Saving position: x=${x}, y=${y}`);
           
-          try {
-            console.log(`Updating position for node ${nodeId}: x=${x}, y=${y}`);
-            
-            // First update the position in our local state to ensure consistency
-            setNodes((nds) =>
-              nds.map((node) =>
-                node.id === change.id
-                  ? {
-                      ...node,
-                      position: { x, y },
-                    }
-                  : node
-              )
-            );
-            
-            // Set the updating node ID to avoid feedback loops
-            setUpdatingPositionNodeId(change.id);
-            
-            // Send update to the database
-            await updateNodePosition(nodeId, { x, y });
-            console.log(`Successfully saved position for node ${nodeId}: x=${x}, y=${y}`);
-            
-            // Emit position update via Socket.IO for real-time collaboration
-            if (socket) {
-              socket.emit('node-position-update', {
-                nodeId: change.id,
-                position: change.position,
-              });
-            }
-            
-            // Clear the updating node ID after a short delay
-            setTimeout(() => {
-              setUpdatingPositionNodeId(null);
-            }, 500);
-          } catch (error) {
-            console.error(`Failed to update position for node ${nodeId}:`, error);
+          // Set the updating node ID to avoid feedback loops
+          setUpdatingPositionNodeId(change.id);
+          
+          // Save position to database
+          await updateNodePosition(nodeId, { x, y });
+          console.log(`Position saved for node ${nodeId}`);
+          
+          // Emit position update for real-time collaboration
+          if (socket) {
+            socket.emit('node-position-update', {
+              nodeId: change.id,
+              position: { x, y },
+            });
           }
+          
+          // Clear the updating node ID after a short delay
+          setTimeout(() => {
+            setUpdatingPositionNodeId(null);
+          }, 200);
+        } catch (error) {
+          console.error(`Error saving position for node ${nodeId}:`, error);
+          setUpdatingPositionNodeId(null);
         }
       }
 
@@ -608,8 +672,58 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     [onNodeSelect, selectedNodeId, socket]
   );
 
+  // Save all node positions to the database
+  const saveAllNodePositions = useCallback(async () => {
+    console.log('Saving all node positions to database...');
+    const currentNodes = [...nodes];
+    
+    // Use Promise.all to parallelize the updates
+    await Promise.all(
+      currentNodes.map(async (node) => {
+        const nodeId = parseInt(node.id);
+        if (!isNaN(nodeId)) {
+          try {
+            await updateNodePosition(nodeId, node.position);
+            console.log(`Saved position for node ${nodeId}: x=${node.position.x}, y=${node.position.y}`);
+          } catch (error) {
+            console.error(`Failed to save position for node ${nodeId}:`, error);
+          }
+        }
+      })
+    );
+  }, [nodes]);
+
+  // Periodically save all node positions
+  useEffect(() => {
+    const interval = setInterval(() => {
+      saveAllNodePositions();
+    }, 30000); // Save all positions every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [saveAllNodePositions]);
+
+  // Save positions when component unmounts or beforeunload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveAllNodePositions();
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      // Save positions when component unmounts
+      saveAllNodePositions();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [saveAllNodePositions]);
+
   return (
-    <div style={{ height: '100%', width: '100%' }}>
+    <div style={{ 
+      height: '100%', 
+      width: '100%',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -619,11 +733,43 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
         fitView
+        style={{ 
+          width: '100%', 
+          height: '100%',
+          background: '#f5f5f6'
+        }}
       >
         <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
-        <Background />
-        <Controls />
-        <MiniMap />
+        <Background color="#aaa" gap={16} />
+        <Controls 
+          position="bottom-right"
+          style={{
+            bottom: 10,
+            right: 10
+          }}
+        />
+        <MiniMap
+          nodeStrokeColor={(n) => {
+            if (n.id === selectedNodeId) return '#ff0072';
+            return '#555';
+          }}
+          nodeColor={(n) => {
+            if (n.id === selectedNodeId) return '#ffcce6';
+            return '#fff';
+          }}
+          style={{
+            bottom: 10,
+            left: 10,
+            background: '#f5f5f6',
+            border: '1px solid #ddd',
+            borderRadius: '5px',
+            height: 120,
+            width: 160
+          }}
+          maskColor="rgba(0, 0, 0, 0.1)"
+          zoomable
+          pannable
+        />
       </ReactFlow>
     </div>
   );
