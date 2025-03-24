@@ -20,8 +20,18 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       throw error;
     }
     
+    // Map the database fields to the frontend expected format
+    const mappedPrompts = data.map(prompt => ({
+      id: prompt.id,
+      name: prompt.name,
+      description: prompt.description,
+      type: prompt.type,
+      content: prompt.prompt, // Map 'prompt' field to 'content'
+      created_at: prompt.created_at
+    }));
+    
     res.json({ 
-      prompts: data 
+      prompts: mappedPrompts 
     });
   } catch (error) {
     console.error('Error fetching prompts:', error);
@@ -49,8 +59,18 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       throw error;
     }
     
+    // Map the database fields to the frontend expected format
+    const mappedPrompt = {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      type: data.type,
+      content: data.prompt, // Map 'prompt' field to 'content'
+      created_at: data.created_at
+    };
+    
     res.json({ 
-      prompt: data 
+      prompt: mappedPrompt 
     });
   } catch (error) {
     console.error('Error fetching prompt:', error);
