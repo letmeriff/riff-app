@@ -17,11 +17,12 @@ import presenceRoutes from './routes/presenceRoutes';
 import attachmentRoutes from './routes/attachmentRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
-import authRoutes from './routes/authRoutes';
-import userRoutes from './routes/userRoutes';
-import nodeRoutes from './routes/nodeRoutes';
-import uploadRoutes from './routes/uploadRoutes';
-import contextPullRoutes from './routes/contextPullRoutes';
+// These route modules don't exist but were referenced
+// import authRoutes from './routes/authRoutes';
+// import userRoutes from './routes/userRoutes';
+// import nodeRoutes from './routes/nodeRoutes';
+// import uploadRoutes from './routes/uploadRoutes';
+// import contextPullRoutes from './routes/contextPullRoutes';
 
 // Define interfaces for the payload structures
 interface ChatNode {
@@ -131,16 +132,21 @@ app.get('/api/test-supabase', authMiddleware, async (req: Request, res: Response
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
+// These routes don't exist but were referenced
+// app.use('/api/auth', authRoutes);
+// app.use('/api/users', userRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/nodes', nodeRoutes);
-app.use('/api/upload', uploadRoutes);
+// app.use('/api/nodes', nodeRoutes);
+// app.use('/api/upload', uploadRoutes);
 app.use('/api/models', modelRoutes);
 app.use('/api/flavors', flavorRoutes);
 app.use('/api/prompts', promptRoutes);
-app.use('/api/context-pull', contextPullRoutes);
+app.use('/api/context', contextRoutes);
+app.use('/api/summarize', summarizationRoutes);
+app.use('/api/branch', branchRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/attachments', attachmentRoutes);
+// app.use('/api/context-pull', contextPullRoutes);
 
 // API endpoint for saving node position during page unload
 app.post('/api/save-node-position', authMiddleware, async (req, res) => {

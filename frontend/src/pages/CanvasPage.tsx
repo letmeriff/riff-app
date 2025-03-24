@@ -760,6 +760,9 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     // This is just for logging, the actual handling happens in ChatUI
   };
 
+  // Add a console log to check if this component is rendering
+  console.log('CanvasPage rendering, will include LibrarySidebar');
+
   return (
     <div style={{ 
       height: '100%', 

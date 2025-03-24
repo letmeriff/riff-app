@@ -26,7 +26,9 @@ export async function fetchPrompts(): Promise<Prompt[]> {
 
 export async function fetchPromptsByType(type: PromptType): Promise<Prompt[]> {
   try {
+    console.log(`Fetching prompts of type: ${type} from ${api.defaults.baseURL}/prompts?type=${type}`);
     const response = await api.get(`/prompts?type=${type}`);
+    console.log(`Response from ${type} prompts:`, response.data);
     return response.data.prompts;
   } catch (error) {
     console.error(`Error fetching ${type} prompts:`, error);

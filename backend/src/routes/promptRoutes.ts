@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/auth';
 const router = express.Router();
 
 // Get all prompts or filter by type
-router.get('/', authMiddleware, async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
     const { type } = req.query;
     let query = supabase.from('prompts').select('*');
@@ -42,7 +42,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Get a single prompt by ID
-router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     

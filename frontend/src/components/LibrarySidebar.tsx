@@ -6,6 +6,7 @@ interface LibrarySidebarProps {
 }
 
 const LibrarySidebar: React.FC<LibrarySidebarProps> = ({ onPromptDrag }) => {
+  console.log('LibrarySidebar component initializing');
   const [frameworks, setFrameworks] = useState<Prompt[]>([]);
   const [templates, setTemplates] = useState<Prompt[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -15,10 +16,13 @@ const LibrarySidebar: React.FC<LibrarySidebarProps> = ({ onPromptDrag }) => {
     async function loadPrompts() {
       try {
         setIsLoading(true);
+        console.log('Fetching frameworks and templates...');
         const [frameworksData, templatesData] = await Promise.all([
           fetchFrameworks(),
           fetchTemplates()
         ]);
+        console.log('Frameworks:', frameworksData);
+        console.log('Templates:', templatesData);
         setFrameworks(frameworksData);
         setTemplates(templatesData);
         setError(null);
