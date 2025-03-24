@@ -7,13 +7,7 @@ ON chat_nodes
 FOR UPDATE
 TO authenticated
 USING (auth.uid() IN (user_id, owner_id))
-WITH CHECK (auth.uid() IN (user_id, owner_id) AND 
-           (
-                (tg_op = 'UPDATE' AND (
-                    position_x IS DISTINCT FROM OLD.position_x OR
-                    position_y IS DISTINCT FROM OLD.position_y
-                ))
-           ));
+WITH CHECK (auth.uid() IN (user_id, owner_id));
 
 -- Add this comment as documentation
 COMMENT ON POLICY "Allow authenticated users to update node positions" ON chat_nodes IS 
