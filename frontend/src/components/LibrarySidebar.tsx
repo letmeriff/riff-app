@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchFrameworks, fetchTemplates, Prompt, PromptType } from '../services/promptService';
+import { fetchFrameworks, fetchTemplates, Prompt } from '../services/promptService';
 
 interface LibrarySidebarProps {
   onPromptDrag: (prompt: Prompt) => void;
