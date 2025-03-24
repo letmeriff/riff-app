@@ -326,9 +326,11 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOver(false);
+    
+    if (!nodeId || !isOwner) return;
     
     try {
       const data = e.dataTransfer.getData('application/json');
@@ -337,16 +339,48 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       const prompt = JSON.parse(data) as Prompt;
       if (!prompt || !prompt.content) return;
       
-      // For framework or template, set the input to its content
-      setInput(prompt.content);
+      // Create a placeholder message showing which prompt was applied
+      const placeholderMessage = `Applied ${prompt.type}: ${prompt.name}\n\n${prompt.content}`;
       
-      // Focus the input field after a short delay to ensure it's ready
-      setTimeout(() => {
-        const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
-        if (inputElement) {
-          inputElement.focus();
+      // Add the placeholder message to the chat
+      try {
+        // Save the message to the database
+        const { data: messageData, error: messageError } = await supabase
+          .from('chat_messages')
+          .insert({
+            node_id: parseInt(nodeId),
+            content: placeholderMessage,
+            is_user: true,
+            timestamp: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        
+        if (messageError) throw messageError;
+        
+        // Add the message to the local state
+        if (messageData) {
+          setMessages(prev => [...prev, messageData]);
         }
-      }, 100);
+        
+        // Set the input to the prompt content for the user to customize if needed
+        setInput(prompt.content);
+        
+        // Scroll to the bottom
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+        
+        // Focus the input field after a short delay
+        setTimeout(() => {
+          const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
+          if (inputElement) {
+            inputElement.focus();
+          }
+        }, 200);
+      } catch (error) {
+        console.error('Error adding placeholder message:', error);
+      }
     } catch (error) {
       console.error('Error parsing dropped prompt:', error);
     }
