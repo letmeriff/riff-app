@@ -12,15 +12,38 @@ interface ChatMessage {
   timestamp: string;
 }
 
+interface ChatAttachment {
+  attachment_id: number;
+  node_id: number;
+  file_path: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  extracted_content: string | null;
+  created_at: string;
+  file_url?: string;
+}
+
 export class ChatService {
   private model: BaseChatModel | null = null;
   private nodeId: number;
   private userId: string;
   private systemPrompt: string | null = null;
+  private modelName: string;
+  private messageAttachments: { attachment_id: number; file_type: string; file_name: string }[] | null = null;
 
-  constructor(nodeId: number, userId: string, modelName: string, apiKey: string, flavorName?: string) {
+  constructor(
+    nodeId: number, 
+    userId: string, 
+    modelName: string, 
+    apiKey: string, 
+    flavorName?: string,
+    messageAttachments?: { attachment_id: number; file_type: string; file_name: string }[]
+  ) {
     this.nodeId = nodeId;
     this.userId = userId;
+    this.modelName = modelName;
+    this.messageAttachments = messageAttachments || null;
 
     // Initialize the model based on the model name
     if (modelName.startsWith('openai/')) {
@@ -62,6 +85,117 @@ export class ChatService {
       this.systemPrompt = data?.system_prompt || null;
     } catch (error) {
       console.error('Error in fetchFlavorSystemPrompt:', error);
+    }
+  }
+
+  // Load attached files content for the node
+  private async loadAttachments(): Promise<(SystemMessage | HumanMessage)[]> {
+    try {
+      let attachmentsToProcess = [];
+      
+      // If we have specific message attachments, prioritize those
+      if (this.messageAttachments && this.messageAttachments.length > 0) {
+        // Fetch full details for the specific message attachments
+        const { data: specificAttachments, error: specificError } = await supabase
+          .from('chat_attachments')
+          .select('*')
+          .in('attachment_id', this.messageAttachments.map(att => att.attachment_id));
+          
+        if (specificError) {
+          console.error('Error fetching specific attachments:', specificError);
+        } else if (specificAttachments && specificAttachments.length > 0) {
+          attachmentsToProcess = specificAttachments;
+        }
+      } else {
+        // Otherwise, fetch all attachments for the node
+        const { data: allAttachments, error } = await supabase
+          .from('chat_attachments')
+          .select('*')
+          .eq('node_id', this.nodeId)
+          .order('created_at', { ascending: true });
+        
+        if (error) {
+          console.error('Error fetching attachments:', error);
+          return [];
+        }
+        
+        if (!allAttachments || allAttachments.length === 0) {
+          return [];
+        }
+        
+        attachmentsToProcess = allAttachments;
+      }
+      
+      if (attachmentsToProcess.length === 0) {
+        return [];
+      }
+      
+      const attachmentMessages: (SystemMessage | HumanMessage)[] = [];
+      
+      for (const attachment of attachmentsToProcess) {
+        if (attachment.file_type === 'application/pdf' && attachment.extracted_content) {
+          // For PDF with extracted content, include the text in a SystemMessage
+          attachmentMessages.push(
+            new SystemMessage({ 
+              content: `Attached PDF (${attachment.file_name}):\n${attachment.extracted_content}`
+            })
+          );
+        } else if (attachment.file_type.startsWith('image/')) {
+          // For images, if the model is vision-capable, include the image URL
+          const isVisionCapable = this.modelName.includes('gpt-4-vision') || 
+                                 this.modelName.includes('gpt-4o') ||
+                                 this.modelName.includes('claude-3');
+          
+          if (isVisionCapable) {
+            // Create a signed URL for the image
+            const { data: urlData } = await supabase.storage
+              .from('chat-attachments')
+              .createSignedUrl(attachment.file_path, 60 * 60 * 24); // 1 day expiry for security
+            
+            const fileUrl = urlData?.signedUrl || attachment.file_url;
+            
+            if (fileUrl) {
+              // For OpenAI vision models
+              if (this.modelName.startsWith('openai/')) {
+                attachmentMessages.push(
+                  new HumanMessage({
+                    content: [
+                      { type: 'text', text: `Attached image (${attachment.file_name}):` },
+                      { type: 'image_url', image_url: { url: fileUrl } }
+                    ],
+                  })
+                );
+              } else {
+                // For Anthropic Claude-3 models
+                attachmentMessages.push(
+                  new HumanMessage({
+                    content: `Attached image (${attachment.file_name}):\n<img src="${fileUrl}" alt="${attachment.file_name}" />`
+                  })
+                );
+              }
+            }
+          } else {
+            // For non-vision models, include a placeholder message
+            attachmentMessages.push(
+              new SystemMessage({
+                content: `Attached image (${attachment.file_name}): [Image content not accessible to this model type]`
+              })
+            );
+          }
+        } else {
+          // For other file types, include information about the attachment
+          attachmentMessages.push(
+            new SystemMessage({
+              content: `Attached file (${attachment.file_name}, type: ${attachment.file_type}, size: ${(attachment.file_size / 1024).toFixed(2)} KB)`
+            })
+          );
+        }
+      }
+      
+      return attachmentMessages;
+    } catch (error) {
+      console.error('Error loading attachments:', error);
+      return [];
     }
   }
 
@@ -138,6 +272,10 @@ export class ChatService {
         content: `This node has pulled context from other nodes. Use this as reference when appropriate:\n${pulledContext}`
       }));
     }
+
+    // Add file attachments
+    const attachmentMessages = await this.loadAttachments();
+    messages.push(...attachmentMessages);
 
     // Add the conversation history
     messages.push(

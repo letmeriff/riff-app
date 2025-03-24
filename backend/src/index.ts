@@ -80,7 +80,9 @@ export const io = new Server(httpServer, {
   allowEIO3: true // Allow older Engine.IO clients
 });
 
-app.use(express.json());
+// Configure Express middleware with increased payload limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Health check endpoint (public)
 app.get('/', (req, res) => {

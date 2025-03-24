@@ -1,7 +1,18 @@
 import express, { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { supabase } from '../config/supabase';
-import { generateAIResponse } from '../services/chatService';
+import { ChatService } from '../services/chatService';
+import { getUserModels } from '../services/modelService';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
+
+interface AttachmentReference {
+  attachment_id: number;
+  file_type: string;
+  file_name: string;
+}
 
 const router = express.Router();
 
@@ -23,8 +34,8 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    // Get the message content from request body
-    const { message } = req.body;
+    // Get the message content and attachments from request body
+    const { message, attachments } = req.body;
     if (!message || typeof message !== 'string' || message.trim() === '') {
       return res.status(400).json({ error: 'Message is required' });
     }
@@ -45,8 +56,34 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Only the node owner can send messages' });
     }
 
-    // Insert the user's message into the database
-    const { error: userMessageError } = await supabase
+    // Get model information
+    const modelName = node.model || '';
+    const modelProvider = modelName.split('/')[0];
+    
+    if (!modelProvider) {
+      return res.status(400).json({ error: 'Invalid model configuration' });
+    }
+    
+    // Fetch user's models to get the API key
+    const userModels = await getUserModels(userId);
+    const userModel = userModels.find(m => m.model_name === modelName);
+    
+    if (!userModel) {
+      return res.status(404).json({ 
+        error: `Model "${modelName}" not found in your account. Please add it in Settings.` 
+      });
+    }
+    
+    const apiKey = userModel.api_key;
+    
+    if (!apiKey) {
+      return res.status(500).json({ 
+        error: `API key not found for ${modelName}. Please update your model in Settings.` 
+      });
+    }
+    
+    // Save the message to the database 
+    const { error: messageError } = await supabase
       .from('chat_messages')
       .insert({
         node_id: nodeId,
@@ -55,44 +92,40 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
         timestamp: new Date().toISOString(),
       });
 
-    if (userMessageError) {
-      throw userMessageError;
+    if (messageError) {
+      return res.status(500).json({ error: 'Failed to save user message' });
     }
 
-    // Get recent conversation history for context
-    const { data: chatHistory, error: historyError } = await supabase
-      .from('chat_messages')
-      .select('content, is_user')
-      .eq('node_id', nodeId)
-      .order('timestamp', { ascending: true });
-
-    if (historyError) {
-      throw historyError;
+    // If attachments were sent with the message, verify they belong to this node
+    let validatedAttachments: AttachmentReference[] = [];
+    
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      const attachmentIds = attachments.map(att => att.attachment_id);
+      
+      // Fetch the actual attachments to validate they exist and belong to this node
+      const { data: nodeAttachments, error: attachmentError } = await supabase
+        .from('chat_attachments')
+        .select('attachment_id, file_type, file_name')
+        .eq('node_id', nodeId)
+        .in('attachment_id', attachmentIds);
+      
+      if (!attachmentError && nodeAttachments) {
+        validatedAttachments = nodeAttachments;
+      }
     }
-
-    // Generate the AI response (includes API call to LLM)
-    const aiModel = node.model || 'default';
-    const flavor = node.flavor || 'default';
-    const aiResponse = await generateAIResponse(
-      message,
-      chatHistory || [],
-      aiModel,
-      flavor
+    
+    // Initialize the ChatService with message-specific attachments
+    const chatService = new ChatService(
+      nodeId,
+      userId,
+      modelName,
+      apiKey,
+      node.flavor,
+      validatedAttachments // Pass the validated attachments to focus on
     );
-
-    // Insert AI response to database
-    const { error: aiMessageError } = await supabase
-      .from('chat_messages')
-      .insert({
-        node_id: nodeId,
-        content: aiResponse,
-        is_user: false,
-        timestamp: new Date().toISOString(),
-      });
-
-    if (aiMessageError) {
-      throw aiMessageError;
-    }
+    
+    // Process the user message and get AI response
+    const aiResponse = await chatService.processMessage(message);
 
     // Send successful response
     res.json({

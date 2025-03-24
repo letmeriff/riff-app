@@ -36,6 +36,15 @@ interface ChatUIProps {
   userId: string; // Current user's ID
 }
 
+// Define types for mixed items
+interface AttachmentItem {
+  isAttachment: true;
+  attachment: ChatAttachment;
+  timestamp: string;
+}
+
+type ChatItem = ChatMessage | AttachmentItem;
+
 const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const { socket } = useSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -304,11 +313,24 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }, 2000);
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !nodeId || !isOwner) return;
-
-    setLoading(true);
+  const handleSendMessage = async () => {
+    if (!input.trim() || !nodeId || !socket) return;
+    
+    // Don't modify the message text with references to attachments
+    const messageText = input;
+    setInput('');
+    
+    // Temporarily add the message to the UI for immediate feedback
+    const tempMessage: ChatMessage = {
+      message_id: Date.now(), // Temporary ID
+      node_id: parseInt(nodeId),
+      content: messageText,
+      is_user: true,
+      timestamp: new Date().toISOString(),
+    };
+    
+    setMessages((msgs) => [...msgs, tempMessage]);
+    
     try {
       // Get the current session token
       const { data: sessionData } = await supabase.auth.getSession();
@@ -318,31 +340,54 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         throw new Error('Authentication token not found. Please log in again.');
       }
       
+      setLoading(true);
+      
+      // Only get recent attachments (uploaded in the last minute)
+      // which haven't been sent with a message yet
+      const recentAttachments = attachments
+        .filter(att => {
+          const uploadTime = new Date(att.created_at).getTime();
+          const now = new Date().getTime();
+          const timeDiff = now - uploadTime;
+          // Check if it was uploaded in the last minute and is after the last message
+          return timeDiff < 60000 && 
+            (messages.length === 0 || 
+             uploadTime > new Date(messages[messages.length - 1].timestamp).getTime());
+        })
+        .map(att => ({
+          attachment_id: att.attachment_id,
+          file_type: att.file_type,
+          file_name: att.file_name
+        }));
+      
+      // Send the message with recent attachments to the server
       const response = await fetch(`http://localhost:3001/api/chat/${nodeId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: messageText,
+          attachments: recentAttachments
+        }),
       });
-
+      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to send message');
       }
-
-      const { response: aiResponse } = await response.json();
-      console.log('AI Response:', aiResponse); // For debugging
-      setInput('');
-
-      // Stop typing indication after sending the message
-      if (socket) {
-        socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: false });
-      }
+      
+      // Just consume the response body without assigning the unused data variable
+      await response.json();
+      
+      // Server will broadcast the message via socket, so no need to update state here
     } catch (error) {
       console.error('Error sending message:', error);
-      alert(error instanceof Error ? error.message : 'An error occurred sending your message');
+      alert('Error sending message: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      // Remove the temporary message on error
+      setMessages((msgs) => msgs.filter((msg) => msg.message_id !== tempMessage.message_id));
     } finally {
       setLoading(false);
     }
@@ -489,9 +534,32 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     if (!nodeId || !isOwner || !e.target.files || e.target.files.length === 0) return;
 
     const file = e.target.files[0];
+    
+    // Add client-side file size validation
+    const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB limit
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`File size exceeds the maximum allowed size (8MB). Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB.`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+    
     setIsUploading(true);
 
     try {
+      // Read the file as base64
+      const base64String = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1]; // Remove the data URL prefix
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
       // Get the current session token
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -500,56 +568,32 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         throw new Error('Authentication token not found. Please log in again.');
       }
 
-      // Create a unique file name to prevent collisions
-      const fileExtension = file.name.split('.').pop();
-      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`;
-      const filePath = `${nodeId}/${uniqueFileName}`;
-
-      // Upload the file to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('chat-attachments')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) throw uploadError;
-
-      // Get the public URL of the uploaded file
-      const { data: urlData } = await supabase.storage
-        .from('chat-attachments')
-        .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
-
-      const signedUrl = urlData?.signedUrl;
-      
-      if (!signedUrl) {
-        throw new Error('Failed to create signed URL for the uploaded file');
-      }
-
-      // Store the file metadata in the database
-      const { data: attachment, error: insertError } = await supabase
-        .from('chat_attachments')
-        .insert({
-          node_id: parseInt(nodeId),
-          user_id: userId,
-          file_path: filePath,
-          file_name: file.name,
-          file_type: file.type,
-          file_size: file.size,
-          file_url: signedUrl
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      // Broadcast the new attachment to all users in the node room
-      if (socket) {
-        socket.emit('attachment-update', {
+      // Upload the file to the new endpoint
+      const response = await fetch('http://localhost:3001/api/attachments/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
           nodeId: parseInt(nodeId),
-          attachment: attachment
-        });
+          fileData: base64String,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload file');
       }
+
+      // Just check the response status, no need to extract the attachment since it's handled by socket
+      await response.json();
+      
+      // The server will handle broadcasting the attachment via socket
+      // and updating the UI, so we don't need to manually add it to state
 
       // Reset the file input
       if (fileInputRef.current) {
@@ -594,6 +638,20 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   };
 
+  // Sort and combine messages and attachments
+  const combinedItems: ChatItem[] = [
+    ...messages.map(msg => msg as ChatMessage),
+    ...attachments.map(attachment => ({
+      isAttachment: true,
+      attachment,
+      timestamp: attachment.created_at
+    } as AttachmentItem))
+  ].sort((a, b) => {
+    const timeA = 'isAttachment' in a ? new Date(a.timestamp).getTime() : new Date(a.timestamp).getTime();
+    const timeB = 'isAttachment' in b ? new Date(b.timestamp).getTime() : new Date(b.timestamp).getTime();
+    return timeA - timeB;
+  });
+
   return (
     <div
       style={{
@@ -628,76 +686,100 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
       <div
         style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '10px',
           display: 'flex',
           flexDirection: 'column',
           gap: '10px',
-          minHeight: 0  // This is important for flex child to properly scroll
+          padding: '20px',
+          flexGrow: 1,
+          overflowY: 'auto',
+          background: '#f5f5f5',
         }}
       >
-        {messages.map((message) => (
-          <div
-            key={message.message_id}
-            style={{
-              alignSelf: message.is_user ? 'flex-end' : 'flex-start',
-              background: message.is_user ? '#007bff' : '#e0e0e0',
-              color: message.is_user ? '#fff' : '#000',
-              padding: '8px 12px',
-              borderRadius: '10px',
-              maxWidth: '70%',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            {message.content}
-            <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '4px' }}>
-              {new Date(message.timestamp).toLocaleTimeString()}
-            </div>
-          </div>
-        ))}
-
-        {attachments.map((attachment) => (
-          <div
-            key={attachment.attachment_id}
-            style={{
-              alignSelf: 'flex-start',
-              background: '#e0e0e0',
-              padding: '8px 12px',
-              borderRadius: '10px',
-              maxWidth: '70%',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <a 
-                href={attachment.file_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                style={{ color: '#0066cc', textDecoration: 'none' }}
+        {/* Combine messages and attachments in a single chronological list */}
+        {combinedItems.map((item) => {
+          if ('isAttachment' in item) {
+            const attachment = item.attachment;
+            return (
+              <div
+                key={`attachment-${attachment.attachment_id}`}
+                style={{
+                  alignSelf: 'flex-start',
+                  background: '#e0e0e0',
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  maxWidth: '70%',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
               >
-                {attachment.file_name} ({(attachment.file_size / 1024).toFixed(2)} KB)
-              </a>
-              {(isOwner || attachment.user_id === userId) && (
-                <button
-                  onClick={() => handleDeleteAttachment(attachment.attachment_id)}
-                  style={{
-                    marginLeft: '8px',
-                    background: 'none',
-                    border: 'none',
-                    color: '#ff4444',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                  }}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '4px' }}>
-              {new Date(attachment.created_at).toLocaleTimeString()}
-            </div>
-          </div>
-        ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <a 
+                    href={attachment.file_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ color: '#0066cc', textDecoration: 'none' }}
+                  >
+                    {attachment.file_name} ({(attachment.file_size / 1024).toFixed(2)} KB)
+                  </a>
+                  {(isOwner || attachment.user_id === userId) && (
+                    <button
+                      onClick={() => handleDeleteAttachment(attachment.attachment_id)}
+                      style={{
+                        marginLeft: '8px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#ff4444',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <div style={{ fontSize: '10px', opacity: 0.7 }}>
+                  {new Date(attachment.created_at).toLocaleTimeString()}
+                </div>
+                {attachment.file_type.startsWith('image/') && (
+                  <img 
+                    src={attachment.file_url} 
+                    alt={attachment.file_name}
+                    style={{ 
+                      maxWidth: '100%', 
+                      maxHeight: '300px', 
+                      borderRadius: '5px',
+                      marginTop: '5px'
+                    }}
+                  />
+                )}
+              </div>
+            );
+          } else {
+            const msg = item;
+            return (
+              <div
+                key={`message-${msg.message_id}`}
+                style={{
+                  alignSelf: msg.is_user ? 'flex-end' : 'flex-start',
+                  background: msg.is_user ? '#007bff' : '#fff',
+                  color: msg.is_user ? '#fff' : '#000',
+                  padding: '10px 15px',
+                  borderRadius: '18px',
+                  maxWidth: '70%',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
+                  position: 'relative',
+                }}
+              >
+                <div>{msg.content}</div>
+                <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '5px' }}>
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </div>
+              </div>
+            );
+          }
+        })}
 
         {loading && (
           <div style={{ alignSelf: 'flex-start', color: '#777' }}>
@@ -742,6 +824,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               cursor: nodeId && isOwner && !isUploading ? 'pointer' : 'not-allowed',
             }}
             disabled={!nodeId || !isOwner || isUploading}
+            type="button"
           >
             {isUploading ? 'Uploading...' : 'Attach'}
           </button>
@@ -789,6 +872,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
                 cursor: selectedPullNode && !pullLoading ? 'pointer' : 'not-allowed',
               }}
               disabled={!selectedPullNode || pullLoading}
+              type="button"
             >
               {pullLoading ? 'Pulling...' : 'Pull'}
             </button>
@@ -805,6 +889,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               cursor: nodeId && !branchLoading ? 'pointer' : 'not-allowed',
             }}
             disabled={!nodeId || branchLoading}
+            type="button"
           >
             {branchLoading ? 'Branching...' : 'Branch'}
           </button>
@@ -837,18 +922,29 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
                   cursor: selectedNewOwner && !isTransferring ? 'pointer' : 'not-allowed',
                 }}
                 disabled={!selectedNewOwner || isTransferring}
+                type="button"
               >
                 {isTransferring ? 'Transferring...' : 'Transfer'}
               </button>
             </div>
           )}
         </div>
-
-        <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '10px' }}>
+        
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSendMessage();
+          }}
+          style={{ display: 'flex', gap: '10px' }}
+        >
           <input
             type="text"
             value={input}
-            onChange={handleInputChange}
+            onChange={(e) => {
+              setInput(e.target.value);
+              handleInputChange(e);
+            }}
+            disabled={!nodeId || !isOwner}
             placeholder={
               nodeId 
                 ? isOwner 
@@ -857,24 +953,23 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
                 : 'Select a node to start chatting'
             }
             style={{
-              flex: 1,
-              padding: '8px',
+              padding: '10px',
+              borderRadius: '20px',
               border: '1px solid #ddd',
-              borderRadius: '5px',
+              flexGrow: 1,
             }}
-            disabled={!nodeId || loading || !isOwner}
           />
           <button
             type="submit"
+            disabled={!nodeId || loading || !input.trim() || !isOwner}
             style={{
-              padding: '8px 16px',
-              background: nodeId && !loading && isOwner ? '#007bff' : '#ddd',
-              color: nodeId && !loading && isOwner ? '#fff' : '#000',
+              padding: '10px 15px',
+              background: !nodeId || loading || !input.trim() || !isOwner ? '#ddd' : '#007bff',
+              color: !nodeId || loading || !input.trim() || !isOwner ? '#666' : '#fff',
               border: 'none',
-              borderRadius: '5px',
-              cursor: nodeId && !loading && isOwner ? 'pointer' : 'not-allowed',
+              borderRadius: '20px',
+              cursor: !nodeId || loading || !input.trim() || !isOwner ? 'not-allowed' : 'pointer',
             }}
-            disabled={!nodeId || loading || !isOwner}
           >
             {loading ? 'Sending...' : 'Send'}
           </button>
