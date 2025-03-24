@@ -128,7 +128,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         if (payload.new && payload.new.node_id === parseInt(nodeId)) {
           setMessages((prev) => {
             // Check if this message is already in the list to avoid duplicates
-            if (prev.some((msg) => msg.message_id === payload.new.message_id)) {
+            if (!payload.new || prev.some((msg) => msg.message_id === payload.new.message_id)) {
               console.log('Message already exists in state, not adding again');
               return prev;
             }
@@ -286,6 +286,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
             },
           }
         );
@@ -441,7 +442,6 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           display: 'flex',
           flexDirection: 'column',
           gap: '10px',
-          maxHeight: 'calc(100vh - 220px)', // Fixed height with space for header and controls
         }}
       >
         {messages.map((message) => (

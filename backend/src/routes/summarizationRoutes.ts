@@ -18,20 +18,29 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
     // Fetch the node's model (we'll use the same model for summarization)
     const { data: node, error: nodeError } = await supabase
       .from('chat_nodes')
-      .select('model')
+      .select('model, owner_id')
       .eq('node_id', nodeId)
       .single();
     if (nodeError || !node) {
       return res.status(404).json({ error: 'Node not found' });
     }
 
+    // No need to check for ownership - RLS will handle access control
+    // Users can summarize a node if they can access it according to RLS policies
+
     const modelName = node.model;
     if (!modelName) {
       return res.status(400).json({ error: 'Node is missing model' });
     }
 
-    // Fetch the user's model configuration
-    const userModels = await getUserModels(userId);
+    // Fetch the user's model configuration - use node owner's configuration for non-owners
+    let userModels;
+    if (userId === node.owner_id) {
+      userModels = await getUserModels(userId);
+    } else {
+      userModels = await getUserModels(node.owner_id);
+    }
+
     const modelConfig = userModels.find((m) => m.model_name === modelName);
     if (!modelConfig) {
       return res.status(404).json({ error: `Model ${modelName} not found for user` });

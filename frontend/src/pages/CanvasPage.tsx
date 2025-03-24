@@ -47,6 +47,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [updatingPositionNodeId, setUpdatingPositionNodeId] = useState<string | null>(null);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds: Edge[]) => addEdge(params, eds)),
@@ -71,6 +72,16 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     
     try {
       const chatNodes = await fetchNodes();
+      
+      // First get the existing node positions from local state to preserve them if needed
+      const existingNodePositions = new Map<string, { x: number; y: number }>();
+      setNodes((nds) => {
+        nds.forEach(node => {
+          existingNodePositions.set(node.id, node.position);
+        });
+        return nds;
+      });
+      
       const reactFlowNodes: Node[] = await Promise.all(
         chatNodes.map(async (chatNode) => {
           // Get nodes this node pulls from
@@ -120,14 +131,32 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             console.error('Error fetching user presence:', error);
           }
 
-          // Use stored positions or default to random if not available
-          const position = {
-            x: chatNode.position_x !== undefined ? chatNode.position_x : Math.random() * 500,
-            y: chatNode.position_y !== undefined ? chatNode.position_y : Math.random() * 500
-          };
+          // Determine node position with the following priority:
+          // 1. Use existing position from current React Flow state if available
+          // 2. Use position from database
+          // 3. Default to (0,0) if neither is available
+          const nodeId = chatNode.node_id.toString();
+          let position: { x: number; y: number };
+          
+          if (existingNodePositions.has(nodeId)) {
+            // Use existing position from React Flow state
+            position = existingNodePositions.get(nodeId)!;
+            console.log(`Using existing position for node ${nodeId}: x=${position.x}, y=${position.y}`);
+          } else if (chatNode.position_x !== null && chatNode.position_y !== null) {
+            // Use position from database
+            position = {
+              x: chatNode.position_x ?? 0,
+              y: chatNode.position_y ?? 0
+            };
+            console.log(`Using database position for node ${nodeId}: x=${position.x}, y=${position.y}`);
+          } else {
+            // Default position
+            position = { x: 0, y: 0 };
+            console.log(`Using default position for node ${nodeId}: x=0, y=0`);
+          }
           
           return {
-            id: chatNode.node_id.toString(),
+            id: nodeId,
             type: 'chatNode',
             position: position,
             data: {
@@ -135,10 +164,10 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
               nodeId: chatNode.node_id,
               model: chatNode.model,
               flavor: chatNode.flavor,
-              users: userPresence, // User presence data
+              users: userPresence,
               pulledConnections: pulledConnectionsWithUpdates,
               pulledByConnections: pulledByConnectionsData,
-              attachments: [], // Placeholder for attachments (Phase 6)
+              attachments: [],
             },
           };
         })
@@ -152,12 +181,13 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       
       if (error) throw error;
       
-      const newEdges: Edge[] = (contextPulls || []).map((pull, index) => ({
+      const newEdges: Edge[] = (contextPulls || []).map((pull) => ({
         id: `edge-${pull.origin_node_id}-${pull.target_node_id}`,
         source: pull.origin_node_id.toString(),
         target: pull.target_node_id.toString(),
         type: 'straight',
         animated: true,
+        arrowHeadType: 'arrowclosed',
         style: { 
           strokeWidth: 2, 
           stroke: '#555', 
@@ -194,8 +224,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             
             // Use stored positions or default to random if not available
             const position = {
-              x: payload.new.position_x !== undefined ? payload.new.position_x : Math.random() * 500,
-              y: payload.new.position_y !== undefined ? payload.new.position_y : Math.random() * 500
+              x: payload.new.position_x ?? 0, // Default to 0 if undefined
+              y: payload.new.position_y ?? 0  // Default to 0 if undefined
             };
             
             const newNode: Node = {
@@ -228,8 +258,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             if (node.id === payload.new!.node_id.toString()) {
               // Update the node with new data
               const position = {
-                x: payload.new!.position_x !== undefined ? payload.new!.position_x : node.position.x,
-                y: payload.new!.position_y !== undefined ? payload.new!.position_y : node.position.y
+                x: payload.new!.position_x ?? 0, // Default to 0 if undefined
+                y: payload.new!.position_y ?? 0  // Default to 0 if undefined
               };
               
               return {
@@ -292,31 +322,42 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           })
         );
         
-        // Update edges based on the new context pulls
-        try {
-          const { data: contextPulls, error } = await supabase
-            .from('context_pulls')
-            .select('target_node_id, origin_node_id');
-          
-          if (error) throw error;
-          
-          const newEdges: Edge[] = (contextPulls || []).map((pull) => ({
-            id: `edge-${pull.origin_node_id}-${pull.target_node_id}`,
-            source: pull.origin_node_id.toString(),
-            target: pull.target_node_id.toString(),
+        setEdges((eds) => {
+          const newEdges = payload.pulledConnections.map((conn: { nodeId: string }) => ({
+            id: `edge-${conn.nodeId}-${payload.nodeId}`,
+            source: conn.nodeId,
+            target: payload.nodeId,
             type: 'straight',
             animated: true,
-            style: { 
-              strokeWidth: 2, 
-              stroke: '#555', 
-              strokeDasharray: '5, 5' 
-            },
+            arrowHeadType: 'arrowclosed',
+            style: { strokeWidth: 2, stroke: '#555', strokeDasharray: '5, 5' },
           }));
-          
-          setEdges(newEdges);
-        } catch (error) {
-          console.error('Error updating edges:', error);
+          return [...eds.filter((e) => e.target !== payload.nodeId), ...newEdges];
+        });
+      });
+      
+      socket.on('node-position-update', ({ nodeId, position }) => {
+        console.log('Socket: Node position update received:', nodeId, position);
+        
+        // Skip the update if we're still in the same cycle 
+        // to avoid a feedback loop between local changes and socket events
+        if (updatingPositionNodeId === nodeId) {
+          console.log('Ignoring position update for node we just updated locally');
+          return;
         }
+        
+        setNodes((nds) =>
+          nds.map((node) => {
+            if (node.id === nodeId) {
+              console.log(`Updating position of node ${nodeId} from socket event`);
+              return {
+                ...node,
+                position: position,
+              };
+            }
+            return node;
+          })
+        );
       });
       
       // Return cleanup function
@@ -324,44 +365,107 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         socket.off('node-update');
         socket.off('presence-update');
         socket.off('node-state-update');
+        socket.off('node-position-update');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
-      const channel = supabase.channel('real-time-updates');
+      console.log('Socket.IO not available, using Supabase Realtime as fallback');
       
-      // Subscribe to changes in context_pulls table
-      channel.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'context_pulls',
-        },
-        () => {
-          loadNodesWithConnections();
-        }
-      );
-      
-      // Subscribe to changes in chat_messages table (for update detection)
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-        },
-        () => {
-          loadNodesWithConnections();
-        }
-      );
-      
-      channel.subscribe();
+      try {
+        const channel = supabase.channel('real-time-updates', {
+          config: {
+            broadcast: { self: true },
+            presence: { key: user.id },
+          },
+        });
+        
+        // Subscribe to changes in context_pulls table
+        channel
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'context_pulls',
+            },
+            () => {
+              console.log('Supabase: Context pull change detected');
+              loadNodesWithConnections();
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'chat_messages',
+            },
+            () => {
+              console.log('Supabase: New message detected');
+              loadNodesWithConnections();
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'chat_nodes',
+              filter: `position_x=neq.position_x`,
+            },
+            (payload) => {
+              console.log('Supabase: Node position change detected', payload);
+              if (payload.new && typeof payload.new.node_id === 'number') {
+                setNodes((nds) =>
+                  nds.map((node) => {
+                    if (node.id === payload.new.node_id.toString()) {
+                      const position = {
+                        x: payload.new.position_x ?? 0,
+                        y: payload.new.position_y ?? 0
+                      };
+                      return {
+                        ...node,
+                        position
+                      };
+                    }
+                    return node;
+                  })
+                );
+              }
+            }
+          )
+          .subscribe((status) => {
+            console.log(`Supabase channel status: ${status}`);
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully subscribed to Supabase Realtime channels');
+            }
+            if (status === 'CHANNEL_ERROR') {
+              console.error('Error connecting to Supabase Realtime. Retrying in 5 seconds...');
+              // Attempt to reconnect after a delay
+              setTimeout(() => {
+                channel.subscribe();
+              }, 5000);
+            }
+          });
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
+        return () => {
+          channel.unsubscribe();
+        };
+      } catch (error) {
+        console.error('Error setting up Supabase Realtime:', error);
+        
+        // Fallback to polling as a last resort
+        const pollingInterval = setInterval(() => {
+          console.log('Polling for updates...');
+          loadNodesWithConnections();
+        }, 10000); // Poll every 10 seconds
+        
+        return () => {
+          clearInterval(pollingInterval);
+        };
+      }
     }
-  }, [user, loadNodesWithConnections, socket, selectedNodeId, onNodeSelect]);
+  }, [user, loadNodesWithConnections, socket, selectedNodeId, onNodeSelect, updatingPositionNodeId]);
 
   // Handle node selection/deselection
   useEffect(() => {
@@ -384,7 +488,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       const newNode: Node = {
         id: newChatNode.node_id.toString(),
         type: 'chatNode',
-        position: { x: newChatNode.position_x || Math.random() * 500, y: newChatNode.position_y || Math.random() * 500 },
+        position: { x: newChatNode.position_x ?? 0, y: newChatNode.position_y ?? 0 },
         data: {
           label: newChatNode.title,
           nodeId: newChatNode.node_id,
@@ -420,6 +524,71 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     [onNodeSelect]
   );
 
+  const handleNodesChange = useCallback(
+    async (changes: NodeChange[]) => {
+      onNodesChange(changes); // Apply changes to local state
+
+      // Process position updates
+      for (const change of changes) {
+        if (
+          change.type === 'position' &&
+          change.position &&
+          !change.dragging // Only save when dragging ends
+        ) {
+          const nodeId = parseInt(change.id);
+          const { x, y } = change.position;
+          
+          try {
+            console.log(`Updating position for node ${nodeId}: x=${x}, y=${y}`);
+            
+            // First update the position in our local state to ensure consistency
+            setNodes((nds) =>
+              nds.map((node) =>
+                node.id === change.id
+                  ? {
+                      ...node,
+                      position: { x, y },
+                    }
+                  : node
+              )
+            );
+            
+            // Set the updating node ID to avoid feedback loops
+            setUpdatingPositionNodeId(change.id);
+            
+            // Send update to the database
+            await updateNodePosition(nodeId, { x, y });
+            console.log(`Successfully saved position for node ${nodeId}: x=${x}, y=${y}`);
+            
+            // Emit position update via Socket.IO for real-time collaboration
+            if (socket) {
+              socket.emit('node-position-update', {
+                nodeId: change.id,
+                position: change.position,
+              });
+            }
+            
+            // Clear the updating node ID after a short delay
+            setTimeout(() => {
+              setUpdatingPositionNodeId(null);
+            }, 500);
+          } catch (error) {
+            console.error(`Failed to update position for node ${nodeId}:`, error);
+          }
+        }
+      }
+
+      // Handle node deletions
+      const removeChanges = changes.filter(
+        (change: NodeChange): change is NodeRemoveChange => change.type === 'remove'
+      );
+      if (removeChanges.length > 0) {
+        onNodesDelete(removeChanges);
+      }
+    },
+    [onNodesChange, onNodesDelete, setNodes, socket, setUpdatingPositionNodeId]
+  );
+
   const onNodeClick: NodeMouseHandler = useCallback(
     (event, node) => {
       // If user is already in a node, first leave it
@@ -444,27 +613,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={(changes: NodeChange[]) => {
-          onNodesChange(changes);
-
-          // Handle node position updates when nodes are moved
-          changes.forEach(async (change) => {
-            if (change.type === 'position' && change.position && change.dragging === false) {
-              try {
-                await updateNodePosition(parseInt(change.id), change.position);
-              } catch (error) {
-                console.error('Error updating node position:', error);
-              }
-            }
-          });
-
-          const removeChanges = changes.filter(
-            (change: NodeChange): change is NodeRemoveChange => change.type === 'remove'
-          );
-          if (removeChanges.length > 0) {
-            onNodesDelete(removeChanges);
-          }
-        }}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}

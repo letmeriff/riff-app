@@ -52,16 +52,33 @@ const app = express();
 const httpServer = createServer(app);
 const port = process.env.PORT || 3001;
 
-// Set up Socket.IO with CORS
+// Set up CORS with more permissive settings for development
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? [process.env.FRONTEND_URL || 'https://your-production-url.com'] 
+    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'https://wezijqqdnoezwaqtybzo.supabase.co'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
+app.use(cors(corsOptions));
+
+// Set up Socket.IO with improved CORS and connection settings
 export const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
+    origin: corsOptions.origin,
+    methods: corsOptions.methods,
+    credentials: corsOptions.credentials,
+    allowedHeaders: corsOptions.allowedHeaders
+  },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 30000,
+  pingInterval: 10000,
+  connectTimeout: 60000,
+  allowEIO3: true // Allow older Engine.IO clients
 });
 
-app.use(cors());
 app.use(express.json());
 
 // Health check endpoint (public)
@@ -236,6 +253,35 @@ io.on('connection', (socket: Socket) => {
       io.to(nodeRoom).emit('presence-update', { nodeId, presence });
     } catch (error) {
       console.error('Error handling typing event:', error);
+    }
+  });
+
+  // Handle node position update
+  socket.on('node-position-update', async ({ nodeId, position }) => {
+    try {
+      const userId = socket.data.user.id;
+      console.log(`User ${userId} updated position of node ${nodeId}:`, position);
+      
+      // Save the position to the database
+      const { error } = await supabase
+        .from('chat_nodes')
+        .update({ 
+          position_x: position.x, 
+          position_y: position.y 
+        })
+        .eq('node_id', parseInt(nodeId));
+      
+      if (error) {
+        console.error('Error updating node position in database:', error);
+        return;
+      }
+      
+      console.log(`Successfully updated position for node ${nodeId} in database`);
+      
+      // Broadcast the position update to all users
+      io.emit('node-position-update', { nodeId, position });
+    } catch (error) {
+      console.error('Error handling node position update:', error);
     }
   });
 

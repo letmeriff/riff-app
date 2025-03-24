@@ -9,6 +9,7 @@ import SettingsModal from './components/SettingsModal';
 import { supabase } from './services/supabase';
 import './styles/auth.css';
 import './styles/app.css';
+import ConnectionStatus from './components/ConnectionStatus';
 
 const AppContent: React.FC = () => {
   const { user, session, signOut } = useAuth();
@@ -125,7 +126,7 @@ const AppContent: React.FC = () => {
 
         {/* Chat UI (38.2%) */}
         <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
             <ChatUI 
               nodeId={selectedNodeId} 
               nodeTitle={selectedNodeTitle} 
@@ -133,18 +134,21 @@ const AppContent: React.FC = () => {
             />
           </div>
           <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
-            <button 
-              onClick={handleOpenSettings}
-              style={{ padding: '5px 10px', marginRight: '10px' }}
-            >
-              Settings
-            </button>
-            <button 
-              onClick={signOut} 
-              style={{ padding: '5px 10px' }}
-            >
-              Logout
-            </button>
+            <ConnectionStatus />
+            <div>
+              <button 
+                onClick={handleOpenSettings}
+                style={{ padding: '5px 10px', marginRight: '10px' }}
+              >
+                Settings
+              </button>
+              <button 
+                onClick={signOut} 
+                style={{ padding: '5px 10px' }}
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </div>
