@@ -18,6 +18,8 @@ import 'reactflow/dist/style.css';
 import '../styles/reactflow.css';
 import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
+import LibrarySidebar from '../components/LibrarySidebar';
+import { Prompt } from '../services/promptService';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, deleteNode, updateNodePosition } from '../services/nodeService';
@@ -211,7 +213,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
               nodeId: chatNode.node_id,
               model: chatNode.model,
               flavor: chatNode.flavor,
-              framework: chatNode.framework,
               users: userPresence,
               pulledConnections: pulledConnectionsWithUpdates,
               pulledByConnections: pulledByConnectionsData,
@@ -287,7 +288,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
                 nodeId: payload.new.node_id,
                 model: payload.new.model,
                 flavor: payload.new.flavor,
-                framework: payload.new.framework,
                 users: [],
                 pulledConnections: [],
                 pulledByConnections: [],
@@ -322,8 +322,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
                   ...node.data,
                   label: payload.new!.title,
                   model: payload.new!.model,
-                  flavor: payload.new!.flavor,
-                  framework: payload.new!.framework
+                  flavor: payload.new!.flavor
                 }
               };
             }
@@ -511,8 +510,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
                             ...node.data,
                             label: payload.new.title,
                             model: payload.new.model,
-                            flavor: payload.new.flavor,
-                            framework: payload.new.framework
+                            flavor: payload.new.flavor
                           }
                         };
                       }
@@ -570,11 +568,11 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     }
   }, [socket, selectedNodeId, user]);
 
-  const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string, frameworkName: string) => {
+  const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;
     try {
       // Create node in database
-      const newChatNode = await createNode(user.id, title, modelName, flavorName, frameworkName);
+      const newChatNode = await createNode(user.id, title, modelName, flavorName);
       
       // Ensure position values are valid numbers
       const position = { 
@@ -598,7 +596,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           nodeId: newChatNode.node_id,
           model: newChatNode.model,
           flavor: newChatNode.flavor,
-          framework: newChatNode.framework,
           users: [],
           pulledConnections: [],
           pulledByConnections: [],
@@ -757,60 +754,71 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     };
   }, [saveAllNodePositions]);
 
+  // Handler for when a prompt is dragged
+  const handlePromptDrag = (prompt: Prompt) => {
+    console.log('Prompt dragged:', prompt);
+    // This is just for logging, the actual handling happens in ChatUI
+  };
+
   return (
     <div style={{ 
       height: '100%', 
       width: '100%',
       position: 'relative',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      display: 'flex'
     }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={onNodeClick}
-        nodeTypes={nodeTypes}
-        fitView
-        style={{ 
-          width: '100%', 
-          height: '100%',
-          background: '#f5f5f6'
-        }}
-      >
-        <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
-        <Background color="#aaa" gap={16} />
-        <Controls 
-          position="bottom-right"
-          style={{
-            bottom: 10,
-            right: 10
+      <LibrarySidebar onPromptDrag={handlePromptDrag} />
+      
+      <div style={{ flexGrow: 1, height: '100%' }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeClick={onNodeClick}
+          nodeTypes={nodeTypes}
+          fitView
+          style={{ 
+            width: '100%', 
+            height: '100%',
+            background: '#f5f5f6'
           }}
-        />
-        <MiniMap
-          nodeStrokeColor={(n) => {
-            if (n.id === selectedNodeId) return '#ff0072';
-            return '#555';
-          }}
-          nodeColor={(n) => {
-            if (n.id === selectedNodeId) return '#ffcce6';
-            return '#fff';
-          }}
-          style={{
-            bottom: 10,
-            left: 10,
-            background: '#f5f5f6',
-            border: '1px solid #ddd',
-            borderRadius: '5px',
-            height: 120,
-            width: 160
-          }}
-          maskColor="rgba(0, 0, 0, 0.1)"
-          zoomable
-          pannable
-        />
-      </ReactFlow>
+        >
+          <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
+          <Background color="#aaa" gap={16} />
+          <Controls 
+            position="bottom-right"
+            style={{
+              bottom: 10,
+              right: 10
+            }}
+          />
+          <MiniMap
+            nodeStrokeColor={(n) => {
+              if (n.id === selectedNodeId) return '#ff0072';
+              return '#555';
+            }}
+            nodeColor={(n) => {
+              if (n.id === selectedNodeId) return '#ffcce6';
+              return '#fff';
+            }}
+            style={{
+              bottom: 10,
+              left: 10,
+              background: '#f5f5f6',
+              border: '1px solid #ddd',
+              borderRadius: '5px',
+              height: 120,
+              width: 160
+            }}
+            maskColor="rgba(0, 0, 0, 0.1)"
+            zoomable
+            pannable
+          />
+        </ReactFlow>
+      </div>
     </div>
   );
 };

@@ -7,7 +7,6 @@ export interface ChatNode {
   owner_id: string;
   model?: string;
   flavor?: string;
-  framework?: string;
   position_x?: number;
   position_y?: number;
   created_at: string;
@@ -23,8 +22,7 @@ export const createNode = async (
   userId: string, 
   title: string,
   model?: string,
-  flavor?: string,
-  framework?: string
+  flavor?: string
 ): Promise<ChatNode> => {
   const initialPositionX = Math.random() * 500;
   const initialPositionY = Math.random() * 500;
@@ -37,7 +35,6 @@ export const createNode = async (
       title,
       model,
       flavor,
-      framework,
       position_x: initialPositionX,
       position_y: initialPositionY
     })

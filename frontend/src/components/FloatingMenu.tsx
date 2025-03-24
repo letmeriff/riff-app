@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import CreateNodeModal from './CreateNodeModal';
 
 interface FloatingMenuProps {
-  onCreateNode: (title: string, modelName: string, flavorName: string, frameworkName: string) => void;
+  onCreateNode: (title: string, modelName: string, flavorName: string) => void;
   onOpenSettings?: () => void;
 }
 
 const FloatingMenu: React.FC<FloatingMenuProps> = ({ onCreateNode, onOpenSettings }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleNodeCreate = (title: string, modelName: string, flavorName: string, frameworkName: string) => {
-    onCreateNode(title, modelName, flavorName, frameworkName);
+  const handleNodeCreate = (title: string, modelName: string, flavorName: string) => {
+    onCreateNode(title, modelName, flavorName);
   };
 
   return (

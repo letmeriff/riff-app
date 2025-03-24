@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useSocket } from '../contexts/SocketContext';
 import { ChatNode } from '../services/nodeService';
+import { Prompt } from '../services/promptService';
 
 interface ChatMessage {
   message_id: number;
@@ -62,6 +63,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [isTransferring, setIsTransferring] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -311,6 +313,43 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: false });
       }
     }, 2000);
+  };
+
+  // Add handlers for drag and drop
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    try {
+      const data = e.dataTransfer.getData('application/json');
+      if (!data) return;
+      
+      const prompt = JSON.parse(data) as Prompt;
+      if (!prompt || !prompt.content) return;
+      
+      // For framework or template, set the input to its content
+      setInput(prompt.content);
+      
+      // Focus the input field after a short delay to ensure it's ready
+      setTimeout(() => {
+        const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
+        if (inputElement) {
+          inputElement.focus();
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error parsing dropped prompt:', error);
+    }
   };
 
   const handleSendMessage = async () => {
@@ -653,14 +692,19 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   });
 
   return (
-    <div
-      style={{
-        display: 'flex',
+    <div 
+      className="chat-container" 
+      style={{ 
+        height: '100%', 
+        display: 'flex', 
         flexDirection: 'column',
-        height: '100%',
-        background: '#f0f0f0',
-        padding: '10px',
+        border: isDragOver ? '2px dashed #3182CE' : '1px solid #ddd',
+        background: isDragOver ? 'rgba(235, 248, 255, 0.6)' : 'white',
+        transition: 'all 0.2s'
       }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={nodeId && isOwner ? handleDrop : undefined}
     >
       <div
         style={{

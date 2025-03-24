@@ -43,7 +43,7 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
     // Fetch the node to verify ownership
     const { data: node, error: nodeError } = await supabase
       .from('chat_nodes')
-      .select('owner_id, model, flavor, framework')
+      .select('owner_id, model, flavor')
       .eq('node_id', nodeId)
       .single();
     
@@ -121,7 +121,6 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
       modelName,
       apiKey,
       node.flavor,
-      node.framework,
       validatedAttachments // Pass the validated attachments to focus on
     );
     

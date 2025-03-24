@@ -9,7 +9,7 @@ import { authMiddleware } from './middleware/auth';
 import modelRoutes from './routes/modelRoutes';
 import chatRoutes from './routes/chatRoutes';
 import flavorRoutes from './routes/flavorRoutes';
-import frameworkRoutes from './routes/frameworkRoutes';
+import promptRoutes from './routes/promptRoutes';
 import contextRoutes from './routes/contextRoutes';
 import summarizationRoutes from './routes/summarizationRoutes';
 import branchRoutes from './routes/branchRoutes';
@@ -17,6 +17,11 @@ import presenceRoutes from './routes/presenceRoutes';
 import attachmentRoutes from './routes/attachmentRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
+import authRoutes from './routes/authRoutes';
+import userRoutes from './routes/userRoutes';
+import nodeRoutes from './routes/nodeRoutes';
+import uploadRoutes from './routes/uploadRoutes';
+import contextPullRoutes from './routes/contextPullRoutes';
 
 // Define interfaces for the payload structures
 interface ChatNode {
@@ -26,7 +31,6 @@ interface ChatNode {
   title: string;
   model: string;
   flavor: string;
-  framework?: string;
   created_at: string;
 }
 
@@ -127,15 +131,16 @@ app.get('/api/test-supabase', authMiddleware, async (req: Request, res: Response
 });
 
 // API routes
-app.use('/api/models', modelRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/nodes', nodeRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/models', modelRoutes);
 app.use('/api/flavors', flavorRoutes);
-app.use('/api/frameworks', frameworkRoutes);
-app.use('/api/context', contextRoutes);
-app.use('/api/summarize', summarizationRoutes);
-app.use('/api/branch', branchRoutes);
+app.use('/api/prompts', promptRoutes);
+app.use('/api/context-pull', contextPullRoutes);
 app.use('/api/presence', presenceRoutes);
-app.use('/api/attachments', attachmentRoutes);
 
 // API endpoint for saving node position during page unload
 app.post('/api/save-node-position', authMiddleware, async (req, res) => {

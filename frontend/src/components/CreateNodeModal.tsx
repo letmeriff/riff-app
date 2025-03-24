@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { fetchFrameworks, Framework } from '../services/frameworkService';
 
 interface Model {
   id: number;
@@ -15,7 +14,7 @@ interface Flavor {
 interface CreateNodeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (title: string, modelName: string, flavorName: string, frameworkName: string) => void;
+  onCreate: (title: string, modelName: string, flavorName: string) => void;
   onOpenSettings?: () => void; // Optional callback to open settings modal
 }
 
@@ -23,15 +22,13 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
   const [title, setTitle] = useState('');
   const [modelName, setModelName] = useState('');
   const [flavorName, setFlavorName] = useState('');
-  const [frameworkName, setFrameworkName] = useState('');
   const [models, setModels] = useState<Model[]>([]);
   const [flavors, setFlavors] = useState<Flavor[]>([]);
-  const [frameworks, setFrameworks] = useState<Framework[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noApiKeysWarning, setNoApiKeysWarning] = useState<boolean>(false);
 
-  // Fetch models, flavors, and frameworks when the modal opens
+  // Fetch models and flavors when the modal opens
   useEffect(() => {
     if (!isOpen) return;
 
@@ -80,15 +77,6 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
         
         const flavorsData = await flavorsResponse.json();
         setFlavors(flavorsData);
-
-        // Fetch frameworks
-        try {
-          const frameworksData = await fetchFrameworks();
-          setFrameworks(frameworksData);
-        } catch (frameworkError) {
-          console.error('Error fetching frameworks:', frameworkError);
-          // Don't throw here, we can still create a node without a framework
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An unknown error occurred');
         console.error('Error fetching data:', err);
@@ -103,12 +91,11 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !modelName || !flavorName) return;
-    onCreate(title, modelName, flavorName, frameworkName);
+    onCreate(title, modelName, flavorName);
     // Reset form
     setTitle('');
     setModelName('');
     setFlavorName('');
-    setFrameworkName('');
     onClose();
   };
 
@@ -217,7 +204,7 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
               )}
             </div>
             
-            <div style={{ marginBottom: '15px' }}>
+            <div style={{ marginBottom: '20px' }}>
               <label htmlFor="flavor" style={{ display: 'block', marginBottom: '5px' }}>
                 Flavor:
               </label>
@@ -235,30 +222,6 @@ const CreateNodeModal: React.FC<CreateNodeModalProps> = ({ isOpen, onClose, onCr
                   </option>
                 ))}
               </select>
-            </div>
-            
-            <div style={{ marginBottom: '20px' }}>
-              <label htmlFor="framework" style={{ display: 'block', marginBottom: '5px' }}>
-                Framework:
-              </label>
-              <select
-                id="framework"
-                value={frameworkName}
-                onChange={(e) => setFrameworkName(e.target.value)}
-                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-              >
-                <option value="">Select a framework (optional)</option>
-                {frameworks.map((framework) => (
-                  <option key={framework.id} value={framework.name}>
-                    {framework.name}
-                  </option>
-                ))}
-              </select>
-              {frameworks.length === 0 && !isLoading && (
-                <p style={{ color: 'orange', fontSize: '0.8em', marginTop: '5px' }}>
-                  No frameworks available.
-                </p>
-              )}
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
