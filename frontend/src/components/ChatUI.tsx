@@ -11,6 +11,18 @@ interface ChatMessage {
   timestamp: string;
 }
 
+interface ChatAttachment {
+  attachment_id: number;
+  node_id: number;
+  user_id: string;
+  file_path: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  created_at: string;
+  file_url?: string;
+}
+
 interface UserPresence {
   userId: string;
   email: string;
@@ -39,8 +51,11 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [presentUsers, setPresentUsers] = useState<UserPresence[]>([]);
   const [selectedNewOwner, setSelectedNewOwner] = useState<string>('');
   const [isTransferring, setIsTransferring] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
@@ -60,10 +75,47 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     fetchNodes();
   }, []);
 
-  // Scroll to bottom when messages change
+  // Add a new useEffect to fetch attachments when nodeId changes
+  useEffect(() => {
+    if (!nodeId) {
+      setAttachments([]);
+      return;
+    }
+
+    const fetchAttachments = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        
+        if (!token) {
+          throw new Error('Authentication token not found. Please log in again.');
+        }
+        
+        const response = await fetch(`http://localhost:3001/api/attachments/${nodeId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to fetch attachments');
+        }
+        
+        const attachmentsData = await response.json();
+        setAttachments(attachmentsData);
+      } catch (error) {
+        console.error('Error fetching attachments:', error);
+      }
+    };
+
+    fetchAttachments();
+  }, [nodeId]);
+
+  // Scroll to bottom when messages or attachments change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, attachments]);
 
   // Fetch messages when the node changes and set up real-time updates
   useEffect(() => {
@@ -72,6 +124,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       setTypingUsers([]);
       setIsOwner(false);
       setPresentUsers([]);
+      setAttachments([]);
       return;
     }
 
@@ -169,11 +222,41 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         }
       });
 
+      // Listen for attachment updates
+      socket.on('attachment-update', (payload) => {
+        console.log('Socket: Attachment update received:', payload);
+        if (payload.nodeId.toString() === nodeId) {
+          setAttachments((prev) => {
+            // Check if this attachment is already in the list to avoid duplicates
+            if (prev.some((att) => att.attachment_id === payload.attachment.attachment_id)) {
+              // Update the existing attachment
+              return prev.map((att) => 
+                att.attachment_id === payload.attachment.attachment_id ? payload.attachment : att
+              );
+            }
+            // Add the new attachment
+            return [...prev, payload.attachment];
+          });
+        }
+      });
+
+      // Listen for attachment deletions
+      socket.on('attachment-delete', (payload) => {
+        console.log('Socket: Attachment delete received:', payload);
+        if (payload.nodeId.toString() === nodeId) {
+          setAttachments((prev) => 
+            prev.filter((att) => att.attachment_id !== payload.attachmentId)
+          );
+        }
+      });
+
       return () => {
         socket.off('message-update');
         socket.off('presence-update');
         socket.off('ownership-update');
         socket.off('transfer-ownership-error');
+        socket.off('attachment-update');
+        socket.off('attachment-delete');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
@@ -402,32 +485,142 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!nodeId || !isOwner || !e.target.files || e.target.files.length === 0) return;
+
+    const file = e.target.files[0];
+    setIsUploading(true);
+
+    try {
+      // Get the current session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
+      if (!token) {
+        throw new Error('Authentication token not found. Please log in again.');
+      }
+
+      // Create a unique file name to prevent collisions
+      const fileExtension = file.name.split('.').pop();
+      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`;
+      const filePath = `${nodeId}/${uniqueFileName}`;
+
+      // Upload the file to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('chat-attachments')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get the public URL of the uploaded file
+      const { data: urlData } = await supabase.storage
+        .from('chat-attachments')
+        .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
+
+      const signedUrl = urlData?.signedUrl;
+      
+      if (!signedUrl) {
+        throw new Error('Failed to create signed URL for the uploaded file');
+      }
+
+      // Store the file metadata in the database
+      const { data: attachment, error: insertError } = await supabase
+        .from('chat_attachments')
+        .insert({
+          node_id: parseInt(nodeId),
+          user_id: userId,
+          file_path: filePath,
+          file_name: file.name,
+          file_type: file.type,
+          file_size: file.size,
+          file_url: signedUrl
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Broadcast the new attachment to all users in the node room
+      if (socket) {
+        socket.emit('attachment-update', {
+          nodeId: parseInt(nodeId),
+          attachment: attachment
+        });
+      }
+
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      alert('Error uploading file: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: number) => {
+    if (!nodeId) return;
+
+    try {
+      // Get the current session token
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
+      if (!token) {
+        throw new Error('Authentication token not found. Please log in again.');
+      }
+      
+      const response = await fetch(`http://localhost:3001/api/attachments/${attachmentId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete attachment');
+      }
+      
+      // The socket will handle updating the UI when the server confirms the deletion
+    } catch (error) {
+      console.error('Error deleting attachment:', error);
+      alert('Error deleting attachment: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        width: '100%',
-        overflow: 'hidden'
+        background: '#f0f0f0',
+        padding: '10px',
       }}
     >
       <div
         style={{
           padding: '10px',
+          background: '#fff',
           borderBottom: '1px solid #ddd',
-          background: '#f8f9fa',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          flexShrink: 0
         }}
       >
         <div>
-          <h3 style={{ margin: '0 0 5px 0' }}>{nodeTitle || 'No node selected'}</h3>
+          <div style={{ fontWeight: 'bold', fontSize: '18px' }}>
+            {nodeTitle || 'No node selected'}
+          </div>
           {nodeId && (
-            <div style={{ fontSize: '14px', color: '#777' }}>
-              {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
+            <div style={{ fontSize: '12px', color: '#777' }}>
+              ID: {nodeId} | {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
             </div>
           )}
         </div>
@@ -463,11 +656,61 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
             </div>
           </div>
         ))}
+
+        {attachments.map((attachment) => (
+          <div
+            key={attachment.attachment_id}
+            style={{
+              alignSelf: 'flex-start',
+              background: '#e0e0e0',
+              padding: '8px 12px',
+              borderRadius: '10px',
+              maxWidth: '70%',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <a 
+                href={attachment.file_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={{ color: '#0066cc', textDecoration: 'none' }}
+              >
+                {attachment.file_name} ({(attachment.file_size / 1024).toFixed(2)} KB)
+              </a>
+              {(isOwner || attachment.user_id === userId) && (
+                <button
+                  onClick={() => handleDeleteAttachment(attachment.attachment_id)}
+                  style={{
+                    marginLeft: '8px',
+                    background: 'none',
+                    border: 'none',
+                    color: '#ff4444',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '4px' }}>
+              {new Date(attachment.created_at).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
+
         {loading && (
           <div style={{ alignSelf: 'flex-start', color: '#777' }}>
             AI is typing...
           </div>
         )}
+
+        {isUploading && (
+          <div style={{ alignSelf: 'flex-start', color: '#777' }}>
+            Uploading file...
+          </div>
+        )}
+
         {typingUsers.length > 0 && (
           <div style={{ alignSelf: 'flex-start', color: '#777' }}>
             {typingUsers.join(', ')} {typingUsers.length > 1 ? 'are' : 'is'} typing...
@@ -488,9 +731,27 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         }}
       >
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <button disabled style={{ padding: '5px 10px', background: '#ddd' }}>
-            Attach
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              padding: '5px 10px',
+              background: nodeId && isOwner && !isUploading ? '#007bff' : '#ddd',
+              color: nodeId && isOwner && !isUploading ? '#fff' : '#000',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: nodeId && isOwner && !isUploading ? 'pointer' : 'not-allowed',
+            }}
+            disabled={!nodeId || !isOwner || isUploading}
+          >
+            {isUploading ? 'Uploading...' : 'Attach'}
           </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileUpload}
+            disabled={!nodeId || !isOwner || isUploading}
+          />
           
           <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
             <select

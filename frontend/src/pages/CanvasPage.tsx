@@ -115,7 +115,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           // Get current user presence for this node
           let userPresence: UserPresence[] = [];
           try {
-            // Get the current session token
             const { data: sessionData } = await supabase.auth.getSession();
             const token = sessionData.session?.access_token;
             
@@ -134,12 +133,48 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             console.error('Error fetching user presence:', error);
           }
 
-          // Determine node position with the following priority:
-          // 1. Use existing position from current React Flow state if available
-          // 2. Use position from database
-          // 3. Default to (0,0) if neither is available
+          // Get attachments for this node
+          let nodeAttachments: { attachment_id: number; file_url: string; file_type: string }[] = [];
+          try {
+            const { data: attachmentsData, error: attachmentsError } = await supabase
+              .from('chat_attachments')
+              .select('*')
+              .eq('node_id', chatNode.node_id);
+            
+            if (attachmentsError) {
+              throw attachmentsError;
+            }
+            
+            if (attachmentsData && attachmentsData.length > 0) {
+              nodeAttachments = await Promise.all(attachmentsData.map(async (att) => {
+                // Use existing URL if it's already saved
+                if (att.file_url) {
+                  return {
+                    attachment_id: att.attachment_id,
+                    file_url: att.file_url,
+                    file_type: att.file_type
+                  };
+                }
+                
+                // Create a signed URL with 1 year expiry
+                const { data: urlData } = await supabase.storage
+                  .from('chat-attachments')
+                  .createSignedUrl(att.file_path, 60 * 60 * 24 * 365);
+                
+                return {
+                  attachment_id: att.attachment_id,
+                  file_url: urlData?.signedUrl || '',
+                  file_type: att.file_type
+                };
+              }));
+            }
+          } catch (error) {
+            console.error('Error fetching attachments:', error);
+          }
+          
+          // Determine the node position (from React Flow state, database, or default)
           const nodeId = chatNode.node_id.toString();
-          let position: { x: number; y: number };
+          let position = { x: 0, y: 0 };
           
           if (existingNodePositions.has(nodeId)) {
             // Use existing position from React Flow state
@@ -179,7 +214,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
               users: userPresence,
               pulledConnections: pulledConnectionsWithUpdates,
               pulledByConnections: pulledByConnectionsData,
-              attachments: [],
+              attachments: nodeAttachments,
             },
           };
         })

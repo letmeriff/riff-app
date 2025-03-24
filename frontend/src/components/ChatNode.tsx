@@ -14,7 +14,7 @@ interface ChatNodeData {
   users?: UserPresence[];
   pulledConnections?: { nodeId: string; hasUpdates: boolean; pullId?: number }[];
   pulledByConnections?: { nodeId: string; pullId?: number }[];
-  attachments?: { file_url: string; file_type: string }[];
+  attachments?: { attachment_id: number; file_url: string; file_type: string }[];
 }
 
 // Helper function to get initials from email
@@ -180,9 +180,9 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
               Attachments:
             </div>
             <div style={{ display: 'flex', gap: '5px' }}>
-              {data.attachments.map((attachment, index) => (
+              {data.attachments.map((attachment) => (
                 <div
-                  key={index}
+                  key={attachment.attachment_id}
                   style={{
                     width: '20px',
                     height: '10px',

@@ -13,9 +13,9 @@ import contextRoutes from './routes/contextRoutes';
 import summarizationRoutes from './routes/summarizationRoutes';
 import branchRoutes from './routes/branchRoutes';
 import presenceRoutes from './routes/presenceRoutes';
+import attachmentRoutes from './routes/attachmentRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
-import { authenticateJwtMiddleware } from './middleware/auth';
 
 // Define interfaces for the payload structures
 interface ChatNode {
@@ -130,6 +130,7 @@ app.use('/api/context', contextRoutes);
 app.use('/api/summarize', summarizationRoutes);
 app.use('/api/branch', branchRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/attachments', attachmentRoutes);
 
 // API endpoint for saving node position during page unload
 app.post('/api/save-node-position', authMiddleware, async (req, res) => {
@@ -408,6 +409,90 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
+  // Handle attachment update event
+  socket.on('attachment-update', async ({ nodeId, attachment }) => {
+    try {
+      // Broadcast the attachment update to all clients in the node room
+      const nodeRoom = `node:${nodeId}`;
+      io.to(nodeRoom).emit('attachment-update', { nodeId, attachment });
+
+      // Update the node state with the new attachment
+      const { data: pulledConnections } = await supabase
+        .from('context_pulls')
+        .select('origin_node_id, last_pulled_at')
+        .eq('target_node_id', nodeId);
+      
+      const pulledConnectionsWithUpdates = await Promise.all(
+        (pulledConnections || []).map(async (pull) => {
+          const { data: latestMessage } = await supabase
+            .from('chat_messages')
+            .select('timestamp')
+            .eq('node_id', pull.origin_node_id)
+            .order('timestamp', { ascending: false })
+            .limit(1)
+            .single();
+          
+          const hasUpdates = latestMessage
+            ? new Date(latestMessage.timestamp) > new Date(pull.last_pulled_at)
+            : false;
+          
+          return { nodeId: pull.origin_node_id.toString(), hasUpdates };
+        })
+      );
+
+      const { data: pulledByConnections } = await supabase
+        .from('context_pulls')
+        .select('target_node_id')
+        .eq('origin_node_id', nodeId);
+      
+      const pulledByConnectionsData = (pulledByConnections || []).map((pull) => ({
+        nodeId: pull.target_node_id.toString(),
+      }));
+
+      const { data: nodeAttachments } = await supabase
+        .from('chat_attachments')
+        .select('*')
+        .eq('node_id', nodeId);
+      
+      const attachments = await Promise.all((nodeAttachments || []).map(async (att) => {
+        // Use existing URL if it's already saved
+        if (att.file_url) {
+          return {
+            attachment_id: att.attachment_id,
+            file_url: att.file_url,
+            file_name: att.file_name,
+            file_type: att.file_type,
+            file_size: att.file_size,
+            created_at: att.created_at,
+          };
+        }
+        
+        // Create a signed URL with 1 year expiry
+        const { data: urlData } = await supabase.storage
+          .from('chat-attachments')
+          .createSignedUrl(att.file_path, 60 * 60 * 24 * 365);
+        
+        return {
+          attachment_id: att.attachment_id,
+          file_url: urlData?.signedUrl || null,
+          file_name: att.file_name,
+          file_type: att.file_type,
+          file_size: att.file_size,
+          created_at: att.created_at,
+        };
+      }));
+
+      io.to(nodeRoom).emit('node-state-update', {
+        nodeId,
+        pulledConnections: pulledConnectionsWithUpdates,
+        pulledByConnections: pulledByConnectionsData,
+        attachments,
+      });
+    } catch (error) {
+      console.error('Error handling attachment update:', error);
+    }
+  });
+
   socket.on('disconnect', async () => {
     console.log(`User disconnected: ${socket.data.user.id}`);
     
@@ -465,6 +550,53 @@ supabase
         }
       } catch (error) {
         console.error('Error handling message change:', error);
+      }
+    }
+  )
+  .subscribe();
+
+// Add channel for chat_attachments
+supabase
+  .channel('chat_attachments')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'chat_attachments' },
+    async (payload: any) => {
+      try {
+        const nodeId = payload.new?.node_id || payload.old?.node_id;
+        if (nodeId) {
+          const nodeRoom = `node:${nodeId}`;
+          io.to(nodeRoom).emit('attachment-change', payload);
+          
+          // If it's a new attachment, fetch the complete data and broadcast it
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const { data: attachment } = await supabase
+              .from('chat_attachments')
+              .select('*')
+              .eq('attachment_id', payload.new.attachment_id)
+              .single();
+              
+            if (attachment) {
+              let enhancedAttachment = { ...attachment };
+              
+              // Add signed URL if needed
+              if (!attachment.file_url) {
+                const { data: urlData } = await supabase.storage
+                  .from('chat-attachments')
+                  .createSignedUrl(attachment.file_path, 60 * 60 * 24 * 365);
+                
+                enhancedAttachment.file_url = urlData?.signedUrl || null;
+              }
+              
+              io.to(nodeRoom).emit('attachment-update', { 
+                nodeId, 
+                attachment: enhancedAttachment 
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error handling attachment change:', error);
       }
     }
   )
