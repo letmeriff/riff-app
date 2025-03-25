@@ -67,6 +67,33 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  // Listen for node updates to keep title in sync
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    
+    const channel = supabase
+      .channel('chat_nodes_updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_nodes',
+          filter: `node_id=eq.${selectedNodeId}`,
+        },
+        (payload) => {
+          if (payload.new && payload.new.title) {
+            setSelectedNodeTitle(payload.new.title);
+          }
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [selectedNodeId]);
+
   // Check if user has any API keys on login
   useEffect(() => {
     if (!user || hasCheckedApiKeys) return;

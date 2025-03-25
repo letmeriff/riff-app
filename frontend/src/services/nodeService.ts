@@ -87,4 +87,12 @@ export const transferOwnership = async (nodeId: number, newOwnerId: string): Pro
     .update({ owner_id: newOwnerId })
     .eq('node_id', nodeId);
   if (error) throw error;
+};
+
+export const updateNodeTitle = async (nodeId: number, title: string): Promise<void> => {
+  const { error } = await supabase
+    .from('chat_nodes')
+    .update({ title })
+    .eq('node_id', nodeId);
+  if (error) throw error;
 }; 

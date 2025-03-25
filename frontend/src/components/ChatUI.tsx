@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useSocket } from '../contexts/SocketContext';
-import { ChatNode } from '../services/nodeService';
+import { ChatNode, updateNodeTitle } from '../services/nodeService';
 import { Prompt } from '../services/promptService';
 
 interface ChatMessage {
@@ -64,9 +64,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
@@ -292,6 +295,13 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       };
     }
   }, [nodeId, socket, userId]);
+
+  // Update editedTitle when nodeTitle changes
+  useEffect(() => {
+    if (nodeTitle) {
+      setEditedTitle(nodeTitle);
+    }
+  }, [nodeTitle]);
 
   // Handle input changes and emit typing events
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -711,6 +721,43 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   };
 
+  const handleTitleEdit = () => {
+    if (isOwner && nodeId) {
+      setIsEditingTitle(true);
+      // Focus the input after a brief delay to allow rendering
+      setTimeout(() => {
+        titleInputRef.current?.focus();
+      }, 50);
+    }
+  };
+
+  const handleTitleSave = async () => {
+    if (isOwner && nodeId && editedTitle.trim()) {
+      try {
+        await updateNodeTitle(parseInt(nodeId), editedTitle.trim());
+        setIsEditingTitle(false);
+        // The actual UI update will happen through the real-time subscription
+      } catch (error) {
+        console.error('Error updating node title:', error);
+      }
+    }
+  };
+
+  const handleTitleCancel = () => {
+    if (nodeTitle) {
+      setEditedTitle(nodeTitle);
+    }
+    setIsEditingTitle(false);
+  };
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleTitleSave();
+    } else if (e.key === 'Escape') {
+      handleTitleCancel();
+    }
+  };
+
   // Sort and combine messages and attachments
   const combinedItems: ChatItem[] = [
     ...messages.map(msg => msg as ChatMessage),
@@ -750,10 +797,69 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           alignItems: 'center',
         }}
       >
-        <div>
-          <div style={{ fontWeight: 'bold', fontSize: '18px' }}>
-            {nodeTitle || 'No node selected'}
-          </div>
+        <div style={{ flex: 1 }}>
+          {nodeId && isOwner && isEditingTitle ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={editedTitle}
+                onChange={(e) => setEditedTitle(e.target.value)}
+                onKeyDown={handleTitleKeyDown}
+                style={{ 
+                  fontWeight: 'bold', 
+                  fontSize: '18px',
+                  padding: '3px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid #aaa',
+                  width: '100%'
+                }}
+              />
+              <button
+                onClick={handleTitleSave}
+                style={{
+                  padding: '3px 8px',
+                  background: '#007bff',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
+              <button
+                onClick={handleTitleCancel}
+                style={{
+                  padding: '3px 8px',
+                  background: '#ddd',
+                  color: '#333',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div 
+              style={{ 
+                fontWeight: 'bold', 
+                fontSize: '18px',
+                cursor: isOwner && nodeId ? 'pointer' : 'default'
+              }}
+              onClick={handleTitleEdit}
+              title={isOwner && nodeId ? "Click to edit title" : ""}
+            >
+              {nodeTitle || 'No node selected'}
+              {isOwner && nodeId && (
+                <span style={{ marginLeft: '5px', fontSize: '14px', color: '#666' }}>
+                  ✏️
+                </span>
+              )}
+            </div>
+          )}
           {nodeId && (
             <div style={{ fontSize: '12px', color: '#777' }}>
               ID: {nodeId} | {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
