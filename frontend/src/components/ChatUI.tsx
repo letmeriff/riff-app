@@ -47,6 +47,14 @@ interface AttachmentItem {
 type ChatItem = ChatMessage | AttachmentItem;
 
 const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
+  // Add CSS keyframes for animations
+  const fadeInKeyframes = `
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  `;
+
   const { socket } = useSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -66,6 +74,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState('');
+  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  const [currentNode, setCurrentNode] = useState<ChatNode | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,6 +149,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       setIsOwner(false);
       setPresentUsers([]);
       setAttachments([]);
+      setCurrentNode(null);
       return;
     }
 
@@ -159,27 +170,6 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         setMessages(data || []);
       } catch (error) {
         console.error('Error fetching messages:', error);
-      }
-    };
-
-    const fetchNodeDetails = async () => {
-      try {
-        console.log(`Fetching node details for node ${nodeId}`);
-        const { data, error } = await supabase
-          .from('chat_nodes')
-          .select('owner_id')
-          .eq('node_id', parseInt(nodeId))
-          .single();
-        
-        if (error) {
-          console.error('Error fetching node details:', error);
-          throw error;
-        }
-        const isOwnerValue = data.owner_id === userId;
-        console.log(`User ${userId} is ${isOwnerValue ? '' : 'not '}the owner of node ${nodeId}`);
-        setIsOwner(isOwnerValue);
-      } catch (error) {
-        console.error('Error fetching node details:', error);
       }
     };
 
@@ -225,6 +215,9 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         console.log('Socket: Ownership update received:', payload);
         if (payload.nodeId.toString() === nodeId) {
           setIsOwner(payload.ownerId === userId);
+          
+          // Refresh node details
+          fetchNodeDetails();
         }
       });
 
@@ -233,6 +226,14 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           console.error('Ownership transfer error:', payload.error);
           alert(`Failed to transfer ownership: ${payload.error}`);
           setIsTransferring(false);
+        }
+      });
+
+      // Listen for node updates
+      socket.on('node-update', (payload) => {
+        if (payload.new && payload.new.node_id.toString() === nodeId) {
+          console.log('Node update detected, refreshing node details');
+          fetchNodeDetails();
         }
       });
 
@@ -271,6 +272,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         socket.off('transfer-ownership-error');
         socket.off('attachment-update');
         socket.off('attachment-delete');
+        socket.off('node-update');
       };
     } else {
       // Fallback to Supabase real-time if Socket.IO is not available
@@ -758,6 +760,10 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   };
 
+  const toggleHeaderExpand = () => {
+    setIsHeaderExpanded(!isHeaderExpanded);
+  };
+
   // Sort and combine messages and attachments
   const combinedItems: ChatItem[] = [
     ...messages.map(msg => msg as ChatMessage),
@@ -771,6 +777,32 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     const timeB = 'isAttachment' in b ? new Date(b.timestamp).getTime() : new Date(b.timestamp).getTime();
     return timeA - timeB;
   });
+
+  // Function to fetch node details
+  const fetchNodeDetails = async () => {
+    if (!nodeId) return;
+    
+    try {
+      console.log(`Fetching node details for node ${nodeId}`);
+      const { data, error } = await supabase
+        .from('chat_nodes')
+        .select('*')
+        .eq('node_id', parseInt(nodeId))
+        .single();
+      
+      if (error) {
+        console.error('Error fetching node details:', error);
+        throw error;
+      }
+      
+      setCurrentNode(data);
+      const isOwnerValue = data.owner_id === userId;
+      console.log(`User ${userId} is ${isOwnerValue ? '' : 'not '}the owner of node ${nodeId}`);
+      setIsOwner(isOwnerValue);
+    } catch (error) {
+      console.error('Error fetching node details:', error);
+    }
+  };
 
   return (
     <div 
@@ -787,85 +819,151 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       onDragLeave={handleDragLeave}
       onDrop={nodeId && isOwner ? handleDrop : undefined}
     >
+      <style>{fadeInKeyframes}</style>
       <div
         style={{
           padding: '10px',
           background: '#fff',
           borderBottom: '1px solid #ddd',
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
+          flexDirection: 'column',
+          transition: 'all 0.3s ease',
+          boxShadow: isHeaderExpanded ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
         }}
       >
-        <div style={{ flex: 1 }}>
-          {nodeId && isOwner && isEditingTitle ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={editedTitle}
-                onChange={(e) => setEditedTitle(e.target.value)}
-                onKeyDown={handleTitleKeyDown}
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center'
+        }}>
+          <div style={{ flex: 1 }}>
+            {nodeId && isOwner && isEditingTitle ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={editedTitle}
+                  onChange={(e) => setEditedTitle(e.target.value)}
+                  onKeyDown={handleTitleKeyDown}
+                  style={{ 
+                    fontWeight: 'bold', 
+                    fontSize: '18px',
+                    padding: '3px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid #aaa',
+                    width: '100%'
+                  }}
+                />
+                <button
+                  onClick={handleTitleSave}
+                  style={{
+                    padding: '3px 8px',
+                    background: '#007bff',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleTitleCancel}
+                  style={{
+                    padding: '3px 8px',
+                    background: '#ddd',
+                    color: '#333',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div 
                 style={{ 
                   fontWeight: 'bold', 
                   fontSize: '18px',
-                  padding: '3px 6px',
-                  borderRadius: '4px',
-                  border: '1px solid #aaa',
-                  width: '100%'
+                  cursor: isOwner && nodeId ? 'pointer' : 'default'
                 }}
-              />
-              <button
-                onClick={handleTitleSave}
-                style={{
-                  padding: '3px 8px',
-                  background: '#007bff',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
+                onClick={handleTitleEdit}
+                title={isOwner && nodeId ? "Click to edit title" : ""}
               >
-                Save
-              </button>
-              <button
-                onClick={handleTitleCancel}
-                style={{
-                  padding: '3px 8px',
-                  background: '#ddd',
-                  color: '#333',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <div 
-              style={{ 
-                fontWeight: 'bold', 
-                fontSize: '18px',
-                cursor: isOwner && nodeId ? 'pointer' : 'default'
-              }}
-              onClick={handleTitleEdit}
-              title={isOwner && nodeId ? "Click to edit title" : ""}
-            >
-              {nodeTitle || 'No node selected'}
-              {isOwner && nodeId && (
-                <span style={{ marginLeft: '5px', fontSize: '14px', color: '#666' }}>
-                  ✏️
-                </span>
-              )}
-            </div>
-          )}
+                {nodeTitle || 'No node selected'}
+                {isOwner && nodeId && (
+                  <span style={{ marginLeft: '5px', fontSize: '14px', color: '#666' }}>
+                    ✏️
+                  </span>
+                )}
+              </div>
+            )}
+            {nodeId && (
+              <div style={{ fontSize: '12px', color: '#777' }}>
+                ID: {nodeId} | {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
+              </div>
+            )}
+          </div>
+          
           {nodeId && (
-            <div style={{ fontSize: '12px', color: '#777' }}>
-              ID: {nodeId} | {isOwner ? 'You are the owner' : 'You are viewing (read-only)'}
-            </div>
+            <button
+              onClick={toggleHeaderExpand}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '30px',
+                height: '30px',
+                borderRadius: '50%',
+                transition: 'background 0.2s',
+                transform: isHeaderExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                marginLeft: '10px'
+              }}
+              title={isHeaderExpanded ? "Collapse details" : "Expand details"}
+            >
+              ▼
+            </button>
           )}
         </div>
+        
+        {isHeaderExpanded && currentNode && (
+          <div 
+            style={{ 
+              marginTop: '10px',
+              padding: '10px',
+              background: '#f8f9fa',
+              borderRadius: '6px',
+              fontSize: '14px',
+              display: 'grid',
+              gridTemplateColumns: 'auto 1fr',
+              gap: '6px 12px',
+              animation: 'fadeIn 0.3s ease',
+            }}
+          >
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Created:</div>
+            <div>{new Date(currentNode.created_at).toLocaleString()}</div>
+            
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Model:</div>
+            <div>{currentNode.model || 'Not specified'}</div>
+            
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Flavor:</div>
+            <div>{currentNode.flavor || 'Not specified'}</div>
+            
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Created by:</div>
+            <div>{currentNode.user_id}</div>
+            
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Owner:</div>
+            <div>{currentNode.owner_id}</div>
+            
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Position:</div>
+            <div>X: {currentNode.position_x?.toFixed(2) || '0'}, Y: {currentNode.position_y?.toFixed(2) || '0'}</div>
+          </div>
+        )}
       </div>
 
       <div
@@ -877,6 +975,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
           flexGrow: 1,
           overflowY: 'auto',
           background: '#f5f5f5',
+          maxHeight: isHeaderExpanded ? 'calc(100% - 180px)' : 'calc(100% - 60px)',
+          transition: 'max-height 0.3s ease',
         }}
       >
         {/* Combine messages and attachments in a single chronological list */}
