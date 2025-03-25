@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useSocket } from '../contexts/SocketContext';
-import { ChatNode, updateNodeTitle } from '../services/nodeService';
+import { ChatNode, updateNodeTitle, updateNodeDescription } from '../services/nodeService';
 import { Prompt } from '../services/promptService';
 
 interface ChatMessage {
@@ -76,10 +76,13 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const [editedTitle, setEditedTitle] = useState('');
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
   const [currentNode, setCurrentNode] = useState<ChatNode | null>(null);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
@@ -298,12 +301,18 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   }, [nodeId, socket, userId]);
 
-  // Update editedTitle when nodeTitle changes
+  // Update editedTitle and editedDescription when nodeTitle or currentNode changes
   useEffect(() => {
     if (nodeTitle) {
       setEditedTitle(nodeTitle);
     }
   }, [nodeTitle]);
+  
+  useEffect(() => {
+    if (currentNode) {
+      setEditedDescription(currentNode.description || 'No description available.');
+    }
+  }, [currentNode]);
 
   // Handle input changes and emit typing events
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -764,6 +773,43 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     setIsHeaderExpanded(!isHeaderExpanded);
   };
 
+  const handleDescriptionEdit = () => {
+    if (isOwner && nodeId) {
+      setIsEditingDescription(true);
+      // Focus the textarea after a brief delay to allow rendering
+      setTimeout(() => {
+        descriptionInputRef.current?.focus();
+      }, 50);
+    }
+  };
+
+  const handleDescriptionSave = async () => {
+    if (isOwner && nodeId && editedDescription.trim()) {
+      try {
+        await updateNodeDescription(parseInt(nodeId), editedDescription.trim());
+        setIsEditingDescription(false);
+        // The actual UI update will happen through the real-time subscription
+      } catch (error) {
+        console.error('Error updating node description:', error);
+      }
+    }
+  };
+
+  const handleDescriptionCancel = () => {
+    if (currentNode && currentNode.description) {
+      setEditedDescription(currentNode.description);
+    } else {
+      setEditedDescription('No description available.');
+    }
+    setIsEditingDescription(false);
+  };
+
+  const handleDescriptionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') {
+      handleDescriptionCancel();
+    }
+  };
+
   // Sort and combine messages and attachments
   const combinedItems: ChatItem[] = [
     ...messages.map(msg => msg as ChatMessage),
@@ -945,6 +991,77 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
               animation: 'fadeIn 0.3s ease',
             }}
           >
+            <div style={{ fontWeight: 'bold', color: '#555' }}>Description:</div>
+            <div>
+              {isEditingDescription ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <textarea
+                    ref={descriptionInputRef}
+                    value={editedDescription}
+                    onChange={(e) => setEditedDescription(e.target.value)}
+                    onKeyDown={handleDescriptionKeyDown}
+                    style={{ 
+                      padding: '6px',
+                      borderRadius: '4px',
+                      border: '1px solid #aaa',
+                      minHeight: '80px',
+                      width: '100%',
+                      fontSize: '14px',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={handleDescriptionSave}
+                      style={{
+                        padding: '3px 8px',
+                        background: '#007bff',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={handleDescriptionCancel}
+                      style={{
+                        padding: '3px 8px',
+                        background: '#ddd',
+                        color: '#333',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div 
+                  style={{ 
+                    cursor: isOwner ? 'pointer' : 'default',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                  onClick={isOwner ? handleDescriptionEdit : undefined}
+                  title={isOwner ? "Click to edit description" : ""}
+                >
+                  <div style={{ flex: 1 }}>
+                    {currentNode.description || 'No description available.'}
+                  </div>
+                  {isOwner && (
+                    <span style={{ fontSize: '14px', color: '#666', marginLeft: '5px' }}>
+                      ✏️
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            
             <div style={{ fontWeight: 'bold', color: '#555' }}>Created:</div>
             <div>{new Date(currentNode.created_at).toLocaleString()}</div>
             

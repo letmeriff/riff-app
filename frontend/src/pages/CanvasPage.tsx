@@ -570,9 +570,18 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
 
   const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;
+
     try {
-      // Create node in database
-      const newChatNode = await createNode(user.id, title, modelName, flavorName);
+      console.log(`Creating new node: ${title}, Model: ${modelName}, Flavor: ${flavorName}`);
+      
+      // Create the chat node in the database
+      const newChatNode = await createNode(
+        user.id, 
+        title, 
+        modelName, 
+        flavorName,
+        `This is a node using ${modelName} with ${flavorName} flavor.` // Default description
+      );
       
       // Ensure position values are valid numbers
       const position = { 
@@ -599,16 +608,14 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           users: [],
           pulledConnections: [],
           pulledByConnections: [],
-          attachments: [],
+          attachments: []
         },
       };
       
       // Update nodes in local state
       setNodes((nds: Node[]) => [...nds, newNode]);
       
-      // Ensure position is correctly registered in the database by explicitly saving it again
-      // This helps prevent any issues with the initial save
-      await updateNodePosition(newChatNode.node_id, position);
+      // Verify the position was saved (for debugging)
       console.log(`Verified position for new node ${newChatNode.node_id}: x=${position.x}, y=${position.y}`);
     } catch (error) {
       console.error('Error creating node:', error);

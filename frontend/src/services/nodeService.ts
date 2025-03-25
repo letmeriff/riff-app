@@ -10,6 +10,7 @@ export interface ChatNode {
   position_x?: number;
   position_y?: number;
   created_at: string;
+  description?: string;
 }
 
 export interface SupabasePayload<T> {
@@ -22,7 +23,8 @@ export const createNode = async (
   userId: string, 
   title: string,
   model?: string,
-  flavor?: string
+  flavor?: string,
+  description?: string
 ): Promise<ChatNode> => {
   const initialPositionX = Math.random() * 500;
   const initialPositionY = Math.random() * 500;
@@ -36,7 +38,8 @@ export const createNode = async (
       model,
       flavor,
       position_x: initialPositionX,
-      position_y: initialPositionY
+      position_y: initialPositionY,
+      description: description || 'No description available.'
     })
     .select()
     .single();
@@ -93,6 +96,14 @@ export const updateNodeTitle = async (nodeId: number, title: string): Promise<vo
   const { error } = await supabase
     .from('chat_nodes')
     .update({ title })
+    .eq('node_id', nodeId);
+  if (error) throw error;
+};
+
+export const updateNodeDescription = async (nodeId: number, description: string): Promise<void> => {
+  const { error } = await supabase
+    .from('chat_nodes')
+    .update({ description })
     .eq('node_id', nodeId);
   if (error) throw error;
 }; 
