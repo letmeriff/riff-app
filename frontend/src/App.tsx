@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { CRDTProvider } from './contexts/CRDTContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import CanvasPage from './pages/CanvasPage';
@@ -145,61 +146,63 @@ const AppContent: React.FC = () => {
 
   return (
     <SocketProvider token={session?.access_token || null}>
-      <div style={{ 
-        display: 'flex', 
-        height: '100vh', 
-        width: '100vw', 
-        overflow: 'hidden',
-        position: 'fixed', 
-        top: 0,
-        left: 0
-      }}>
-        {/* Canvas (61.8%) - Golden Ratio */}
-        <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
-          <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
-        </div>
-
-        {/* Chat UI (38.2%) */}
-        <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <ChatUI 
-              nodeId={selectedNodeId} 
-              nodeTitle={selectedNodeTitle} 
-              userId={user.id} 
-            />
+      <CRDTProvider>
+        <div style={{ 
+          display: 'flex', 
+          height: '100vh', 
+          width: '100vw', 
+          overflow: 'hidden',
+          position: 'fixed', 
+          top: 0,
+          left: 0
+        }}>
+          {/* Canvas (61.8%) - Golden Ratio */}
+          <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
+            <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
           </div>
-          <div style={{ 
-            padding: '10px', 
-            background: '#fff', 
-            borderTop: '1px solid #ddd', 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            flexShrink: 0
-          }}>
-            <ConnectionStatus />
-            <div>
-              <button 
-                onClick={handleOpenSettings}
-                style={{ padding: '5px 10px', marginRight: '10px' }}
-              >
-                Settings
-              </button>
-              <button 
-                onClick={signOut} 
-                style={{ padding: '5px 10px' }}
-              >
-                Logout
-              </button>
+
+          {/* Chat UI (38.2%) */}
+          <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <ChatUI 
+                nodeId={selectedNodeId} 
+                nodeTitle={selectedNodeTitle} 
+                userId={user.id} 
+              />
+            </div>
+            <div style={{ 
+              padding: '10px', 
+              background: '#fff', 
+              borderTop: '1px solid #ddd', 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              flexShrink: 0
+            }}>
+              <ConnectionStatus />
+              <div>
+                <button 
+                  onClick={handleOpenSettings}
+                  style={{ padding: '5px 10px', marginRight: '10px' }}
+                >
+                  Settings
+                </button>
+                <button 
+                  onClick={signOut} 
+                  style={{ padding: '5px 10px' }}
+                >
+                  Logout
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      
-      {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
-      />
+        
+        {/* Settings Modal */}
+        <SettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)} 
+        />
+      </CRDTProvider>
     </SocketProvider>
   );
 };

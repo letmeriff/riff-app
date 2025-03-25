@@ -17,6 +17,11 @@ import presenceRoutes from './routes/presenceRoutes';
 import attachmentRoutes from './routes/attachmentRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
+import { 
+  incrementVectorClock, 
+  mergeVectorClocks, 
+  generateLamportTimestamp 
+} from './utils/vectorClock';
 // These route modules don't exist but were referenced
 // import authRoutes from './routes/authRoutes';
 // import userRoutes from './routes/userRoutes';
@@ -336,29 +341,45 @@ io.on('connection', (socket: Socket) => {
   });
 
   // Handle node position update
-  socket.on('node-position-update', async ({ nodeId, position }) => {
+  socket.on('node-position-update', async ({ nodeId, position, vectorClock, lamportTimestamp }) => {
     try {
       const userId = socket.data.user.id;
       console.log(`User ${userId} updated position of node ${nodeId}:`, position);
       
-      // Save the position to the database
-      const { error } = await supabase
-        .from('chat_nodes')
-        .update({ 
-          position_x: position.x, 
-          position_y: position.y 
-        })
-        .eq('node_id', parseInt(nodeId));
+      // Get or initialize vector clock
+      const userVectorClock = vectorClock || {};
+      
+      // Increment vector clock for this user if not already done by client
+      const updatedVectorClock = vectorClock ? vectorClock : incrementVectorClock(userVectorClock, userId);
+      
+      // Generate Lamport timestamp if not provided
+      const updatedLamportTimestamp = lamportTimestamp || generateLamportTimestamp();
+      
+      // Save the position using the CRDT function
+      const { data, error } = await supabase.rpc('update_node_position_crdt', {
+        node_id: parseInt(nodeId),
+        pos_x: position.x,
+        pos_y: position.y,
+        vector_clock: updatedVectorClock,
+        lamport_timestamp: updatedLamportTimestamp,
+        user_id: userId
+      });
       
       if (error) {
         console.error('Error updating node position in database:', error);
         return;
       }
       
-      console.log(`Successfully updated position for node ${nodeId} in database`);
+      console.log(`Successfully updated position for node ${nodeId} in database:`, data);
       
-      // Broadcast the position update to all users
-      io.emit('node-position-update', { nodeId, position });
+      // Broadcast the position update along with vector clock to all users
+      io.emit('node-position-update', { 
+        nodeId, 
+        position,
+        vectorClock: updatedVectorClock,
+        lamportTimestamp: updatedLamportTimestamp,
+        applied: data.applied
+      });
     } catch (error) {
       console.error('Error handling node position update:', error);
     }
@@ -621,6 +642,32 @@ supabase
 // Set up periodic summary job
 setInterval(processPendingSummaries, 5 * 60 * 1000);
 processPendingSummaries();
+
+// API endpoint to fetch node position history
+app.get('/api/node-position-history/:nodeId', authMiddleware, async (req, res) => {
+  try {
+    const { nodeId } = req.params;
+    const { limit = 20 } = req.query;
+    
+    // Get position history for the node
+    const { data, error } = await supabase
+      .from('node_position_history')
+      .select('*')
+      .eq('node_id', nodeId)
+      .order('lamport_timestamp', { ascending: false })
+      .limit(parseInt(limit as string));
+    
+    if (error) {
+      console.error('Error fetching node position history:', error);
+      return res.status(500).json({ error: 'Failed to fetch node position history' });
+    }
+    
+    return res.json(data);
+  } catch (error) {
+    console.error('Error in position history API:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Start the server
 httpServer.listen(port, () => {

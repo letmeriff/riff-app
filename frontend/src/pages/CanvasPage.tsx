@@ -25,6 +25,9 @@ import { useSocket } from '../contexts/SocketContext';
 import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, deleteNode, updateNodePosition } from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
+import { useCRDT } from '../contexts/CRDTContext';
+import { NodePositionOperation } from '../types/crdt';
+import { generateLamportTimestamp } from '../utils/vectorClock';
 
 const nodeTypes: NodeTypes = {
   chatNode: ChatNode,
@@ -51,6 +54,15 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [updatingPositionNodeId, setUpdatingPositionNodeId] = useState<string | null>(null);
+
+  // Add CRDT context
+  const { 
+    updateNodeVectorClock, 
+    getNodeVectorClock, 
+    addPendingOperation, 
+    removePendingOperation,
+    hasPendingOperations 
+  } = useCRDT();
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds: Edge[]) => addEdge(params, eds)),
@@ -389,31 +401,45 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         });
       });
       
-      socket.on('node-position-update', ({ nodeId, position }) => {
-        console.log('Socket: Node position update received:', nodeId, position);
+      socket.on('node-position-update', ({ nodeId, position, vectorClock, lamportTimestamp, applied }) => {
+        console.log('Socket: Node position update received:', nodeId, position, vectorClock);
         
-        // Skip the update if we're still in the same cycle 
-        // to avoid a feedback loop between local changes and socket events
+        // Skip the update if we're still in the same cycle to avoid feedback loops
         if (updatingPositionNodeId === nodeId) {
           console.log('Ignoring position update for node we just updated locally');
           return;
         }
         
-        setNodes((nds) =>
-          nds.map((node) => {
-            if (node.id === nodeId) {
-              console.log(`Updating position of node ${nodeId} from socket event: x=${position.x}, y=${position.y}`);
-              return {
-                ...node,
-                position: {
-                  x: position.x,
-                  y: position.y
-                },
-              };
-            }
-            return node;
-          })
-        );
+        // Update the node's vector clock
+        if (vectorClock) {
+          updateNodeVectorClock(nodeId, vectorClock);
+        }
+        
+        // For operations that were optimistically applied locally, remove from pending
+        if (hasPendingOperations(nodeId) && lamportTimestamp) {
+          // Remove this operation from pending operations if it matches
+          removePendingOperation(nodeId, lamportTimestamp);
+        }
+        
+        // Only update the position if the server applied the change
+        // Or if it's not our own optimistic update
+        if (applied !== false) {
+          setNodes((nds) =>
+            nds.map((node) => {
+              if (node.id === nodeId) {
+                console.log(`Updating position of node ${nodeId} from socket event: x=${position.x}, y=${position.y}`);
+                return {
+                  ...node,
+                  position: {
+                    x: position.x,
+                    y: position.y
+                  },
+                };
+              }
+              return node;
+            })
+          );
+        }
       });
       
       // Return cleanup function
@@ -653,26 +679,58 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           change.dragging === false
       );
 
-      // When a drag ends, immediately save the position to database
+      // When a drag ends, implement optimistic updates and CRDT
       for (const change of dragEndChanges) {
-        const nodeId = parseInt(change.id);
+        const nodeId = change.id;
+        const numericNodeId = parseInt(nodeId);
         const { x, y } = change.position;
         
+        // Generate lamport timestamp outside try block so it's available in catch
+        const lamportTimestamp = generateLamportTimestamp();
+        
         try {
-          console.log(`Drag ended for node ${nodeId} - Saving position: x=${x}, y=${y}`);
+          console.log(`Drag ended for node ${nodeId} - Updating position with CRDT: x=${x}, y=${y}`);
           
           // Set the updating node ID to avoid feedback loops
-          setUpdatingPositionNodeId(change.id);
+          setUpdatingPositionNodeId(nodeId);
           
-          // Save position to database
-          await updateNodePosition(nodeId, { x, y });
-          console.log(`Position saved for node ${nodeId}`);
+          // Get the current vector clock for this node
+          const currentVectorClock = getNodeVectorClock(nodeId);
+          
+          // Create the operation
+          const operation: NodePositionOperation = {
+            nodeId,
+            position: { x, y },
+            vectorClock: currentVectorClock,
+            lamportTimestamp,
+            userId: user?.id || ''
+          };
+          
+          // Add to pending operations (for optimistic updates)
+          addPendingOperation(operation);
+          
+          // Save position to database with CRDT
+          const result = await updateNodePosition(
+            numericNodeId, 
+            { x, y },
+            user?.id,
+            currentVectorClock
+          );
+          
+          console.log(`Position saved for node ${nodeId}`, result);
+          
+          // If successful and we got a new vector clock, update it
+          if (result.success && result.vectorClock) {
+            updateNodeVectorClock(nodeId, result.vectorClock);
+          }
           
           // Emit position update for real-time collaboration
           if (socket) {
             socket.emit('node-position-update', {
-              nodeId: change.id,
+              nodeId,
               position: { x, y },
+              vectorClock: result.vectorClock || currentVectorClock,
+              lamportTimestamp: result.lamportTimestamp || lamportTimestamp
             });
           }
           
@@ -683,6 +741,9 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         } catch (error) {
           console.error(`Error saving position for node ${nodeId}:`, error);
           setUpdatingPositionNodeId(null);
+          
+          // Remove from pending operations on error
+          removePendingOperation(nodeId, lamportTimestamp);
         }
       }
 
@@ -694,7 +755,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         onNodesDelete(removeChanges);
       }
     },
-    [onNodesChange, onNodesDelete, setNodes, socket, setUpdatingPositionNodeId]
+    [onNodesChange, onNodesDelete, setNodes, socket, user, setUpdatingPositionNodeId, 
+     getNodeVectorClock, updateNodeVectorClock, addPendingOperation, removePendingOperation]
   );
 
   const onNodeClick: NodeMouseHandler = useCallback(
@@ -716,7 +778,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     [onNodeSelect, selectedNodeId, socket]
   );
 
-  // Save all node positions to the database
+  // Update saveAllNodePositions for periodic backups
   const saveAllNodePositions = useCallback(async () => {
     console.log('Saving all node positions to database...');
     const currentNodes = [...nodes];
@@ -727,7 +789,17 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         const nodeId = parseInt(node.id);
         if (!isNaN(nodeId)) {
           try {
-            await updateNodePosition(nodeId, node.position);
+            // Get current vector clock for this node
+            const currentVectorClock = getNodeVectorClock(node.id);
+            
+            // Update with CRDT approach
+            await updateNodePosition(
+              nodeId, 
+              node.position,
+              user?.id,
+              currentVectorClock
+            );
+            
             console.log(`Saved position for node ${nodeId}: x=${node.position.x}, y=${node.position.y}`);
           } catch (error) {
             console.error(`Failed to save position for node ${nodeId}:`, error);
@@ -735,7 +807,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         }
       })
     );
-  }, [nodes]);
+  }, [nodes, user?.id, getNodeVectorClock]);
 
   // Periodically save all node positions
   useEffect(() => {

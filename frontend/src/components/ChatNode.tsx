@@ -1,5 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Handle, Position, NodeProps, useUpdateNodeInternals } from 'reactflow';
+import NodeSettingsModal from './NodeSettingsModal';
 
 interface UserPresence {
   userId: string;
@@ -15,6 +16,7 @@ interface ChatNodeData {
   pulledConnections?: { nodeId: string; hasUpdates: boolean; pullId?: number }[];
   pulledByConnections?: { nodeId: string; pullId?: number }[];
   attachments?: { attachment_id: number; file_url: string; file_type: string }[];
+  description?: string;
 }
 
 // Helper function to get initials from email
@@ -27,6 +29,7 @@ const getInitials = (email: string): string => {
 const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const updateNodeInternals = useUpdateNodeInternals();
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     if (nodeRef.current) {
@@ -36,167 +39,181 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
     }
   }, [id, updateNodeInternals, data.users, data.pulledConnections, data.pulledByConnections, data.attachments]);
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowSettings(true);
+  };
+
   return (
-    <div
-      ref={nodeRef}
-      style={{
-        padding: '10px',
-        border: '1px solid #777',
-        borderRadius: '5px',
-        background: '#fff',
-        minWidth: '200px',
-        position: 'relative',
-      }}
-    >
-      <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
-      <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>{data.label}</div>
-        <div style={{ fontSize: '10px', color: '#777' }}>ID: {data.nodeId}</div>
-      </div>
-
-      {/* User Presence Indicators */}
+    <>
       <div
+        ref={nodeRef}
         style={{
-          position: 'absolute',
-          top: '5px',
-          right: '5px',
-          display: 'flex',
-          gap: '5px',
+          padding: '10px',
+          border: '1px solid #777',
+          borderRadius: '5px',
+          background: '#fff',
+          minWidth: '200px',
+          position: 'relative',
         }}
+        onDoubleClick={handleDoubleClick}
       >
-        {data.users?.map((user) => (
-          <div
-            key={user.userId}
-            style={{
-              width: '20px',
-              height: '20px',
-              borderRadius: '50%',
-              background: user.isTyping ? '#FF5722' : '#4CAF50', // Red when typing, green otherwise
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '10px',
-              position: 'relative',
-              overflow: 'visible',
-            }}
-            title={`${user.email}${user.isTyping ? ' (typing...)' : ''}`}
-          >
-            {getInitials(user.email)}
-            {user.isTyping && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '-8px',
-                  left: '0',
-                  width: '100%',
-                  textAlign: 'center',
-                  fontSize: '8px',
-                  color: '#FF5722',
-                }}
-              >
-                ✎
+        <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
+        <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>{data.label}</div>
+          <div style={{ fontSize: '10px', color: '#777' }}>ID: {data.nodeId}</div>
+        </div>
+
+        {/* User Presence Indicators */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '5px',
+            right: '5px',
+            display: 'flex',
+            gap: '5px',
+          }}
+        >
+          {data.users?.map((user) => (
+            <div
+              key={user.userId}
+              style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: user.isTyping ? '#FF5722' : '#4CAF50', // Red when typing, green otherwise
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '10px',
+                position: 'relative',
+                overflow: 'visible',
+              }}
+              title={`${user.email}${user.isTyping ? ' (typing...)' : ''}`}
+            >
+              {getInitials(user.email)}
+              {user.isTyping && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '-8px',
+                    left: '0',
+                    width: '100%',
+                    textAlign: 'center',
+                    fontSize: '8px',
+                    color: '#FF5722',
+                  }}
+                >
+                  ✎
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: '10px' }}>
+          {/* Pulled Connections (Yellow Rectangles) */}
+          {data.pulledConnections && data.pulledConnections.length > 0 && (
+            <div>
+              <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
+                Pulls from:
               </div>
-            )}
-          </div>
-        ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                {data.pulledConnections.map((conn) => (
+                  <div
+                    key={conn.nodeId}
+                    style={{
+                      padding: '3px 5px',
+                      background: '#FFD700',
+                      position: 'relative',
+                      cursor: 'help',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                    }}
+                    title={`Pulls from Node ${conn.nodeId}${conn.hasUpdates ? ' - Has new updates!' : ''}`}
+                  >
+                    Node {conn.nodeId}
+                    {conn.hasUpdates && (
+                      <div
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          background: '#FF0000',
+                          position: 'absolute',
+                          top: '3px',
+                          right: '3px',
+                        }}
+                        title="New updates available"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pulled By Connections (Blue Rectangles) */}
+          {data.pulledByConnections && data.pulledByConnections.length > 0 && (
+            <div>
+              <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
+                Pulled by:
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
+                {data.pulledByConnections.map((conn) => (
+                  <div
+                    key={conn.nodeId}
+                    style={{
+                      padding: '3px 5px',
+                      background: '#1E90FF',
+                      cursor: 'help',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                      color: 'white',
+                    }}
+                    title={`Pulled by Node ${conn.nodeId}`}
+                  >
+                    Node {conn.nodeId}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Attachments (Orange Rectangles) */}
+          {data.attachments && data.attachments.length > 0 && (
+            <div>
+              <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
+                Attachments:
+              </div>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                {data.attachments.map((attachment) => (
+                  <div
+                    key={attachment.attachment_id}
+                    style={{
+                      width: '20px',
+                      height: '10px',
+                      background: '#FFA500',
+                      cursor: 'help',
+                    }}
+                    title={`Attachment: ${attachment.file_type.toUpperCase()}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div style={{ marginTop: '10px' }}>
-        {/* Pulled Connections (Yellow Rectangles) */}
-        {data.pulledConnections && data.pulledConnections.length > 0 && (
-          <div>
-            <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
-              Pulls from:
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
-              {data.pulledConnections.map((conn) => (
-                <div
-                  key={conn.nodeId}
-                  style={{
-                    padding: '3px 5px',
-                    background: '#FFD700',
-                    position: 'relative',
-                    cursor: 'help',
-                    borderRadius: '3px',
-                    fontSize: '10px',
-                  }}
-                  title={`Pulls from Node ${conn.nodeId}${conn.hasUpdates ? ' - Has new updates!' : ''}`}
-                >
-                  Node {conn.nodeId}
-                  {conn.hasUpdates && (
-                    <div
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        background: '#FF0000',
-                        position: 'absolute',
-                        top: '3px',
-                        right: '3px',
-                      }}
-                      title="New updates available"
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Pulled By Connections (Blue Rectangles) */}
-        {data.pulledByConnections && data.pulledByConnections.length > 0 && (
-          <div>
-            <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
-              Pulled by:
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '5px' }}>
-              {data.pulledByConnections.map((conn) => (
-                <div
-                  key={conn.nodeId}
-                  style={{
-                    padding: '3px 5px',
-                    background: '#1E90FF',
-                    cursor: 'help',
-                    borderRadius: '3px',
-                    fontSize: '10px',
-                    color: 'white',
-                  }}
-                  title={`Pulled by Node ${conn.nodeId}`}
-                >
-                  Node {conn.nodeId}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Attachments (Orange Rectangles) */}
-        {data.attachments && data.attachments.length > 0 && (
-          <div>
-            <div style={{ fontSize: '10px', color: '#777', marginBottom: '2px' }}>
-              Attachments:
-            </div>
-            <div style={{ display: 'flex', gap: '5px' }}>
-              {data.attachments.map((attachment) => (
-                <div
-                  key={attachment.attachment_id}
-                  style={{
-                    width: '20px',
-                    height: '10px',
-                    background: '#FFA500',
-                    cursor: 'help',
-                  }}
-                  title={`Attachment: ${attachment.file_type.toUpperCase()}`}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+      <NodeSettingsModal 
+        show={showSettings} 
+        onHide={() => setShowSettings(false)} 
+        node={showSettings ? { id, data } : null} 
+      />
+    </>
   );
 };
 
