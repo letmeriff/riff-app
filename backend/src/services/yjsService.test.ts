@@ -1,222 +1,269 @@
 import * as Y from 'yjs';
-import { Pool } from 'pg';
 import * as yjsService from './yjsService';
 
-// Mock dependencies
-jest.mock('pg', () => {
-  const mPool = {
-    query: jest.fn(),
-    connect: jest.fn(),
-  };
-  return { Pool: jest.fn(() => mPool) };
-});
+// Mock Supabase
+jest.mock('../config/supabase', () => ({
+  supabase: {
+    from: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    insert: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
+    delete: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    gt: jest.fn().mockReturnThis(),
+    lt: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    single: jest.fn().mockReturnThis(),
+  }
+}));
 
+// Mock zlib
+jest.mock('zlib', () => ({
+  gzip: jest.fn((data, callback) => callback(null, Buffer.from(data))),
+  gunzip: jest.fn((data, callback) => callback(null, Buffer.from(data))),
+}));
+
+// Mock YJS
 jest.mock('yjs', () => {
   return {
     Doc: jest.fn().mockImplementation(() => ({
-      encodeStateAsUpdate: jest.fn(),
+      encodeStateAsUpdate: jest.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
     })),
-    encodeStateAsUpdate: jest.fn(),
     applyUpdate: jest.fn(),
   };
 });
 
 describe('yjsService', () => {
-  let mockPool: any;
-  
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPool = (Pool as jest.Mock)();
   });
   
-  describe('saveDocumentSnapshot', () => {
-    it('should save document snapshot to database', async () => {
+  describe('storeYjsDocument', () => {
+    it('should save document to database', async () => {
       // Setup
       const documentId = 'test-doc';
       const version = 1;
-      const doc = new Y.Doc();
-      const encodedState = new Uint8Array([1, 2, 3]);
+      const documentState = new Uint8Array([1, 2, 3]);
+      const mockSupabase = require('../config/supabase').supabase;
       
-      (doc.encodeStateAsUpdate as jest.Mock).mockReturnValue(encodedState);
-      mockPool.query.mockResolvedValue({ rows: [{ id: 1 }] });
+      mockSupabase.from().select().single.mockResolvedValue({ data: null, error: null });
+      mockSupabase.from().insert.mockResolvedValue({ error: null });
       
       // Test
-      await yjsService.saveDocumentSnapshot(documentId, doc, version);
+      const result = await yjsService.storeYjsDocument(documentId, documentState, version);
       
       // Assertions
-      expect(doc.encodeStateAsUpdate).toHaveBeenCalled();
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO yjs_documents'),
-        expect.arrayContaining([documentId, expect.any(Buffer), version])
-      );
+      expect(result).toBe(true);
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_documents');
+      expect(mockSupabase.from().insert).toHaveBeenCalled();
     });
     
     it('should handle database errors gracefully', async () => {
       // Setup
       const documentId = 'test-doc';
       const version = 1;
-      const doc = new Y.Doc();
+      const documentState = new Uint8Array([1, 2, 3]);
+      const mockSupabase = require('../config/supabase').supabase;
       
-      mockPool.query.mockRejectedValue(new Error('Database error'));
+      mockSupabase.from().select().single.mockResolvedValue({ data: null, error: null });
+      mockSupabase.from().insert.mockResolvedValue({ error: new Error('Database error') });
       
-      // Test & assertions
-      await expect(yjsService.saveDocumentSnapshot(documentId, doc, version))
-        .rejects.toThrow('Failed to save document snapshot');
+      // Test
+      const result = await yjsService.storeYjsDocument(documentId, documentState, version);
+      
+      // Assertions
+      expect(result).toBe(false);
     });
   });
   
-  describe('getLatestDocumentSnapshot', () => {
-    it('should retrieve the latest document snapshot', async () => {
+  describe('getYjsDocument', () => {
+    it('should retrieve the document', async () => {
       // Setup
       const documentId = 'test-doc';
-      const mockSnapshot = {
-        document_content: Buffer.from([1, 2, 3]),
-        version: 5,
+      const mockData = {
+        document_state: new Uint8Array([1, 2, 3]),
+        is_compressed: false,
       };
+      const mockSupabase = require('../config/supabase').supabase;
       
-      mockPool.query.mockResolvedValue({
-        rows: [mockSnapshot],
+      mockSupabase.from().select().eq().single.mockResolvedValue({
+        data: mockData,
+        error: null,
       });
       
       // Test
-      const result = await yjsService.getLatestDocumentSnapshot(documentId);
+      const result = await yjsService.getYjsDocument(documentId);
       
       // Assertions
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM yjs_documents'),
-        [documentId]
-      );
-      expect(result).toEqual({
-        content: new Uint8Array([1, 2, 3]),
-        version: 5,
-      });
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_documents');
+      expect(result).toEqual(new Uint8Array([1, 2, 3]));
     });
     
-    it('should return null if no snapshot exists', async () => {
+    it('should return null if no document exists and recovery fails', async () => {
       // Setup
       const documentId = 'test-doc';
-      mockPool.query.mockResolvedValue({ rows: [] });
+      const mockSupabase = require('../config/supabase').supabase;
+      
+      mockSupabase.from().select().eq().single.mockResolvedValue({ data: null, error: 'Not found' });
+      
+      // Mock recoverDocumentFromUpdates to fail
+      jest.spyOn(yjsService, 'recoverDocumentFromUpdates').mockResolvedValue(null);
       
       // Test
-      const result = await yjsService.getLatestDocumentSnapshot(documentId);
+      const result = await yjsService.getYjsDocument(documentId);
       
       // Assertions
       expect(result).toBeNull();
+      expect(yjsService.recoverDocumentFromUpdates).toHaveBeenCalledWith(documentId);
     });
   });
   
-  describe('storeUpdate', () => {
+  describe('storeYjsUpdate', () => {
     it('should store an update in the database', async () => {
       // Setup
       const documentId = 'test-doc';
       const update = new Uint8Array([1, 2, 3]);
       const clientId = 'client1';
       const version = 10;
+      const mockSupabase = require('../config/supabase').supabase;
       
-      mockPool.query.mockResolvedValue({ rowCount: 1 });
+      mockSupabase.from().insert.mockResolvedValue({ error: null });
       
       // Test
-      await yjsService.storeUpdate(documentId, update, clientId, version);
+      const result = await yjsService.storeYjsUpdate(documentId, update, clientId, version);
       
       // Assertions
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO yjs_updates'),
-        expect.arrayContaining([documentId, expect.any(Buffer), clientId, version])
-      );
+      expect(result).toBe(true);
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_updates');
+      expect(mockSupabase.from().insert).toHaveBeenCalled();
     });
   });
   
-  describe('getUpdatesAfterVersion', () => {
+  describe('getYjsUpdates', () => {
     it('should retrieve updates after a specific version', async () => {
       // Setup
       const documentId = 'test-doc';
-      const version = 5;
-      const mockUpdates = [
-        { update_content: Buffer.from([1, 2, 3]), version: 6 },
-        { update_content: Buffer.from([4, 5, 6]), version: 7 },
+      const fromVersion = 5;
+      const mockData = [
+        { update: new Uint8Array([1, 2, 3]), is_compressed: false },
+        { update: new Uint8Array([4, 5, 6]), is_compressed: false },
       ];
+      const mockSupabase = require('../config/supabase').supabase;
       
-      mockPool.query.mockResolvedValue({
-        rows: mockUpdates,
+      mockSupabase.from().select().eq().order().gt.mockResolvedValue({
+        data: mockData,
+        error: null,
       });
       
       // Test
-      const result = await yjsService.getUpdatesAfterVersion(documentId, version);
+      const result = await yjsService.getYjsUpdates(documentId, fromVersion);
       
       // Assertions
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM yjs_updates'),
-        [documentId, version]
-      );
-      expect(result).toEqual([
-        { update: new Uint8Array([1, 2, 3]), version: 6 },
-        { update: new Uint8Array([4, 5, 6]), version: 7 },
-      ]);
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_updates');
+      expect(mockSupabase.from().eq).toHaveBeenCalledWith('document_id', documentId);
+      expect(mockSupabase.from().select().eq().order().gt).toHaveBeenCalledWith('version', fromVersion);
+      expect(result.length).toBe(2);
+      expect(result[0]).toEqual(new Uint8Array([1, 2, 3]));
+      expect(result[1]).toEqual(new Uint8Array([4, 5, 6]));
     });
   });
   
-  describe('rebuildDocumentFromUpdates', () => {
-    it('should rebuild a document from snapshot and updates', async () => {
+  describe('recoverDocumentFromUpdates', () => {
+    it('should recover a document from updates', async () => {
       // Setup
       const documentId = 'test-doc';
-      const mockSnapshot = {
-        content: new Uint8Array([1, 2, 3]),
-        version: 5,
-      };
       
-      const mockUpdates = [
-        { update: new Uint8Array([4, 5, 6]), version: 6 },
-        { update: new Uint8Array([7, 8, 9]), version: 7 },
-      ];
-      
-      jest.spyOn(yjsService, 'getLatestDocumentSnapshot').mockResolvedValue(mockSnapshot);
-      jest.spyOn(yjsService, 'getUpdatesAfterVersion').mockResolvedValue(mockUpdates);
+      // Mock getYjsUpdates to return some updates
+      jest.spyOn(yjsService, 'getYjsUpdates').mockResolvedValue([
+        new Uint8Array([1, 2, 3]),
+        new Uint8Array([4, 5, 6]),
+      ]);
       
       // Test
-      const result = await yjsService.rebuildDocumentFromUpdates(documentId);
+      const result = await yjsService.recoverDocumentFromUpdates(documentId);
       
       // Assertions
-      expect(yjsService.getLatestDocumentSnapshot).toHaveBeenCalledWith(documentId);
-      expect(yjsService.getUpdatesAfterVersion).toHaveBeenCalledWith(documentId, 5);
-      expect(Y.applyUpdate).toHaveBeenCalledTimes(3);
-      expect(result.doc).toBeInstanceOf(Y.Doc);
-      expect(result.version).toBe(7);
+      expect(yjsService.getYjsUpdates).toHaveBeenCalledWith(documentId);
+      expect(Y.applyUpdate).toHaveBeenCalledTimes(2);
+      expect(result).not.toBeNull();
     });
     
-    it('should create a new document if no snapshot exists', async () => {
+    it('should return null if no updates exist', async () => {
       // Setup
       const documentId = 'test-doc';
       
-      jest.spyOn(yjsService, 'getLatestDocumentSnapshot').mockResolvedValue(null);
-      jest.spyOn(yjsService, 'getUpdatesAfterVersion').mockResolvedValue([]);
+      // Mock getYjsUpdates to return empty array
+      jest.spyOn(yjsService, 'getYjsUpdates').mockResolvedValue([]);
       
       // Test
-      const result = await yjsService.rebuildDocumentFromUpdates(documentId);
+      const result = await yjsService.recoverDocumentFromUpdates(documentId);
       
       // Assertions
-      expect(Y.Doc).toHaveBeenCalled();
-      expect(result.doc).toBeInstanceOf(Y.Doc);
-      expect(result.version).toBe(0);
+      expect(result).toBeNull();
+    });
+  });
+  
+  describe('createDocumentSnapshot', () => {
+    it('should create a snapshot of the document', async () => {
+      // Setup
+      const documentId = 'test-doc';
+      const doc = new Y.Doc();
+      
+      // Mock storeYjsDocument to succeed
+      jest.spyOn(yjsService, 'storeYjsDocument').mockResolvedValue(true);
+      
+      // Test
+      const result = await yjsService.createDocumentSnapshot(documentId, doc);
+      
+      // Assertions
+      expect(yjsService.storeYjsDocument).toHaveBeenCalled();
+      expect(result).toBe(true);
     });
   });
   
   describe('cleanupOldUpdates', () => {
-    it('should delete updates older than the provided version', async () => {
+    it('should delete updates older than the specified days', async () => {
       // Setup
       const documentId = 'test-doc';
-      const version = 10;
+      const olderThanDays = 30;
+      const mockSupabase = require('../config/supabase').supabase;
       
-      mockPool.query.mockResolvedValue({ rowCount: 5 });
+      mockSupabase.from().delete().eq().lt.mockResolvedValue({ error: null });
       
       // Test
-      const result = await yjsService.cleanupOldUpdates(documentId, version);
+      const result = await yjsService.cleanupOldUpdates(documentId, olderThanDays);
       
       // Assertions
-      expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM yjs_updates'),
-        [documentId, version]
-      );
-      expect(result).toBe(5);
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_updates');
+      expect(mockSupabase.from().delete().eq().lt).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+  });
+  
+  describe('compressContent and decompressContent', () => {
+    it('should compress content if it exceeds threshold', async () => {
+      // Create an array larger than the threshold
+      const largeArray = new Uint8Array(2000);
+      
+      // Test
+      const result = await yjsService.compressContent(largeArray);
+      
+      // Assertions
+      expect(result.compressed).toBe(true);
+      expect(result.data).toBeDefined();
+    });
+    
+    it('should decompress compressed content', async () => {
+      // Setup
+      const content = new Uint8Array([1, 2, 3]);
+      const isCompressed = true;
+      
+      // Test
+      const result = await yjsService.decompressContent(content, isCompressed);
+      
+      // Assertions
+      expect(result).toBeDefined();
+      expect(result.length).toBeGreaterThan(0);
     });
   });
 }); 

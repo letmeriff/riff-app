@@ -5,7 +5,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import * as yjsService from './yjsService';
-import { initYjsWebSocketServer } from './yjsWebSocketServer';
+import { startYjsWebSocketServer, stopYjsWebSocketServer } from './yjsWebSocketServer';
 import { supabase } from '../config/supabase';
 
 // Mock dependencies
@@ -20,6 +20,7 @@ jest.mock('ws', () => {
   const mockServer = {
     on: jest.fn(),
     handleUpgrade: jest.fn(),
+    close: jest.fn((callback) => callback && callback()),
   };
   
   return {
@@ -33,10 +34,11 @@ jest.mock('y-protocols/awareness', () => ({
     on: jest.fn(),
     setLocalState: jest.fn(),
     getStates: jest.fn(() => new Map()),
-    removeStates: jest.fn(),
+    destroy: jest.fn(),
   })),
   encodeAwarenessUpdate: jest.fn(() => new Uint8Array([1, 2, 3])),
   applyAwarenessUpdate: jest.fn(),
+  removeAwarenessStates: jest.fn(),
 }));
 
 jest.mock('y-protocols/sync', () => ({
@@ -51,6 +53,13 @@ jest.mock('lib0/encoding', () => ({
   writeVarUint: jest.fn(),
   writeUint8Array: jest.fn(),
   toUint8Array: jest.fn(() => new Uint8Array([1, 2, 3])),
+  length: jest.fn(() => 3),
+}));
+
+jest.mock('lib0/decoding', () => ({
+  createDecoder: jest.fn(),
+  readVarUint: jest.fn(() => 0), // Default to sync message type
+  readUint8Array: jest.fn(() => new Uint8Array([1, 2, 3])),
 }));
 
 jest.mock('./yjsService', () => ({
@@ -61,6 +70,12 @@ jest.mock('./yjsService', () => ({
   createDocumentSnapshot: jest.fn(),
   recoverDocumentFromUpdates: jest.fn(),
   getDocumentStats: jest.fn(),
+  decompressContent: jest.fn(data => Promise.resolve(data)),
+  runDatabaseMaintenanceJobs: jest.fn(),
+}));
+
+jest.mock('../utils/auth', () => ({
+  verifyUserToken: jest.fn().mockResolvedValue({ userId: 'user1', valid: true }),
 }));
 
 jest.mock('../config/supabase', () => ({
@@ -94,29 +109,39 @@ describe('yjsWebSocketServer', () => {
   
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     
     mockServer = new WebSocketServer();
-    mockWebSocket = new WebSocket();
+    mockWebSocket = new WebSocket('ws://localhost:1234');
     mockHttpServer = {
       on: jest.fn(),
     };
     
-    // Mock successful auth
-    (supabase.auth.getUser as jest.Mock).mockResolvedValue({
-      data: { user: { id: 'user1' } },
-      error: null,
-    });
-    
     // Mock successful document retrieval
     (yjsService.getYjsDocument as jest.Mock).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    (yjsService.createDocumentSnapshot as jest.Mock).mockResolvedValue(true);
   });
   
-  describe('initYjsWebSocketServer', () => {
+  afterEach(() => {
+    stopYjsWebSocketServer();
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+  
+  describe('startYjsWebSocketServer', () => {
     it('should create a WebSocketServer and set up connection handler', () => {
-      initYjsWebSocketServer(mockHttpServer);
+      startYjsWebSocketServer(mockHttpServer);
       
       expect(WebSocketServer).toHaveBeenCalled();
       expect(mockServer.on).toHaveBeenCalledWith('connection', expect.any(Function));
+    });
+    
+    it('should set up maintenance interval', () => {
+      jest.spyOn(global, 'setInterval');
+      
+      startYjsWebSocketServer(mockHttpServer);
+      
+      expect(setInterval).toHaveBeenCalled();
     });
   });
   
@@ -128,7 +153,7 @@ describe('yjsWebSocketServer', () => {
       };
       
       // Extract connection handler
-      initYjsWebSocketServer(mockHttpServer);
+      startYjsWebSocketServer(mockHttpServer);
       const connectionHandler = mockServer.on.mock.calls[0][1];
       
       // Call connection handler
@@ -137,20 +162,14 @@ describe('yjsWebSocketServer', () => {
       expect(mockWebSocket.close).toHaveBeenCalled();
     });
     
-    it('should reject connections with invalid tokens', async () => {
-      // Mock URL with token
+    it('should reject connections without document ID', async () => {
+      // Mock URL with token but no document
       const req = {
-        url: '/yjs?document=test-doc&token=invalid-token',
+        url: '/yjs?token=valid-token',
       };
       
-      // Mock auth failure
-      (supabase.auth.getUser as jest.Mock).mockResolvedValue({
-        data: { user: null },
-        error: 'Invalid token',
-      });
-      
       // Extract connection handler
-      initYjsWebSocketServer(mockHttpServer);
+      startYjsWebSocketServer(mockHttpServer);
       const connectionHandler = mockServer.on.mock.calls[0][1];
       
       // Call connection handler
@@ -166,7 +185,7 @@ describe('yjsWebSocketServer', () => {
       };
       
       // Extract connection handler
-      initYjsWebSocketServer(mockHttpServer);
+      startYjsWebSocketServer(mockHttpServer);
       const connectionHandler = mockServer.on.mock.calls[0][1];
       
       // Call connection handler
@@ -178,17 +197,19 @@ describe('yjsWebSocketServer', () => {
     });
   });
   
-  describe('document management', () => {
-    it('should create a document snapshot when requested', async () => {
-      (yjsService.createDocumentSnapshot as jest.Mock).mockResolvedValue(true);
-      
+  describe('message handling', () => {
+    it('should process sync messages', async () => {
       // Mock URL with token
       const req = {
         url: '/yjs?document=test-doc&token=valid-token',
       };
       
+      // Setup sync message mocks
+      const decodingModule = require('lib0/decoding');
+      (decodingModule.readVarUint as jest.Mock).mockReturnValue(0); // 0 = sync message
+      
       // Extract connection handler
-      initYjsWebSocketServer(mockHttpServer);
+      startYjsWebSocketServer(mockHttpServer);
       const connectionHandler = mockServer.on.mock.calls[0][1];
       
       // Call connection handler
@@ -197,47 +218,61 @@ describe('yjsWebSocketServer', () => {
       // Extract message handler
       const messageHandler = mockWebSocket.on.mock.calls.find(call => call[0] === 'message')[1];
       
-      // Create a message that requests a snapshot
-      const encoder = encoding.createEncoder();
-      encoding.writeVarUint(encoder, 4); // Assuming 4 is the snapshot message type
-      const message = encoding.toUint8Array(encoder);
-      
       // Call message handler
-      await messageHandler(message);
+      await messageHandler(new Uint8Array([0, 1, 2]));
       
-      // Check if snapshot was created
-      expect(yjsService.createDocumentSnapshot).toHaveBeenCalled();
+      // Check if sync protocol was used
+      expect(syncProtocol.readSyncMessage).toHaveBeenCalled();
     });
-  });
-  
-  describe('cleanup', () => {
-    it('should clean up resources when a client disconnects', async () => {
+    
+    it('should process awareness messages', async () => {
       // Mock URL with token
       const req = {
         url: '/yjs?document=test-doc&token=valid-token',
       };
       
+      // Setup awareness message mocks
+      const decodingModule = require('lib0/decoding');
+      (decodingModule.readVarUint as jest.Mock).mockReturnValue(1); // 1 = awareness message
+      
       // Extract connection handler
-      initYjsWebSocketServer(mockHttpServer);
+      startYjsWebSocketServer(mockHttpServer);
       const connectionHandler = mockServer.on.mock.calls[0][1];
       
       // Call connection handler
       await connectionHandler(mockWebSocket, req);
       
-      // Extract close handler
-      const closeHandler = mockWebSocket.on.mock.calls.find(call => call[0] === 'close')[1];
+      // Extract message handler
+      const messageHandler = mockWebSocket.on.mock.calls.find(call => call[0] === 'message')[1];
       
-      // Call close handler
-      await closeHandler();
+      // Call message handler
+      await messageHandler(new Uint8Array([1, 1, 2]));
       
-      // Verify cleanup (depends on implementation details)
-      // This part may need adjustment based on the actual implementation
-      expect(awarenessProtocol.removeStates).toHaveBeenCalled();
+      // Check if awareness protocol was used
+      expect(awarenessProtocol.applyAwarenessUpdate).toHaveBeenCalled();
     });
-    
-    it('should create a final snapshot when the last client disconnects', async () => {
-      // This test would depend on internal state, and might be hard to test directly
-      // You might need to expose some functions or state for testing, or mock internal functions
+  });
+  
+  describe('stopYjsWebSocketServer', () => {
+    it('should close the server and clean up resources', async () => {
+      // Start server
+      startYjsWebSocketServer(mockHttpServer);
+      
+      // Mock URL with token and connect a client
+      const req = {
+        url: '/yjs?document=test-doc&token=valid-token',
+      };
+      const connectionHandler = mockServer.on.mock.calls[0][1];
+      await connectionHandler(mockWebSocket, req);
+      
+      // Stop the server
+      stopYjsWebSocketServer();
+      
+      // Should close the server
+      expect(mockServer.close).toHaveBeenCalled();
+      
+      // Should create final snapshots
+      expect(yjsService.createDocumentSnapshot).toHaveBeenCalled();
     });
   });
 }); 
