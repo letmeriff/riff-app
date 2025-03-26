@@ -18,6 +18,9 @@
     "reactflow": "^11.11.4",
     "socket.io-client": "^4.8.1",
     "typescript": "^4.9.5",
+    "y-indexeddb": "^9.0.12",
+    "y-websocket": "^2.1.0",
+    "yjs": "^13.6.24",
     "zustand": "^4.5.0"
   },
   "scripts": {
