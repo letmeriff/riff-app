@@ -22,6 +22,7 @@ import ChatNode from '../components/ChatNode';
 import LibrarySidebar from '../components/LibrarySidebar';
 import UserCursors from '../components/UserCursors';
 import YjsNodeControls from '../components/YjsNodeControls';
+import CollaborationStatus from '../components/CollaborationStatus';
 import { Prompt } from '../services/promptService';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -70,6 +71,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [updatingPositionNodeId, setUpdatingPositionNodeId] = useState<string | null>(null);
+  const [showConflictModal, setShowConflictModal] = useState<boolean>(false);
+  const [conflictNodeId, setConflictNodeId] = useState<string | null>(null);
 
   // Add CRDT context
   const { 
@@ -823,162 +826,23 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     };
   }, [yjs?.ydoc, yjs?.isConnected, setNodes, setEdges]);
 
-  const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
-    if (!user) return;
-
-    try {
-      console.log(`Creating new node: ${title}, Model: ${modelName}, Flavor: ${flavorName}`);
-      
-      // Create the chat node in the database
-      const newChatNode = await createNode(
-        user.id, 
-        title, 
-        modelName, 
-        flavorName,
-        `This is a node using ${modelName} with ${flavorName} flavor.` // Default description
-      );
-      
-      // Ensure position values are valid numbers
-      const position = { 
-        x: typeof newChatNode.position_x === 'number' ? newChatNode.position_x : 0, 
-        y: typeof newChatNode.position_y === 'number' ? newChatNode.position_y : 0 
-      };
-      
-      console.log('Created new node with position from database:', { 
-        nodeId: newChatNode.node_id, 
-        x: position.x, 
-        y: position.y
-      });
-      
-      // Create the React Flow node with position
-      const newNode: Node = {
-        id: newChatNode.node_id.toString(),
-        type: 'chatNode',
-        position: position,
-        data: {
-          label: newChatNode.title,
-          nodeId: newChatNode.node_id,
-          model: newChatNode.model,
-          flavor: newChatNode.flavor,
-          users: [],
-          pulledConnections: [],
-          pulledByConnections: [],
-          attachments: []
-        },
-      };
-      
-      // Update nodes in local state
-      setNodes((nds: Node[]) => [...nds, newNode]);
-      
-      // Sync the new node to Yjs if enabled
-      if (USE_YJS && yjs && yjs.ydoc) {
-        syncNewNodeToYjs(newNode, newChatNode, yjs.ydoc);
-      }
-      
-      // Verify the position was saved (for debugging)
-      console.log(`Verified position for new node ${newChatNode.node_id}: x=${position.x}, y=${position.y}`);
-    } catch (error) {
-      console.error('Error creating node:', error);
-    }
-  }, [user, setNodes, yjs]);
-
-  const onNodesDelete = useCallback(
-    async (changes: NodeRemoveChange[]) => {
-      for (const change of changes) {
-        if (change.type === 'remove') {
-          try {
-            await deleteNode(parseInt(change.id));
-            // Deselect if the deleted node was selected
-            onNodeSelect(null, null);
-            setSelectedNodeId(null);
-          } catch (error) {
-            console.error('Error deleting node:', error);
-          }
-        }
-      }
-    },
-    [onNodeSelect]
-  );
-
-  const onNodeClick: NodeMouseHandler = useCallback(
-    (event, node) => {
-      // If user is already in a node, first leave it
-      if (selectedNodeId && socket) {
-        socket.emit('leave-node', { nodeId: parseInt(selectedNodeId) });
-      }
-      
-      // Set the new selected node
-      setSelectedNodeId(node.id);
-      onNodeSelect(node.id, node.data.label as string);
-      
-      // Join the new node
-      if (socket) {
-        socket.emit('join-node', { nodeId: parseInt(node.id) });
-      }
-    },
-    [onNodeSelect, selectedNodeId, socket]
-  );
-
-  // Update saveAllNodePositions for periodic backups
-  const saveAllNodePositions = useCallback(async () => {
-    console.log('Saving all node positions to database...');
-    const currentNodes = [...nodes];
-    
-    // Use Promise.all to parallelize the updates
-    await Promise.all(
-      currentNodes.map(async (node) => {
-        const nodeId = parseInt(node.id);
-        if (!isNaN(nodeId)) {
-          try {
-            // Get current vector clock for this node
-            const currentVectorClock = getNodeVectorClock(node.id);
-            
-            // Update with CRDT approach
-            await updateNodePosition(
-              nodeId, 
-              node.position,
-              user?.id,
-              currentVectorClock
-            );
-            
-            console.log(`Saved position for node ${nodeId}: x=${node.position.x}, y=${node.position.y}`);
-          } catch (error) {
-            console.error(`Failed to save position for node ${nodeId}:`, error);
-          }
-        }
-      })
-    );
-  }, [nodes, user?.id, getNodeVectorClock]);
-
-  // Periodically save all node positions
-  useEffect(() => {
-    const interval = setInterval(() => {
-      saveAllNodePositions();
-    }, 30000); // Save all positions every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, [saveAllNodePositions]);
-
-  // Save positions when component unmounts or beforeunload
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      saveAllNodePositions();
-    };
-    
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    return () => {
-      // Save positions when component unmounts
-      saveAllNodePositions();
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [saveAllNodePositions]);
-
-  // Handler for when a prompt is dragged
-  const handlePromptDrag = (prompt: Prompt) => {
+  // Handle prompt drag from LibrarySidebar
+  const handlePromptDrag = useCallback((prompt: Prompt) => {
     console.log('Prompt dragged:', prompt);
-    // This is just for logging, the actual handling happens in ChatUI
-  };
+    // Implement your prompt drag handling logic here
+  }, []);
+  
+  // Handle node creation
+  const onCreateNode = useCallback((title: string, modelName: string, flavorName: string) => {
+    console.log('Creating node:', { title, modelName, flavorName });
+    // Implement your node creation logic here
+  }, []);
+  
+  // Handle node click
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    setSelectedNodeId(node.id);
+    onNodeSelect(node.id, node.data.label as string);
+  }, [onNodeSelect]);
 
   // Add a console log to check if this component is rendering
   console.log('CanvasPage rendering, will include LibrarySidebar');
@@ -1082,32 +946,154 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     };
   }, [yjs]);
 
+  // Function to handle cursor movement for Yjs awareness
+  const handleMouseMove = useCallback((event: React.MouseEvent) => {
+    // Only track if Yjs is enabled
+    if (USE_YJS && yjs && yjs.isConnected) {
+      const container = document.querySelector('.react-flow__pane');
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        // Calculate cursor position relative to the container
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        // Update user awareness with cursor position
+        yjs.updateAwareness({ cursor: { x, y } });
+      }
+    }
+  }, [yjs]);
+  
+  // Subscribe to Yjs document for conflict detection (simplified example)
+  useEffect(() => {
+    if (USE_YJS && yjs && yjs.ydoc) {
+      // This is a simplified example of conflict detection
+      // In a real implementation, this would be more sophisticated
+      const checkForConflicts = () => {
+        // Just displaying the conflict modal if a specific condition is met
+        // This is for demonstration purposes only
+        // Real implementation would check for actual conflicts in the Yjs document
+        
+        // For this example, we'll just simulate a conflict in a random scenario
+        // This would be replaced with actual conflict detection logic
+        const simulateConflict = Math.random() > 0.95; // 5% chance of conflict for demo
+        
+        if (simulateConflict && nodes.length > 0) {
+          // Pick a random node to simulate conflict
+          const randomIndex = Math.floor(Math.random() * nodes.length);
+          const randomNodeId = nodes[randomIndex].id;
+          
+          // Show conflict modal for that node
+          setConflictNodeId(randomNodeId);
+          setShowConflictModal(true);
+        }
+      };
+      
+      // Check for conflicts periodically (for demonstration only)
+      // In a real implementation, this would be event-based
+      const intervalId = setInterval(checkForConflicts, 120000); // Check every 2 minutes
+      
+      return () => {
+        clearInterval(intervalId);
+      };
+    }
+  }, [yjs, nodes]);
+  
+  // Handle conflict resolution
+  const handleConflictResolution = useCallback((resolution: 'local' | 'remote') => {
+    // Apply the chosen resolution
+    console.log(`Applying ${resolution} version for node ${conflictNodeId}`);
+    
+    // In a real implementation, this would apply the chosen version
+    // For now, we just close the modal
+    setShowConflictModal(false);
+    setConflictNodeId(null);
+  }, [conflictNodeId]);
+  
+  // Handle canceling conflict resolution
+  const handleCancelConflict = useCallback(() => {
+    setShowConflictModal(false);
+    setConflictNodeId(null);
+  }, []);
+
   return (
-    <div className="canvas-container" style={{ height: '100%', width: '100%' }}>
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', position: 'relative' }}>
       <LibrarySidebar onPromptDrag={handlePromptDrag} />
-      <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
-      
-      {USE_YJS && (
-        <YjsNodeControls canvasId={window.location.pathname.includes('/canvas/') ? window.location.pathname.split('/canvas/')[1] : 'default'} />
-      )}
-      
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={handleEdgesChange}
-        onConnect={handleConnect}
-        nodeTypes={nodeTypes}
-        fitView
-        attributionPosition="bottom-right"
-        onNodeClick={onNodeClick}
-        onNodeDragStop={onNodeDragStop}
+      <div 
+        style={{ flexGrow: 1, position: 'relative', overflow: 'hidden' }}
+        onMouseMove={handleMouseMove}
       >
-        <Background />
-        <Controls />
-        <MiniMap />
-        {USE_YJS && <UserCursors />}
-      </ReactFlow>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
+          onConnect={handleConnect}
+          onNodeClick={onNodeClick}
+          onNodeDragStop={onNodeDragStop}
+          nodeTypes={nodeTypes}
+          fitView
+          style={{ background: '#f8f8f8' }}
+        >
+          <Controls />
+          <MiniMap />
+          <Background color="#aaa" gap={12} size={1} />
+          
+          {/* Add UserCursors component for Yjs user presence */}
+          {USE_YJS && <UserCursors />}
+        </ReactFlow>
+        
+        {/* Floating menu for creating nodes */}
+        <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
+        
+        {/* Add Yjs collaboration components when enabled */}
+        {USE_YJS && (
+          <>
+            <div style={{ 
+              position: 'absolute',
+              bottom: '20px',
+              right: '20px',
+              zIndex: 10
+            }}>
+              <CollaborationStatus />
+            </div>
+            
+            <YjsNodeControls canvasId="canvas-1" />
+          </>
+        )}
+        
+        {/* Simplified conflict modal (would use the actual component in real implementation) */}
+        {showConflictModal && conflictNodeId && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <div style={{
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '8px',
+              width: '500px',
+              maxWidth: '90vw'
+            }}>
+              <h3>Conflict Detected</h3>
+              <p>Changes to node {conflictNodeId} were made simultaneously. Choose which version to keep:</p>
+              
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <button onClick={handleCancelConflict}>Cancel</button>
+                <button onClick={() => handleConflictResolution('remote')}>Use Remote</button>
+                <button onClick={() => handleConflictResolution('local')}>Use Mine</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Handle, Position, NodeProps, useUpdateNodeInternals } from 'reactflow';
 import NodeSettingsModal from './NodeSettingsModal';
+import EditIndicator from './EditIndicator';
+import { useYjs } from '../contexts/YjsContext';
 
 interface UserPresence {
   userId: string;
@@ -30,6 +32,8 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const [showSettings, setShowSettings] = useState(false);
+  const { isFeatureEnabled: isYjsEnabled, updateAwareness } = useYjs();
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     if (nodeRef.current) {
@@ -39,9 +43,34 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
     }
   }, [id, updateNodeInternals, data.users, data.pulledConnections, data.pulledByConnections, data.attachments]);
 
+  // Update Yjs awareness when this user starts/stops editing this node
+  useEffect(() => {
+    if (!isYjsEnabled) return;
+    
+    // Update awareness with editingNode property when editing state changes
+    if (isEditing) {
+      updateAwareness({ editingNode: id });
+    } else {
+      updateAwareness({ editingNode: null });
+    }
+    
+    return () => {
+      // Clear editing state when component unmounts
+      updateAwareness({ editingNode: null });
+    };
+  }, [isEditing, id, updateAwareness, isYjsEnabled]);
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowSettings(true);
+    // Set editing status when opening settings
+    setIsEditing(true);
+  };
+
+  const handleSettingsClose = () => {
+    setShowSettings(false);
+    // Clear editing status when closing settings
+    setIsEditing(false);
   };
 
   return (
@@ -58,6 +87,9 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
         }}
         onDoubleClick={handleDoubleClick}
       >
+        {/* Yjs Edit Indicator - shows when other users are editing this node */}
+        {isYjsEnabled && <EditIndicator nodeId={id} />}
+        
         <Handle type="target" position={Position.Top} style={{ background: '#555' }} />
         <Handle type="source" position={Position.Bottom} style={{ background: '#555' }} />
 
@@ -210,7 +242,7 @@ const ChatNode: React.FC<NodeProps<ChatNodeData>> = ({ id, data }) => {
 
       <NodeSettingsModal 
         show={showSettings} 
-        onHide={() => setShowSettings(false)} 
+        onHide={handleSettingsClose} 
         node={showSettings ? { id, data } : null} 
       />
     </>
