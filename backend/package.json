@@ -2,6 +2,11 @@
   "name": "@riff-app/backend",
   "version": "1.0.0",
   "private": true,
+  "comments": {
+    "dependencies": {
+      "yjs": "Must be kept in sync with frontend version for compatibility"
+    }
+  },
   "dependencies": {
     "@langchain/anthropic": "0.3.0",
     "@langchain/community": "0.3.0",
@@ -28,7 +33,7 @@
     "validator": "^13.9.0",
     "ws": "^8.16.0",
     "y-protocols": "^1.0.6",
-    "yjs": "^13.6.10"
+    "yjs": "^13.6.24"
   },
   "scripts": {
     "start": "ts-node src/index.ts",

@@ -2,6 +2,11 @@
   "name": "@riff-app/frontend",
   "version": "1.0.0",
   "private": true,
+  "comments": {
+    "dependencies": {
+      "yjs": "Must be kept in sync with backend version for compatibility"
+    }
+  },
   "dependencies": {
     "@chakra-ui/react": "^3.13.0",
     "@emotion/react": "^11.14.0",
