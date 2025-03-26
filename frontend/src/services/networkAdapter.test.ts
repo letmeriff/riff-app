@@ -6,20 +6,24 @@ import { SocketIONetworkAdapter, YjsNetworkAdapter, createNetworkAdapter } from 
 jest.mock('socket.io-client');
 
 // Mock Y.js and WebsocketProvider
-jest.mock('y-websocket', () => ({
-  WebsocketProvider: jest.fn().mockImplementation(() => ({
-    awareness: {
-      getLocalState: jest.fn().mockReturnValue({}),
-      setLocalState: jest.fn(),
-      on: jest.fn(),
-      getStates: jest.fn().mockReturnValue(new Map()),
-    },
+jest.mock('y-websocket', () => {
+  const mockAwareness = {
+    getLocalState: jest.fn().mockReturnValue({}),
+    setLocalState: jest.fn(),
     on: jest.fn(),
-    off: jest.fn(),
-    wsconnected: true,
-    disconnect: jest.fn(),
-  })),
-}));
+    getStates: jest.fn().mockReturnValue(new Map()),
+  };
+  
+  return {
+    WebsocketProvider: jest.fn().mockImplementation(() => ({
+      awareness: mockAwareness,
+      on: jest.fn(),
+      off: jest.fn(),
+      wsconnected: true,
+      disconnect: jest.fn(),
+    })),
+  };
+});
 
 jest.mock('yjs', () => {
   return {

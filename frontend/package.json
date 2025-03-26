@@ -69,7 +69,7 @@
   },
   "jest": {
     "transformIgnorePatterns": [
-      "node_modules/(?!(@testing-library)/)"
+      "node_modules/(?!(yjs|y-protocols|y-websocket|y-indexeddb|lib0|@testing-library)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"

@@ -2,20 +2,36 @@ import * as Y from 'yjs';
 import * as yjsService from './yjsService';
 
 // Mock Supabase
-jest.mock('../config/supabase', () => ({
-  supabase: {
-    from: jest.fn().mockReturnThis(),
-    select: jest.fn().mockReturnThis(),
-    insert: jest.fn().mockReturnThis(),
-    update: jest.fn().mockReturnThis(),
-    delete: jest.fn().mockReturnThis(),
-    eq: jest.fn().mockReturnThis(),
-    gt: jest.fn().mockReturnThis(),
-    lt: jest.fn().mockReturnThis(),
-    order: jest.fn().mockReturnThis(),
-    single: jest.fn().mockReturnThis(),
-  }
-}));
+jest.mock('../config/supabase', () => {
+  // Create more sophisticated mock that supports chained method calls
+  const createMockQueryBuilder = () => {
+    const mock = {
+      select: jest.fn(() => mock),
+      insert: jest.fn(() => mock),
+      update: jest.fn(() => mock),
+      delete: jest.fn(() => mock),
+      eq: jest.fn(() => mock),
+      gt: jest.fn(() => mock),
+      lt: jest.fn(() => mock),
+      order: jest.fn(() => mock),
+      single: jest.fn(() => mock),
+      mockResolvedValue: jest.fn((val) => {
+        mock.resolvedValue = val;
+        return mock;
+      }),
+      then: jest.fn((callback) => {
+        return Promise.resolve(callback(mock.resolvedValue));
+      })
+    };
+    return mock;
+  };
+
+  return {
+    supabase: {
+      from: jest.fn(() => createMockQueryBuilder())
+    }
+  };
+});
 
 // Mock zlib
 jest.mock('zlib', () => ({
@@ -104,17 +120,25 @@ describe('yjsService', () => {
       const documentId = 'test-doc';
       const mockSupabase = require('../config/supabase').supabase;
       
-      mockSupabase.from().select().eq().single.mockResolvedValue({ data: null, error: 'Not found' });
+      // Mock document not found
+      mockSupabase.from().select().eq().single.mockResolvedValue({ 
+        data: null, 
+        error: 'Not found' 
+      });
       
-      // Mock recoverDocumentFromUpdates to fail
-      jest.spyOn(yjsService, 'recoverDocumentFromUpdates').mockResolvedValue(null);
+      // Mock recovery failure - empty updates list
+      mockSupabase.from().select().eq().order().mockResolvedValue({
+        data: [],
+        error: null
+      });
       
       // Test
       const result = await yjsService.getYjsDocument(documentId);
       
       // Assertions
       expect(result).toBeNull();
-      expect(yjsService.recoverDocumentFromUpdates).toHaveBeenCalledWith(documentId);
+      expect(mockSupabase.from).toHaveBeenNthCalledWith(1, 'yjs_documents');
+      expect(mockSupabase.from).toHaveBeenNthCalledWith(2, 'yjs_updates');
     });
   });
   
@@ -172,18 +196,22 @@ describe('yjsService', () => {
     it('should recover a document from updates', async () => {
       // Setup
       const documentId = 'test-doc';
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Mock getYjsUpdates to return some updates
-      jest.spyOn(yjsService, 'getYjsUpdates').mockResolvedValue([
-        new Uint8Array([1, 2, 3]),
-        new Uint8Array([4, 5, 6]),
-      ]);
+      // Set up mock data for getYjsUpdates
+      mockSupabase.from().select().eq().order().mockResolvedValue({
+        data: [
+          { update: new Uint8Array([1, 2, 3]), is_compressed: false },
+          { update: new Uint8Array([4, 5, 6]), is_compressed: false }
+        ],
+        error: null
+      });
       
       // Test
       const result = await yjsService.recoverDocumentFromUpdates(documentId);
       
       // Assertions
-      expect(yjsService.getYjsUpdates).toHaveBeenCalledWith(documentId);
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_updates');
       expect(Y.applyUpdate).toHaveBeenCalledTimes(2);
       expect(result).not.toBeNull();
     });
@@ -191,9 +219,13 @@ describe('yjsService', () => {
     it('should return null if no updates exist', async () => {
       // Setup
       const documentId = 'test-doc';
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Mock getYjsUpdates to return empty array
-      jest.spyOn(yjsService, 'getYjsUpdates').mockResolvedValue([]);
+      // Set up mock data for getYjsUpdates
+      mockSupabase.from().select().eq().order().mockResolvedValue({
+        data: [],
+        error: null
+      });
       
       // Test
       const result = await yjsService.recoverDocumentFromUpdates(documentId);
@@ -208,15 +240,19 @@ describe('yjsService', () => {
       // Setup
       const documentId = 'test-doc';
       const doc = new Y.Doc();
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Mock storeYjsDocument to succeed
-      jest.spyOn(yjsService, 'storeYjsDocument').mockResolvedValue(true);
+      // Mock existing document check
+      mockSupabase.from().select().eq().single.mockResolvedValue({ data: null, error: null });
+      // Mock successful insert
+      mockSupabase.from().insert.mockResolvedValue({ error: null });
       
       // Test
       const result = await yjsService.createDocumentSnapshot(documentId, doc);
       
       // Assertions
-      expect(yjsService.storeYjsDocument).toHaveBeenCalled();
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_documents');
+      expect(mockSupabase.from().insert).toHaveBeenCalled();
       expect(result).toBe(true);
     });
   });

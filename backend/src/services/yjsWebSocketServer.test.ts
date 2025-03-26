@@ -81,9 +81,21 @@ jest.mock('../utils/auth', () => ({
 jest.mock('../config/supabase', () => ({
   supabase: {
     auth: {
-      getUser: jest.fn(),
+      getUser: jest.fn().mockImplementation(token => {
+        if (token === 'valid-token') {
+          return Promise.resolve({
+            data: { user: { id: 'user1' } },
+            error: null
+          });
+        } else {
+          return Promise.resolve({
+            data: { user: null },
+            error: 'Invalid token'
+          });
+        }
+      })
     },
-  },
+  }
 }));
 
 jest.mock('yjs', () => {
@@ -150,6 +162,9 @@ describe('yjsWebSocketServer', () => {
       // Mock URL without token
       const req = {
         url: '/yjs?document=test-doc',
+        headers: {
+          host: 'localhost:3000'
+        }
       };
       
       // Extract connection handler
@@ -166,6 +181,9 @@ describe('yjsWebSocketServer', () => {
       // Mock URL with token but no document
       const req = {
         url: '/yjs?token=valid-token',
+        headers: {
+          host: 'localhost:3000'
+        }
       };
       
       // Extract connection handler
@@ -182,6 +200,9 @@ describe('yjsWebSocketServer', () => {
       // Mock URL with token
       const req = {
         url: '/yjs?document=test-doc&token=valid-token',
+        headers: {
+          host: 'localhost:3000'
+        }
       };
       
       // Extract connection handler
@@ -202,6 +223,9 @@ describe('yjsWebSocketServer', () => {
       // Mock URL with token
       const req = {
         url: '/yjs?document=test-doc&token=valid-token',
+        headers: {
+          host: 'localhost:3000'
+        }
       };
       
       // Setup sync message mocks
@@ -229,6 +253,9 @@ describe('yjsWebSocketServer', () => {
       // Mock URL with token
       const req = {
         url: '/yjs?document=test-doc&token=valid-token',
+        headers: {
+          host: 'localhost:3000'
+        }
       };
       
       // Setup awareness message mocks
@@ -261,6 +288,9 @@ describe('yjsWebSocketServer', () => {
       // Mock URL with token and connect a client
       const req = {
         url: '/yjs?document=test-doc&token=valid-token',
+        headers: {
+          host: 'localhost:3000'
+        }
       };
       const connectionHandler = mockServer.on.mock.calls[0][1];
       await connectionHandler(mockWebSocket, req);
