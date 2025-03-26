@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
-import { VectorClock } from '../types/crdt';
-import { incrementVectorClock, generateLamportTimestamp } from '../utils/vectorClock';
+import { VectorClock } from '../legacy/crdt';
+import { incrementVectorClock, generateLamportTimestamp } from '../legacy/vectorClock';
 
 export interface ChatNode {
   node_id: number;

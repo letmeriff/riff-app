@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
-import { CRDTProvider } from './contexts/CRDTContext';
+import { CRDTProvider } from './legacy/CRDTContext';
 import { YjsProvider } from './contexts/YjsContext';
 import Login from './components/Login';
 import Signup from './components/Signup';

@@ -21,7 +21,7 @@ import {
   incrementVectorClock, 
   mergeVectorClocks, 
   generateLamportTimestamp 
-} from './utils/vectorClock';
+} from './legacy/vectorClock';
 import { initYjsWebSocketServer } from './services/yjsWebSocketServer';
 import { updateNodePositionYjs, getYjsNodeId, getNodePositionYjs } from './services/yjsNodeService';
 // These route modules don't exist but were referenced
@@ -413,7 +413,14 @@ io.on('connection', (socket: Socket) => {
         handleLegacyPositionUpdate();
       }
       
+      /**
+       * @deprecated This function uses the legacy CRDT implementation for position updates.
+       * It is maintained for backward compatibility and will be removed in future releases.
+       * Use the Yjs implementation instead.
+       */
       async function handleLegacyPositionUpdate() {
+        console.warn('Using deprecated CRDT position update - Yjs should be used instead');
+        
         // Get or initialize vector clock
         const userVectorClock = vectorClock || {};
         

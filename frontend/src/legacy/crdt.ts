@@ -1,24 +1,18 @@
 /**
- * @deprecated This file is a forwarding module to the legacy CRDT types.
- * The actual implementation has been moved to frontend/src/legacy/crdt.ts
+ * @deprecated Types for CRDT (Conflict-free Replicated Data Types) implementation
+ * Used for handling node position synchronization with conflict resolution
  * This file is maintained for backward compatibility and will be removed in future releases.
  */
 
-export * from '../legacy/crdt';
-
 /**
- * Types for CRDT (Conflict-free Replicated Data Types) implementation
- * Used for handling node position synchronization with conflict resolution
- */
-
-/**
- * Vector clock representation for tracking causal relationships
+ * @deprecated Vector clock representation for tracking causal relationships
  * Maps user IDs to logical clock values
  */
 export type VectorClock = Record<string, number>;
 
 /**
- * Represents a node position update operation
+ * @deprecated Represents a node position update operation
+ * This interface will be removed once the transition to Yjs is complete.
  */
 export interface NodePositionOperation {
   nodeId: string;
@@ -30,7 +24,8 @@ export interface NodePositionOperation {
 }
 
 /**
- * Represents an entry in the node position history
+ * @deprecated Represents an entry in the node position history
+ * This interface will be removed once the transition to Yjs is complete.
  */
 export interface NodePositionHistory {
   id: number;

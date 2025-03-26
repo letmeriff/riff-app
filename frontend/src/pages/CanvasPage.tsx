@@ -43,10 +43,10 @@ import {
 } from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
-import { useCRDT } from '../contexts/CRDTContext';
+import { useCRDT } from '../legacy/CRDTContext';
 import { useYjs } from '../contexts/YjsContext';
-import { NodePositionOperation } from '../types/crdt';
-import { generateLamportTimestamp } from '../utils/vectorClock';
+import { NodePositionOperation } from '../legacy/crdt';
+import { generateLamportTimestamp } from '../legacy/vectorClock';
 import { 
   syncNodeChangesToYjs, 
   syncEdgeChangesToYjs, 
