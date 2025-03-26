@@ -274,7 +274,8 @@ export const createDebouncedPositionUpdater = (
  */
 export const createOptimizedPositionUpdater = (ydoc: Y.Doc | null) => {
   if (!ydoc) {
-    return (nodeId: string, position: { x: number; y: number }) => {};
+    // Return a no-op function that ignores all parameters
+    return () => {};
   }
   
   // Keep a cache of the most recent positions to avoid redundant updates
