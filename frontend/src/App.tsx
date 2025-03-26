@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
 import { CRDTProvider } from './contexts/CRDTContext';
+import { YjsProvider } from './contexts/YjsContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import CanvasPage from './pages/CanvasPage';
@@ -12,12 +13,16 @@ import './styles/auth.css';
 import './styles/app.css';
 import ConnectionStatus from './components/ConnectionStatus';
 
+// Feature flag for enabling Yjs - this would come from env/config in production
+const USE_YJS = true;
+
 const AppContent: React.FC = () => {
   const { user, session, signOut } = useAuth();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeTitle, setSelectedNodeTitle] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
+  const [canvasId, setCanvasId] = useState<string>('default-canvas');
 
   const handleNodeSelect = (nodeId: string | null, nodeTitle: string | null) => {
     setSelectedNodeId(nodeId);
@@ -144,64 +149,81 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return (
-    <SocketProvider token={session?.access_token || null}>
-      <CRDTProvider>
-        <div style={{ 
-          display: 'flex', 
-          height: '100vh', 
-          width: '100vw', 
-          overflow: 'hidden',
-          position: 'fixed', 
-          top: 0,
-          left: 0
-        }}>
-          {/* Canvas (61.8%) - Golden Ratio */}
-          <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
-            <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
-          </div>
+  // Prepare the content with both providers for proper transition
+  let content = (
+    <div style={{ 
+      display: 'flex', 
+      height: '100vh', 
+      width: '100vw', 
+      overflow: 'hidden',
+      position: 'fixed', 
+      top: 0,
+      left: 0
+    }}>
+      {/* Canvas (61.8%) - Golden Ratio */}
+      <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
+        <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
+      </div>
 
-          {/* Chat UI (38.2%) */}
-          <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              <ChatUI 
-                nodeId={selectedNodeId} 
-                nodeTitle={selectedNodeTitle} 
-                userId={user.id} 
-              />
-            </div>
-            <div style={{ 
-              padding: '10px', 
-              background: '#fff', 
-              borderTop: '1px solid #ddd', 
-              display: 'flex', 
-              justifyContent: 'space-between',
-              flexShrink: 0
-            }}>
-              <ConnectionStatus />
-              <div>
-                <button 
-                  onClick={handleOpenSettings}
-                  style={{ padding: '5px 10px', marginRight: '10px' }}
-                >
-                  Settings
-                </button>
-                <button 
-                  onClick={signOut} 
-                  style={{ padding: '5px 10px' }}
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
+      {/* Chat UI (38.2%) */}
+      <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ChatUI 
+            nodeId={selectedNodeId} 
+            nodeTitle={selectedNodeTitle} 
+            userId={user.id} 
+          />
+        </div>
+        <div style={{ 
+          padding: '10px', 
+          background: '#fff', 
+          borderTop: '1px solid #ddd', 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          flexShrink: 0
+        }}>
+          <ConnectionStatus />
+          <div>
+            <button 
+              onClick={handleOpenSettings}
+              style={{ padding: '5px 10px', marginRight: '10px' }}
+            >
+              Settings
+            </button>
+            <button 
+              onClick={signOut} 
+              style={{ padding: '5px 10px' }}
+            >
+              Logout
+            </button>
           </div>
         </div>
-        
-        {/* Settings Modal */}
-        <SettingsModal 
-          isOpen={isSettingsOpen} 
-          onClose={() => setIsSettingsOpen(false)} 
-        />
+      </div>
+    </div>
+  );
+
+  // Add settings modal outside of the providers to avoid remounting
+  const settingsModal = (
+    <SettingsModal 
+      isOpen={isSettingsOpen} 
+      onClose={() => setIsSettingsOpen(false)} 
+    />
+  );
+
+  // Return with proper context providers
+  return (
+    <SocketProvider token={session?.access_token || null}>
+      {/* Keep the CRDT provider for backward compatibility */}
+      <CRDTProvider>
+        {/* Use conditional rendering based on feature flag */}
+        {USE_YJS ? (
+          <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
+            {content}
+          </YjsProvider>
+        ) : (
+          content
+        )}
+        {settingsModal}
       </CRDTProvider>
     </SocketProvider>
   );

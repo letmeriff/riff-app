@@ -19,6 +19,7 @@ import '../styles/reactflow.css';
 import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import LibrarySidebar from '../components/LibrarySidebar';
+import UserCursors from '../components/UserCursors';
 import { Prompt } from '../services/promptService';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -26,6 +27,7 @@ import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, dele
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
 import { useCRDT } from '../contexts/CRDTContext';
+import { useYjs } from '../contexts/YjsContext';
 import { NodePositionOperation } from '../types/crdt';
 import { generateLamportTimestamp } from '../utils/vectorClock';
 
@@ -34,6 +36,9 @@ const nodeTypes: NodeTypes = {
 };
 
 const initialEdges: Edge[] = [];
+
+// Feature flag for enabling Yjs - this would come from env/config in production
+const USE_YJS = true;
 
 interface CanvasPageProps {
   onNodeSelect: (nodeId: string | null, nodeTitle: string | null) => void;
@@ -63,6 +68,9 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     removePendingOperation,
     hasPendingOperations 
   } = useCRDT();
+  
+  // Add Yjs context - this will be undefined if Yjs is not enabled
+  const yjs = USE_YJS ? useYjs() : undefined;
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds: Edge[]) => addEdge(params, eds)),
@@ -87,6 +95,33 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     
     try {
       console.log('Loading nodes with connections from database...');
+      
+      // If Yjs is enabled and connected, try to load nodes from Yjs document
+      if (USE_YJS && yjs && yjs.isConnected && yjs.ydoc) {
+        console.log('Loading nodes from Yjs document...');
+        try {
+          // Get nodes and edges from Yjs
+          const yjsNodes = yjs.getNodesFromYjs();
+          const yjsEdges = yjs.getEdgesFromYjs();
+          
+          if (yjsNodes.length > 0) {
+            console.log('Loaded nodes from Yjs document:', yjsNodes);
+            setNodes(yjsNodes);
+            
+            // If we have edges from Yjs, use those too
+            if (yjsEdges.length > 0) {
+              console.log('Loaded edges from Yjs document:', yjsEdges);
+              setEdges(yjsEdges);
+              return; // Successfully loaded from Yjs, no need to fetch from database
+            }
+          }
+        } catch (error) {
+          console.error('Error loading from Yjs, falling back to database:', error);
+          // Fall back to database loading
+        }
+      }
+      
+      // Fallback to traditional database loading
       const chatNodes = await fetchNodes();
       console.log('Fetched nodes from database:', chatNodes);
       
@@ -260,7 +295,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     } catch (error) {
       console.error('Error loading nodes with connections:', error);
     }
-  }, [user, setNodes, checkForUpdates, setEdges]);
+  }, [user, yjs, setNodes, setEdges, checkForUpdates]);
 
   // Load nodes on mount and set up socket listeners
   useEffect(() => {
@@ -768,7 +803,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       
       // Set the new selected node
       setSelectedNodeId(node.id);
-      onNodeSelect(node.id, node.data.label);
+      onNodeSelect(node.id, node.data.label as string);
       
       // Join the new node
       if (socket) {
@@ -842,65 +877,138 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   // Add a console log to check if this component is rendering
   console.log('CanvasPage rendering, will include LibrarySidebar');
 
-  return (
-    <div style={{ 
-      height: '100%', 
-      width: '100%',
-      position: 'relative',
-      overflow: 'hidden',
-      display: 'flex'
-    }}>
-      <LibrarySidebar onPromptDrag={handlePromptDrag} />
+  // Function to handle node drag end and position updates
+  const onNodeDragStop: NodeMouseHandler = useCallback((event, node) => {
+    if (!user) return;
+    
+    const nodeId = node.id;
+    console.log(`Node drag stopped for node ${nodeId} at position: x=${node.position.x}, y=${node.position.y}`);
+    
+    try {
+      // If Yjs is enabled, update the position in the Yjs document
+      if (USE_YJS && yjs && yjs.ydoc) {
+        // Import the function dynamically to avoid circular dependencies
+        import('../services/yjsService').then(({ updateNodePositionYjs }) => {
+          updateNodePositionYjs(nodeId, node.position);
+        });
+      } else {
+        // Legacy CRDT approach
+        const numericNodeId = parseInt(nodeId);
+        setUpdatingPositionNodeId(nodeId);
+        
+        // Generate vector clock for the node
+        const vectorClock = getNodeVectorClock(nodeId);
+        const lamportTimestamp = generateLamportTimestamp();
+        
+        // Create position update operation - match the expected type structure
+        const operation: NodePositionOperation = {
+          nodeId,
+          position: node.position,
+          vectorClock: { ...vectorClock, [user.id]: (vectorClock[user.id] || 0) + 1 },
+          lamportTimestamp,
+          userId: user.id
+        };
+        
+        console.log('Position update operation:', operation);
+        addPendingOperation(operation);
+        
+        // Update position in database - using appropriate types
+        updateNodePosition(numericNodeId, node.position, user.id, vectorClock).then((result) => {
+          console.log(`Position updated in database for node ${nodeId}`);
+          setUpdatingPositionNodeId(null);
+          removePendingOperation(nodeId, lamportTimestamp);
+        }).catch(error => {
+          console.error(`Error updating position for node ${nodeId}:`, error);
+          setUpdatingPositionNodeId(null);
+        });
+      }
+    } catch (error) {
+      console.error(`Error updating position for node ${nodeId}:`, error);
+      setUpdatingPositionNodeId(null);
+    }
+  }, [user, yjs, addPendingOperation, getNodeVectorClock, removePendingOperation]);
+
+  // Handle socket events for position updates
+  useEffect(() => {
+    if (!socket || USE_YJS) return; // Don't use socket for position updates if Yjs is enabled
+    
+    // Listen for node position updates
+    socket.on('node-position-update', (data: any) => {
+      // ... existing socket event handling ...
+    });
+    
+    return () => {
+      socket.off('node-position-update');
+    };
+  }, [socket, updateNodeVectorClock, setNodes]);
+
+  // Set up Yjs awareness for cursor tracking
+  useEffect(() => {
+    if (!USE_YJS || !yjs || !yjs.ydoc) return;
+    
+    const handleMouseMove = (e: Event) => {
+      const mouseEvent = e as MouseEvent;
+      // Get canvas container element
+      const canvasContainer = document.querySelector('.react-flow');
+      if (!canvasContainer) return;
       
-      <div style={{ flexGrow: 1, height: '100%' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={handleNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          nodeTypes={nodeTypes}
-          fitView
-          style={{ 
-            width: '100%', 
-            height: '100%',
-            background: '#f5f5f6'
+      // Convert global mouse position to canvas coordinates
+      const rect = canvasContainer.getBoundingClientRect();
+      const x = mouseEvent.clientX - rect.left;
+      const y = mouseEvent.clientY - rect.top;
+      
+      // Update awareness with cursor position
+      yjs.updateAwareness({
+        cursor: { x, y }
+      });
+    };
+    
+    // Add mousemove event listener to canvas container
+    const canvasContainer = document.querySelector('.react-flow');
+    if (canvasContainer) {
+      canvasContainer.addEventListener('mousemove', handleMouseMove);
+    }
+    
+    return () => {
+      if (canvasContainer) {
+        canvasContainer.removeEventListener('mousemove', handleMouseMove);
+      }
+    };
+  }, [yjs]);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        nodeTypes={nodeTypes}
+        fitView
+        onNodeClick={(e, node) => {
+          setSelectedNodeId(node.id);
+          onNodeSelect(node.id, (node.data.label as string));
+        }}
+        onNodeDragStop={onNodeDragStop}
+      >
+        <Background />
+        <Controls />
+        <MiniMap
+          nodeStrokeColor={(n) => {
+            return n.selected ? '#ffffff' : '#555555';
           }}
-        >
-          <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
-          <Background color="#aaa" gap={16} />
-          <Controls 
-            position="bottom-right"
-            style={{
-              bottom: 10,
-              right: 10
-            }}
-          />
-          <MiniMap
-            nodeStrokeColor={(n) => {
-              if (n.id === selectedNodeId) return '#ff0072';
-              return '#555';
-            }}
-            nodeColor={(n) => {
-              if (n.id === selectedNodeId) return '#ffcce6';
-              return '#fff';
-            }}
-            style={{
-              bottom: 10,
-              left: 10,
-              background: '#f5f5f6',
-              border: '1px solid #ddd',
-              borderRadius: '5px',
-              height: 120,
-              width: 160
-            }}
-            maskColor="rgba(0, 0, 0, 0.1)"
-            zoomable
-            pannable
-          />
-        </ReactFlow>
-      </div>
+          nodeColor={(n) => {
+            return n.selected ? '#ff0072' : '#1a192b';
+          }}
+        />
+        <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
+        
+        {/* Add UserCursors component for Yjs awareness */}
+        {USE_YJS && <UserCursors />}
+      </ReactFlow>
+      
+      <LibrarySidebar onPromptDrag={handlePromptDrag} />
     </div>
   );
 };
