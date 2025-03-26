@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -13,6 +13,7 @@ import ReactFlow, {
   NodeChange,
   NodeTypes,
   NodeMouseHandler,
+  EdgeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../styles/reactflow.css';
@@ -20,6 +21,7 @@ import FloatingMenu from '../components/FloatingMenu';
 import ChatNode from '../components/ChatNode';
 import LibrarySidebar from '../components/LibrarySidebar';
 import UserCursors from '../components/UserCursors';
+import YjsNodeControls from '../components/YjsNodeControls';
 import { Prompt } from '../services/promptService';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -30,6 +32,15 @@ import { useCRDT } from '../contexts/CRDTContext';
 import { useYjs } from '../contexts/YjsContext';
 import { NodePositionOperation } from '../types/crdt';
 import { generateLamportTimestamp } from '../utils/vectorClock';
+import { 
+  syncNodeChangesToYjs, 
+  syncEdgeChangesToYjs, 
+  syncNewNodeToYjs,
+  syncNodeDeletionToYjs,
+  syncEdgeDeletionToYjs,
+  setupYjsSubscription
+} from '../utils/reactFlowYjsBinding';
+import { mapEdgeToYjs } from '../services/yjsService';
 
 const nodeTypes: NodeTypes = {
   chatNode: ChatNode,
@@ -71,6 +82,9 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   
   // Add Yjs context - this will be undefined if Yjs is not enabled
   const yjs = USE_YJS ? useYjs() : undefined;
+
+  // Add subscription tracking ref
+  const yjsSubscriptionRef = useRef<(() => void) | null>(null);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds: Edge[]) => addEdge(params, eds)),
@@ -629,6 +643,186 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     }
   }, [socket, selectedNodeId, user]);
 
+  // Define handleNodePositionChange before it's used
+  const handleNodePositionChange = useCallback(
+    async (nodeId: string, position: { x: number; y: number }) => {
+      if (!user) return;
+      
+      try {
+        console.log(`Drag ended for node ${nodeId} - Updating position with CRDT: x=${position.x}, y=${position.y}`);
+        
+        // Set the updating node ID to avoid feedback loops
+        setUpdatingPositionNodeId(nodeId);
+        
+        // Get the current vector clock for this node
+        const currentVectorClock = getNodeVectorClock(nodeId);
+        
+        // Create the operation
+        const operation: NodePositionOperation = {
+          nodeId,
+          position,
+          vectorClock: currentVectorClock,
+          lamportTimestamp: generateLamportTimestamp(),
+          userId: user?.id || ''
+        };
+        
+        // Add to pending operations (for optimistic updates)
+        addPendingOperation(operation);
+        
+        // Save position to database with CRDT
+        const result = await updateNodePosition(
+          parseInt(nodeId), 
+          position,
+          user?.id,
+          currentVectorClock
+        );
+        
+        console.log(`Position saved for node ${nodeId}`, result);
+        
+        // If successful and we got a new vector clock, update it
+        if (result.success && result.vectorClock) {
+          updateNodeVectorClock(nodeId, result.vectorClock);
+        }
+        
+        // Emit position update for real-time collaboration
+        if (socket) {
+          socket.emit('node-position-update', {
+            nodeId,
+            position,
+            vectorClock: result.vectorClock || currentVectorClock,
+            lamportTimestamp: result.lamportTimestamp || generateLamportTimestamp()
+          });
+        }
+        
+        // Clear the updating node ID after a short delay
+        setTimeout(() => {
+          setUpdatingPositionNodeId(null);
+        }, 200);
+      } catch (error) {
+        console.error(`Error saving position for node ${nodeId}:`, error);
+        setUpdatingPositionNodeId(null);
+        
+        // Remove from pending operations on error
+        removePendingOperation(nodeId, generateLamportTimestamp());
+      }
+    },
+    [
+      socket, 
+      user, 
+      setUpdatingPositionNodeId, 
+      getNodeVectorClock, 
+      updateNodeVectorClock, 
+      addPendingOperation, 
+      removePendingOperation
+    ]
+  );
+
+  // Enhanced onNodesChange handler with Yjs integration
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      // Apply custom position changes
+      if (USE_YJS && yjs && yjs.ydoc) {
+        // Use ReactFlow-Yjs binding to sync node changes to Yjs
+        setNodes((nodes) => syncNodeChangesToYjs(changes, nodes, yjs.ydoc));
+        
+        // Handle node removals separately
+        changes.forEach(change => {
+          if (change.type === 'remove') {
+            syncNodeDeletionToYjs(change.id, yjs.ydoc);
+          }
+        });
+      } else {
+        // Use default ReactFlow behavior if Yjs is not enabled
+        onNodesChange(changes);
+        
+        // Handle position changes with original CRDT system
+        changes.forEach(change => {
+          if (change.type === 'position' && change.position) {
+            handleNodePositionChange(change.id, change.position);
+          }
+        });
+      }
+    },
+    [onNodesChange, yjs, handleNodePositionChange]
+  );
+
+  // Enhanced onEdgesChange handler with Yjs integration
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      if (USE_YJS && yjs && yjs.ydoc) {
+        // Use ReactFlow-Yjs binding to sync edge changes to Yjs
+        setEdges((edges) => syncEdgeChangesToYjs(changes, edges, yjs.ydoc));
+        
+        // Handle edge removals separately
+        changes.forEach(change => {
+          if (change.type === 'remove') {
+            syncEdgeDeletionToYjs(change.id, yjs.ydoc);
+          }
+        });
+      } else {
+        // Use default ReactFlow behavior if Yjs is not enabled
+        onEdgesChange(changes);
+      }
+    },
+    [onEdgesChange, yjs]
+  );
+
+  // Enhanced onConnect handler with Yjs integration
+  const handleConnect = useCallback(
+    (params: Connection) => {
+      const newEdge = { ...params, id: `e-${params.source}-${params.target}` };
+      
+      if (USE_YJS && yjs && yjs.ydoc) {
+        // Add edge to ReactFlow state
+        setEdges((eds) => {
+          const updatedEdges = addEdge(newEdge, eds);
+          
+          // Map the new edge to Yjs
+          const addedEdge = updatedEdges.find(e => e.id === newEdge.id);
+          if (addedEdge) {
+            // Use the mapEdgeToYjs function from yjsService
+            mapEdgeToYjs(addedEdge);
+          }
+          
+          return updatedEdges;
+        });
+      } else {
+        // Use default behavior
+        setEdges((eds) => addEdge(params, eds));
+      }
+    },
+    [setEdges, yjs]
+  );
+  
+  // Set up Yjs subscription when ydoc changes
+  useEffect(() => {
+    // Clean up previous subscription if it exists
+    if (yjsSubscriptionRef.current) {
+      yjsSubscriptionRef.current();
+      yjsSubscriptionRef.current = null;
+    }
+    
+    // Set up new subscription if Yjs is enabled and ydoc exists
+    if (USE_YJS && yjs && yjs.ydoc && yjs.isConnected) {
+      yjsSubscriptionRef.current = setupYjsSubscription(
+        yjs.ydoc,
+        setNodes,
+        setEdges
+      );
+      
+      // Log that we've set up the subscription
+      console.log('Yjs subscription for ReactFlow established');
+    }
+    
+    // Clean up subscription on component unmount
+    return () => {
+      if (yjsSubscriptionRef.current) {
+        yjsSubscriptionRef.current();
+        yjsSubscriptionRef.current = null;
+      }
+    };
+  }, [yjs?.ydoc, yjs?.isConnected, setNodes, setEdges]);
+
   const onCreateNode = useCallback(async (title: string, modelName: string, flavorName: string) => {
     if (!user) return;
 
@@ -676,12 +870,17 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       // Update nodes in local state
       setNodes((nds: Node[]) => [...nds, newNode]);
       
+      // Sync the new node to Yjs if enabled
+      if (USE_YJS && yjs && yjs.ydoc) {
+        syncNewNodeToYjs(newNode, newChatNode, yjs.ydoc);
+      }
+      
       // Verify the position was saved (for debugging)
       console.log(`Verified position for new node ${newChatNode.node_id}: x=${position.x}, y=${position.y}`);
     } catch (error) {
       console.error('Error creating node:', error);
     }
-  }, [user, setNodes]);
+  }, [user, setNodes, yjs]);
 
   const onNodesDelete = useCallback(
     async (changes: NodeRemoveChange[]) => {
@@ -699,99 +898,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       }
     },
     [onNodeSelect]
-  );
-
-  const handleNodesChange = useCallback(
-    async (changes: NodeChange[]) => {
-      // Apply changes to local state
-      onNodesChange(changes);
-
-      // Find position changes where dragging has just ended (dragging is false)
-      const dragEndChanges = changes.filter(
-        (change): change is NodeChange & { type: 'position'; position: { x: number; y: number }; dragging: boolean } => 
-          change.type === 'position' && 
-          change.position !== undefined &&
-          change.dragging === false
-      );
-
-      // When a drag ends, implement optimistic updates and CRDT
-      for (const change of dragEndChanges) {
-        const nodeId = change.id;
-        const numericNodeId = parseInt(nodeId);
-        const { x, y } = change.position;
-        
-        // Generate lamport timestamp outside try block so it's available in catch
-        const lamportTimestamp = generateLamportTimestamp();
-        
-        try {
-          console.log(`Drag ended for node ${nodeId} - Updating position with CRDT: x=${x}, y=${y}`);
-          
-          // Set the updating node ID to avoid feedback loops
-          setUpdatingPositionNodeId(nodeId);
-          
-          // Get the current vector clock for this node
-          const currentVectorClock = getNodeVectorClock(nodeId);
-          
-          // Create the operation
-          const operation: NodePositionOperation = {
-            nodeId,
-            position: { x, y },
-            vectorClock: currentVectorClock,
-            lamportTimestamp,
-            userId: user?.id || ''
-          };
-          
-          // Add to pending operations (for optimistic updates)
-          addPendingOperation(operation);
-          
-          // Save position to database with CRDT
-          const result = await updateNodePosition(
-            numericNodeId, 
-            { x, y },
-            user?.id,
-            currentVectorClock
-          );
-          
-          console.log(`Position saved for node ${nodeId}`, result);
-          
-          // If successful and we got a new vector clock, update it
-          if (result.success && result.vectorClock) {
-            updateNodeVectorClock(nodeId, result.vectorClock);
-          }
-          
-          // Emit position update for real-time collaboration
-          if (socket) {
-            socket.emit('node-position-update', {
-              nodeId,
-              position: { x, y },
-              vectorClock: result.vectorClock || currentVectorClock,
-              lamportTimestamp: result.lamportTimestamp || lamportTimestamp
-            });
-          }
-          
-          // Clear the updating node ID after a short delay
-          setTimeout(() => {
-            setUpdatingPositionNodeId(null);
-          }, 200);
-        } catch (error) {
-          console.error(`Error saving position for node ${nodeId}:`, error);
-          setUpdatingPositionNodeId(null);
-          
-          // Remove from pending operations on error
-          removePendingOperation(nodeId, lamportTimestamp);
-        }
-      }
-
-      // Handle node deletions
-      const removeChanges = changes.filter(
-        (change: NodeChange): change is NodeRemoveChange => change.type === 'remove'
-      );
-      if (removeChanges.length > 0) {
-        onNodesDelete(removeChanges);
-      }
-    },
-    [onNodesChange, onNodesDelete, setNodes, socket, user, setUpdatingPositionNodeId, 
-     getNodeVectorClock, updateNodeVectorClock, addPendingOperation, removePendingOperation]
   );
 
   const onNodeClick: NodeMouseHandler = useCallback(
@@ -977,38 +1083,31 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   }, [yjs]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className="canvas-container" style={{ height: '100%', width: '100%' }}>
+      <LibrarySidebar onPromptDrag={handlePromptDrag} />
+      <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
+      
+      {USE_YJS && (
+        <YjsNodeControls canvasId={window.location.pathname.includes('/canvas/') ? window.location.pathname.split('/canvas/')[1] : 'default'} />
+      )}
+      
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        onEdgesChange={handleEdgesChange}
+        onConnect={handleConnect}
         nodeTypes={nodeTypes}
         fitView
-        onNodeClick={(e, node) => {
-          setSelectedNodeId(node.id);
-          onNodeSelect(node.id, (node.data.label as string));
-        }}
+        attributionPosition="bottom-right"
+        onNodeClick={onNodeClick}
         onNodeDragStop={onNodeDragStop}
       >
         <Background />
         <Controls />
-        <MiniMap
-          nodeStrokeColor={(n) => {
-            return n.selected ? '#ffffff' : '#555555';
-          }}
-          nodeColor={(n) => {
-            return n.selected ? '#ff0072' : '#1a192b';
-          }}
-        />
-        <FloatingMenu onCreateNode={onCreateNode} onOpenSettings={onOpenSettings} />
-        
-        {/* Add UserCursors component for Yjs awareness */}
+        <MiniMap />
         {USE_YJS && <UserCursors />}
       </ReactFlow>
-      
-      <LibrarySidebar onPromptDrag={handlePromptDrag} />
     </div>
   );
 };
