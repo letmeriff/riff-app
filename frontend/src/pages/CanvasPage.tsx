@@ -52,7 +52,9 @@ import {
   syncEdgeChangesToYjs, 
   syncNodeDeletionToYjs,
   syncEdgeDeletionToYjs,
-  setupYjsSubscription
+  setupYjsSubscription,
+  syncNodeContentToYjs,
+  batchUpdateNodesToYjs
 } from '../utils/reactFlowYjsBinding';
 import {
   ViewportBounds,
@@ -879,12 +881,84 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     // Implement your prompt drag handling logic here
   }, []);
   
-  // Handle node creation
+  // Enhanced onCreateNode function with Yjs integration
   const onCreateNode = useCallback((title: string, modelName: string, flavorName: string) => {
-    console.log('Creating node:', { title, modelName, flavorName });
-    // Implement your node creation logic here
-  }, []);
-  
+    if (!user) return;
+    
+    // Pass userId as first parameter to createNode
+    createNode(user.id, title, modelName, flavorName).then((newNode) => {
+      const newReactFlowNode: Node = {
+        id: `node-${newNode.node_id}`,
+        position: { x: Math.random() * 400, y: Math.random() * 400 },
+        type: 'chatNode',
+        data: {
+          label: title,
+          nodeId: newNode.node_id, // Keep as number since ChatNodeData expects a number
+          model: modelName,
+          flavor: flavorName,
+        },
+      };
+      
+      setNodes((nds) => [...nds, newReactFlowNode]);
+      
+      // If Yjs is enabled, sync the new node to Yjs
+      if (USE_YJS && yjs && yjs.ydoc) {
+        mapNodeToYjs(newReactFlowNode, newNode);
+      }
+    });
+  }, [user, yjs, setNodes]);
+
+  // New function to handle node content updates (title, description, etc.)
+  const handleNodeContentUpdate = useCallback((
+    nodeId: string,
+    updatedData: Partial<ChatNodeType>
+  ) => {
+    // Update local React state
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === nodeId) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              ...updatedData,
+            },
+          };
+        }
+        return node;
+      })
+    );
+    
+    // Sync to Yjs if enabled
+    if (USE_YJS && yjs && yjs.ydoc) {
+      syncNodeContentToYjs(nodeId, updatedData, yjs.ydoc);
+    }
+  }, [setNodes, yjs]);
+
+  // New function to batch update multiple nodes at once
+  const batchUpdateNodes = useCallback((
+    updatedNodes: Node[],
+    chatNodesMap: Record<string, ChatNodeType>
+  ) => {
+    // Update local React state
+    setNodes((currentNodes) => {
+      const nodeMap = new Map(currentNodes.map(node => [node.id, node]));
+      
+      // Update the map with new nodes
+      updatedNodes.forEach(node => {
+        nodeMap.set(node.id, node);
+      });
+      
+      // Convert map back to array
+      return Array.from(nodeMap.values());
+    });
+    
+    // Sync to Yjs if enabled
+    if (USE_YJS && yjs && yjs.ydoc) {
+      batchUpdateNodesToYjs(updatedNodes, chatNodesMap, yjs.ydoc);
+    }
+  }, [setNodes, yjs]);
+
   // Handle node click
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
@@ -894,60 +968,96 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   // Add a console log to check if this component is rendering
   console.log('CanvasPage rendering, will include LibrarySidebar');
 
-  // Function to handle node drag end and position updates
+  // Enhanced onNodeDragStop with edge detection for connections
   const onNodeDragStop: NodeMouseHandler = useCallback((event, node) => {
-    if (!user) return;
+    // Skip if updating is locked
+    if (updatingPositionNodeId === node.id) {
+      console.log(`Node ${node.id} is already being updated, skipping`);
+      return;
+    }
     
-    const nodeId = node.id;
-    console.log(`Node drag stopped for node ${nodeId} at position: x=${node.position.x}, y=${node.position.y}`);
+    console.log(`Node ${node.id} position changed: x=${node.position.x}, y=${node.position.y}`);
     
-    try {
-      // If Yjs is enabled, update the position in the Yjs document
-      if (USE_YJS && yjs && yjs.ydoc) {
-        // Use optimized position updater if available
-        if (optimizedPositionUpdater.current) {
-          optimizedPositionUpdater.current(nodeId, node.position);
-        } else {
-          // Fallback to regular update
-          import('../services/yjsService').then(({ updateNodePositionYjs }) => {
-            updateNodePositionYjs(nodeId, node.position);
-          });
-        }
-      } else {
-        // Legacy CRDT approach
-        const numericNodeId = parseInt(nodeId);
-        setUpdatingPositionNodeId(nodeId);
-        
-        // Generate vector clock for the node
-        const vectorClock = getNodeVectorClock(nodeId);
-        const lamportTimestamp = generateLamportTimestamp();
-        
-        // Create position update operation - match the expected type structure
-        const operation: NodePositionOperation = {
-          nodeId,
-          position: node.position,
-          vectorClock: { ...vectorClock, [user.id]: (vectorClock[user.id] || 0) + 1 },
-          lamportTimestamp,
-          userId: user.id
-        };
-        
-        console.log('Position update operation:', operation);
-        addPendingOperation(operation);
-        
-        // Update position in database - using appropriate types
-        updateNodePosition(numericNodeId, node.position, user.id, vectorClock).then((result) => {
-          console.log(`Position updated in database for node ${nodeId}`);
-          setUpdatingPositionNodeId(null);
-          removePendingOperation(nodeId, lamportTimestamp);
-        }).catch(error => {
-          console.error(`Error updating position for node ${nodeId}:`, error);
-          setUpdatingPositionNodeId(null);
+    // Set updating flag to prevent feedback loops
+    setUpdatingPositionNodeId(node.id);
+    
+    if (USE_YJS && yjs && yjs.ydoc) {
+      // Use optimized updater for Yjs
+      if (!optimizedPositionUpdater.current) {
+        // Import and initialize the optimized updater
+        import('../utils/yjsOptimization').then(({ createOptimizedPositionUpdater }) => {
+          optimizedPositionUpdater.current = createOptimizedPositionUpdater(yjs.ydoc);
+          
+          // Use it immediately for this update
+          if (optimizedPositionUpdater.current) {
+            optimizedPositionUpdater.current(node.id, node.position);
+          }
+          
+          // Clear updating flag after a delay
+          setTimeout(() => {
+            setUpdatingPositionNodeId(null);
+          }, 100);
         });
+      } else {
+        // Use existing optimized updater
+        optimizedPositionUpdater.current(node.id, node.position);
+        
+        // Clear updating flag after a delay
+        setTimeout(() => {
+          setUpdatingPositionNodeId(null);
+        }, 100);
       }
-    } catch (error) {
-      console.error(`Error handling node drag for ${nodeId}:`, error);
+    } else {
+      // Use legacy CRDT system
+      const lamportTimestamp = generateLamportTimestamp();
+      const currentVectorClock = getNodeVectorClock(node.id);
+      
+      // Create a position operation matching the expected interface
+      const operation: NodePositionOperation = {
+        nodeId: node.id,
+        position: node.position,
+        vectorClock: currentVectorClock,
+        lamportTimestamp: lamportTimestamp,
+        userId: user?.id || 'unknown'
+      };
+      
+      // Add to pending operations - with correct argument
+      addPendingOperation(operation);
+      
+      // Update node position through nodeService - with correct arguments
+      updateNodePosition(node.id, node.position);
+      
+      // Clear updating flag
+      setUpdatingPositionNodeId(null);
     }
   }, [user, yjs, optimizedPositionUpdater, addPendingOperation, getNodeVectorClock, removePendingOperation]);
+
+  // Handle direct node updates from external sources
+  const handleExternalNodeUpdate = useCallback((
+    nodeId: string,
+    updates: Partial<ChatNodeType>
+  ) => {
+    if (USE_YJS && yjs && yjs.ydoc) {
+      // Update in Yjs
+      syncNodeContentToYjs(nodeId, updates, yjs.ydoc);
+    } else {
+      // Update only in React state
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === nodeId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                ...updates,
+              },
+            };
+          }
+          return node;
+        })
+      );
+    }
+  }, [setNodes, yjs]);
 
   // Handle socket events for position updates
   useEffect(() => {

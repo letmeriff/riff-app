@@ -131,6 +131,70 @@ export const syncEdgeDeletionToYjs = (
 };
 
 /**
+ * Batch updates multiple nodes in Yjs document
+ * @param nodes Array of nodes to update
+ * @param ydoc Yjs document
+ */
+export const batchUpdateNodesToYjs = (
+  nodes: Node[],
+  chatNodes: Record<string, ChatNode>,
+  ydoc: Y.Doc | null
+): void => {
+  if (!ydoc) return;
+  
+  try {
+    // Create a transaction for batch updates
+    ydoc.transact(() => {
+      nodes.forEach(node => {
+        if (chatNodes[node.id]) {
+          mapNodeToYjs(node, chatNodes[node.id]);
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Error batch updating nodes in Yjs:', error);
+  }
+};
+
+/**
+ * Sync node content changes (not just position) to Yjs
+ * @param nodeId ID of the node to update
+ * @param newData New data for the node
+ * @param ydoc Yjs document
+ */
+export const syncNodeContentToYjs = (
+  nodeId: string,
+  newData: Partial<ChatNode>,
+  ydoc: Y.Doc | null
+): void => {
+  if (!ydoc) return;
+  
+  try {
+    const nodes = ydoc.getMap('nodes');
+    if (nodes.has(nodeId)) {
+      const nodeY = nodes.get(nodeId) as Y.Map<any>;
+      const dataY = nodeY.get('data') as Y.Map<any>;
+      
+      // Update data fields
+      if (newData.title !== undefined) {
+        dataY.set('title', newData.title);
+      }
+      if (newData.model !== undefined) {
+        dataY.set('model', newData.model);
+      }
+      if (newData.flavor !== undefined) {
+        dataY.set('flavor', newData.flavor);
+      }
+      if (newData.description !== undefined) {
+        dataY.set('description', newData.description);
+      }
+    }
+  } catch (error) {
+    console.error('Error updating node content in Yjs:', error);
+  }
+};
+
+/**
  * Sets up a subscription to Yjs document changes to update ReactFlow state
  * @param ydoc Yjs document
  * @param setNodes Function to update nodes state
@@ -147,64 +211,86 @@ export const setupYjsSubscription = (
   const nodes = ydoc.getMap('nodes');
   const edges = ydoc.getMap('edges');
   
-  // Helper to update ReactFlow nodes from Yjs
+  // Debounce to prevent too many React updates
+  let nodesUpdateTimeout: NodeJS.Timeout | null = null;
+  let edgesUpdateTimeout: NodeJS.Timeout | null = null;
+  
+  // Helper to update ReactFlow nodes from Yjs - optimized for large documents
   const updateNodesFromYjs = () => {
-    const nodesArray: Node[] = [];
+    // Clear existing timeout to avoid multiple rapid updates
+    if (nodesUpdateTimeout) clearTimeout(nodesUpdateTimeout);
     
-    // Use a type-safe approach for iterating the Y.Map
-    nodes.forEach((nodeValue: any, key: string) => {
-      try {
-        const nodeY = nodeValue as Y.Map<any>;
-        const positionY = nodeY.get('position') as Y.Map<any>;
-        const dataY = nodeY.get('data') as Y.Map<any>;
-        
-        if (positionY && dataY) {
-          nodesArray.push({
-            id: key,
-            position: {
-              x: positionY.get('x'),
-              y: positionY.get('y')
-            },
-            type: 'chatNode',
-            data: {
-              label: dataY.get('title'),
-              nodeId: nodeY.get('node_id'),
-              model: dataY.get('model'),
-              flavor: dataY.get('flavor'),
-              description: dataY.get('description'),
-            }
-          });
+    // Set a new timeout for debounced update
+    nodesUpdateTimeout = setTimeout(() => {
+      const nodesArray: Node[] = [];
+      const processedCount = { value: 0 };
+      
+      // Use a type-safe approach for iterating the Y.Map
+      nodes.forEach((nodeValue: any, key: string) => {
+        try {
+          const nodeY = nodeValue as Y.Map<any>;
+          const positionY = nodeY.get('position') as Y.Map<any>;
+          const dataY = nodeY.get('data') as Y.Map<any>;
+          
+          if (positionY && dataY) {
+            nodesArray.push({
+              id: key,
+              position: {
+                x: positionY.get('x'),
+                y: positionY.get('y')
+              },
+              type: 'chatNode',
+              data: {
+                label: dataY.get('title'),
+                nodeId: nodeY.get('node_id'),
+                model: dataY.get('model'),
+                flavor: dataY.get('flavor'),
+                description: dataY.get('description'),
+              }
+            });
+            processedCount.value++;
+          }
+        } catch (error) {
+          console.error(`Error processing Yjs node ${key}:`, error);
         }
-      } catch (error) {
-        console.error(`Error processing Yjs node ${key}:`, error);
-      }
-    });
-    
-    setNodes(nodesArray);
+      });
+      
+      console.log(`Processed ${processedCount.value} nodes from Yjs document`);
+      setNodes(nodesArray);
+    }, 50); // 50ms debounce
   };
   
-  // Helper to update ReactFlow edges from Yjs
+  // Helper to update ReactFlow edges from Yjs - optimized for large documents
   const updateEdgesFromYjs = () => {
-    const edgesArray: Edge[] = [];
+    // Clear existing timeout to avoid multiple rapid updates
+    if (edgesUpdateTimeout) clearTimeout(edgesUpdateTimeout);
     
-    // Use a type-safe approach for iterating the Y.Map
-    edges.forEach((edgeValue: any, key: string) => {
-      try {
-        const edgeY = edgeValue as Y.Map<any>;
-        
-        edgesArray.push({
-          id: key,
-          source: edgeY.get('source'),
-          target: edgeY.get('target'),
-          type: 'straight',
-          animated: true,
-        });
-      } catch (error) {
-        console.error(`Error processing Yjs edge ${key}:`, error);
-      }
-    });
-    
-    setEdges(edgesArray);
+    // Set a new timeout for debounced update
+    edgesUpdateTimeout = setTimeout(() => {
+      const edgesArray: Edge[] = [];
+      const processedCount = { value: 0 };
+      
+      // Use a type-safe approach for iterating the Y.Map
+      edges.forEach((edgeValue: any, key: string) => {
+        try {
+          const edgeY = edgeValue as Y.Map<any>;
+          
+          edgesArray.push({
+            id: key,
+            source: edgeY.get('source'),
+            target: edgeY.get('target'),
+            type: 'straight',
+            animated: true,
+          });
+          processedCount.value++;
+        } catch (error) {
+          console.error(`Error processing Yjs edge ${key}:`, error);
+        }
+      });
+      
+      console.log(`Processed ${processedCount.value} edges from Yjs document`);
+      setEdges(edgesArray);
+    }, 50); // 50ms debounce
   };
   
   // Subscribe to Yjs changes
@@ -222,6 +308,11 @@ export const setupYjsSubscription = (
   
   // Return cleanup function
   return () => {
+    // Clear any pending timeouts
+    if (nodesUpdateTimeout) clearTimeout(nodesUpdateTimeout);
+    if (edgesUpdateTimeout) clearTimeout(edgesUpdateTimeout);
+    
+    // Unobserve changes
     nodes.unobserve(nodesObserver);
     edges.unobserve(edgesObserver);
   };

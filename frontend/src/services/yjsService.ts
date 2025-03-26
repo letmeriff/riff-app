@@ -223,7 +223,8 @@ export const mapNodeToYjs = (reactFlowNode: Node, chatNode: ChatNode) => {
     nodeY.set('id', nodeId);
     nodeY.set('position', nodeYPosition);
     nodeY.set('data', nodeYData);
-    nodeY.set('node_id', chatNode.node_id);
+    // Convert to string to ensure type compatibility
+    nodeY.set('node_id', String(chatNode.node_id));
     
     // Add to nodes collection
     nodes.set(nodeId, nodeY);
@@ -290,7 +291,7 @@ export const getNodesFromYjs = (): Node[] => {
       type: 'chatNode',
       data: {
         label: dataY.get('title'),
-        nodeId: nodeY.get('node_id'),
+        nodeId: parseInt(nodeY.get('node_id')),
         model: dataY.get('model'),
         flavor: dataY.get('flavor'),
         description: dataY.get('description'),
