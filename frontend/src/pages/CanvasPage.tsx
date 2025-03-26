@@ -14,6 +14,9 @@ import ReactFlow, {
   NodeTypes,
   NodeMouseHandler,
   EdgeChange,
+  ReactFlowState,
+  OnMove,
+  Viewport
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../styles/reactflow.css';
@@ -42,6 +45,12 @@ import {
   setupYjsSubscription
 } from '../utils/reactFlowYjsBinding';
 import { mapEdgeToYjs } from '../services/yjsService';
+import {
+  selectivelyLoadNodes,
+  updateViewport,
+  createOptimizedPositionUpdater,
+  ViewportBounds
+} from '../utils/yjsOptimization';
 
 const nodeTypes: NodeTypes = {
   chatNode: ChatNode,
@@ -73,6 +82,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const [updatingPositionNodeId, setUpdatingPositionNodeId] = useState<string | null>(null);
   const [showConflictModal, setShowConflictModal] = useState<boolean>(false);
   const [conflictNodeId, setConflictNodeId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<ViewportBounds | null>(null);
+  const optimizedPositionUpdater = useRef<((nodeId: string, position: { x: number; y: number }) => void) | null>(null);
 
   // Add CRDT context
   const { 
@@ -720,6 +731,79 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     ]
   );
 
+  // Initialize optimized position updater
+  useEffect(() => {
+    if (USE_YJS && yjs && yjs.ydoc) {
+      import('../utils/yjsOptimization').then(({ createOptimizedPositionUpdater }) => {
+        optimizedPositionUpdater.current = createOptimizedPositionUpdater(yjs.ydoc);
+      });
+    }
+    
+    return () => {
+      // Clean up optimizer
+      import('../utils/yjsOptimization').then(({ cleanupOptimization }) => {
+        cleanupOptimization();
+      });
+    };
+  }, [yjs, USE_YJS]);
+
+  // Handle viewport changes for selective loading
+  const onViewportChange: OnMove = useCallback((_, viewport) => {
+    if (!USE_YJS || !yjs || !yjs.ydoc) return;
+    
+    // Calculate viewport bounds based on ReactFlow's viewport
+    const viewportBounds: ViewportBounds = {
+      minX: viewport.x,
+      maxX: viewport.x + window.innerWidth / viewport.zoom,
+      minY: viewport.y,
+      maxY: viewport.y + window.innerHeight / viewport.zoom,
+      padding: 1000 // Extra padding around viewport in pixels
+    };
+    
+    setViewport(viewportBounds);
+    
+    // Update visible area and load necessary chunks
+    import('../utils/yjsOptimization').then(({ updateViewport, selectivelyLoadNodes }) => {
+      // Get chunks that need to be loaded
+      const chunksToLoad = updateViewport(viewportBounds);
+      
+      if (chunksToLoad.length > 0) {
+        console.log(`Loading ${chunksToLoad.length} new chunks into view`);
+        
+        // Selectively load nodes in viewport
+        if (yjs && yjs.ydoc) {
+          const { nodes: visibleNodes, edges: visibleEdges } = selectivelyLoadNodes(yjs.ydoc, viewportBounds);
+          
+          // Update the nodes that are not already loaded
+          setNodes(currentNodes => {
+            const existingNodeIds = new Set(currentNodes.map(node => node.id));
+            const newNodes = visibleNodes.filter(node => !existingNodeIds.has(node.id));
+            
+            // Only update if we have new nodes to add
+            if (newNodes.length > 0) {
+              console.log(`Adding ${newNodes.length} new nodes to view`);
+              return [...currentNodes, ...newNodes];
+            }
+            return currentNodes;
+          });
+          
+          // Update the edges
+          setEdges(currentEdges => {
+            const existingEdgeIds = new Set(currentEdges.map(edge => edge.id));
+            const newEdges = visibleEdges.filter(edge => !existingEdgeIds.has(edge.id));
+            
+            // Only update if we have new edges to add
+            if (newEdges.length > 0) {
+              console.log(`Adding ${newEdges.length} new edges to view`);
+              return [...currentEdges, ...newEdges];
+            }
+            return currentEdges;
+          });
+        }
+      }
+    });
+  }, [yjs, USE_YJS]);
+
   // Enhanced onNodesChange handler with Yjs integration
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -857,10 +941,15 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     try {
       // If Yjs is enabled, update the position in the Yjs document
       if (USE_YJS && yjs && yjs.ydoc) {
-        // Import the function dynamically to avoid circular dependencies
-        import('../services/yjsService').then(({ updateNodePositionYjs }) => {
-          updateNodePositionYjs(nodeId, node.position);
-        });
+        // Use optimized position updater if available
+        if (optimizedPositionUpdater.current) {
+          optimizedPositionUpdater.current(nodeId, node.position);
+        } else {
+          // Fallback to regular update
+          import('../services/yjsService').then(({ updateNodePositionYjs }) => {
+            updateNodePositionYjs(nodeId, node.position);
+          });
+        }
       } else {
         // Legacy CRDT approach
         const numericNodeId = parseInt(nodeId);
@@ -893,10 +982,9 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         });
       }
     } catch (error) {
-      console.error(`Error updating position for node ${nodeId}:`, error);
-      setUpdatingPositionNodeId(null);
+      console.error(`Error handling node drag for ${nodeId}:`, error);
     }
-  }, [user, yjs, addPendingOperation, getNodeVectorClock, removePendingOperation]);
+  }, [user, yjs, optimizedPositionUpdater, addPendingOperation, getNodeVectorClock, removePendingOperation]);
 
   // Handle socket events for position updates
   useEffect(() => {
@@ -1008,7 +1096,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     setShowConflictModal(false);
     setConflictNodeId(null);
   }, [conflictNodeId]);
-  
+
   // Handle canceling conflict resolution
   const handleCancelConflict = useCallback(() => {
     setShowConflictModal(false);
@@ -1033,6 +1121,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
           nodeTypes={nodeTypes}
           fitView
           style={{ background: '#f8f8f8' }}
+          onMove={onViewportChange}
         >
           <Controls />
           <MiniMap />

@@ -1,9 +1,59 @@
 import { supabase } from '../config/supabase';
 import * as Y from 'yjs';
+import * as zlib from 'zlib';
+import { promisify } from 'util';
 
 /**
  * Service for managing Yjs documents in the database
  */
+
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
+
+// Compression threshold in bytes
+const COMPRESSION_THRESHOLD = 1024; // 1KB
+
+/**
+ * Compress document content if it exceeds threshold
+ * @param content The binary content to compress
+ * @returns Compressed content and flag indicating if it was compressed
+ */
+export const compressContent = async (content: Uint8Array): Promise<{ data: Uint8Array, compressed: boolean }> => {
+  if (content.length < COMPRESSION_THRESHOLD) {
+    return { data: content, compressed: false };
+  }
+  
+  try {
+    const compressed = await gzip(Buffer.from(content));
+    return { 
+      data: new Uint8Array(compressed), 
+      compressed: true 
+    };
+  } catch (error) {
+    console.error('Error compressing document content:', error);
+    return { data: content, compressed: false };
+  }
+};
+
+/**
+ * Decompress document content if it was compressed
+ * @param content The binary content to decompress
+ * @param isCompressed Flag indicating if content is compressed
+ * @returns Original uncompressed content
+ */
+export const decompressContent = async (content: Uint8Array, isCompressed: boolean): Promise<Uint8Array> => {
+  if (!isCompressed) {
+    return content;
+  }
+  
+  try {
+    const decompressed = await gunzip(Buffer.from(content));
+    return new Uint8Array(decompressed);
+  } catch (error) {
+    console.error('Error decompressing document content:', error);
+    return content;
+  }
+};
 
 /**
  * Get a Yjs document by its ID
@@ -12,19 +62,22 @@ import * as Y from 'yjs';
  */
 export async function getYjsDocument(documentId: string): Promise<Uint8Array | null> {
   try {
+    // Try to get the document snapshot
     const { data, error } = await supabase
       .from('yjs_documents')
-      .select('document_content')
+      .select('*')
       .eq('document_id', documentId)
       .single();
     
     if (error || !data) {
-      console.error('Error fetching Yjs document:', error);
-      return null;
+      console.log(`No document snapshot found for ${documentId}, trying to recover from updates`);
+      return await recoverDocumentFromUpdates(documentId);
     }
     
-    // Convert the binary data to a Uint8Array
-    return new Uint8Array(Buffer.from(data.document_content, 'base64'));
+    // Decompress if needed
+    const isCompressed = data.is_compressed || false;
+    return await decompressContent(data.document_state, isCompressed);
+    
   } catch (error) {
     console.error('Exception fetching Yjs document:', error);
     return null;
@@ -32,59 +85,61 @@ export async function getYjsDocument(documentId: string): Promise<Uint8Array | n
 }
 
 /**
- * Store a Yjs document snapshot
- * @param documentId The unique identifier for the document
- * @param documentContent The document content as a Uint8Array
- * @param version The document version
+ * Store a Yjs document snapshot with compression
+ * @param documentId Document ID
+ * @param documentState Document state
+ * @param version Version number
  * @returns Success status
  */
 export async function storeYjsDocument(
   documentId: string,
-  documentContent: Uint8Array,
+  documentState: Uint8Array,
   version: number
 ): Promise<boolean> {
   try {
-    // Convert Uint8Array to base64 string for storage
-    const base64Content = Buffer.from(documentContent).toString('base64');
+    // Compress the document state
+    const { data: compressedState, compressed } = await compressContent(documentState);
     
-    // Check if document exists
+    // Check for existing document
     const { data: existingDoc } = await supabase
       .from('yjs_documents')
-      .select('id, version')
+      .select('id')
       .eq('document_id', documentId)
       .single();
     
-    let result;
-    
     if (existingDoc) {
-      // Only update if the new version is higher than the stored version
-      if (existingDoc.version < version) {
-        result = await supabase
-          .from('yjs_documents')
-          .update({
-            document_content: base64Content,
-            version,
-            updated_at: new Date().toISOString()
-          })
-          .eq('document_id', documentId);
-      } else {
-        // Version is not newer, consider it a success but don't update
-        return true;
+      // Update existing document
+      const { error } = await supabase
+        .from('yjs_documents')
+        .update({
+          document_state: compressedState,
+          version: version,
+          updated_at: new Date().toISOString(),
+          is_compressed: compressed
+        })
+        .eq('document_id', documentId);
+      
+      if (error) {
+        console.error('Error updating Yjs document:', error);
+        return false;
       }
     } else {
       // Insert new document
-      result = await supabase
+      const { error } = await supabase
         .from('yjs_documents')
         .insert({
           document_id: documentId,
-          document_content: base64Content,
-          version
+          document_state: compressedState,
+          version: version,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          is_compressed: compressed
         });
-    }
-    
-    if (result?.error) {
-      console.error('Error storing Yjs document:', result.error);
-      return false;
+      
+      if (error) {
+        console.error('Error storing Yjs document:', error);
+        return false;
+      }
     }
     
     return true;
@@ -95,30 +150,33 @@ export async function storeYjsDocument(
 }
 
 /**
- * Store a Yjs update
- * @param documentId The unique identifier for the document
- * @param updateContent The update content as a Uint8Array
- * @param clientId The client ID that generated the update
- * @param version The update version
+ * Store a Yjs update with compression
+ * @param documentId Document ID
+ * @param update Document update
+ * @param clientId Client ID
+ * @param version Version number
  * @returns Success status
  */
 export async function storeYjsUpdate(
   documentId: string,
-  updateContent: Uint8Array,
+  update: Uint8Array,
   clientId: string,
   version: number
 ): Promise<boolean> {
   try {
-    // Convert Uint8Array to base64 string for storage
-    const base64Content = Buffer.from(updateContent).toString('base64');
+    // Compress the update if it's large
+    const { data: compressedUpdate, compressed } = await compressContent(update);
     
+    // Store in the database
     const { error } = await supabase
       .from('yjs_updates')
       .insert({
         document_id: documentId,
-        update_content: base64Content,
+        update: compressedUpdate,
         client_id: clientId,
-        version
+        version: version,
+        created_at: new Date().toISOString(),
+        is_compressed: compressed
       });
     
     if (error) {
@@ -134,33 +192,52 @@ export async function storeYjsUpdate(
 }
 
 /**
- * Get Yjs updates for a document since a specific version
- * @param documentId The unique identifier for the document
- * @param sinceVersion Get updates with version > sinceVersion
- * @returns Array of updates as Uint8Array
+ * Get Yjs document updates with decompression
+ * @param documentId Document ID
+ * @param fromVersion Optional minimum version to fetch from
+ * @returns Array of updates
  */
 export async function getYjsUpdates(
-  documentId: string,
-  sinceVersion: number
-): Promise<Array<{ update: Uint8Array, version: number }>> {
+  documentId: string, 
+  fromVersion?: number
+): Promise<Uint8Array[]> {
   try {
-    const { data, error } = await supabase
+    // Query updates
+    const query = supabase
       .from('yjs_updates')
-      .select('update_content, version')
+      .select('*')
       .eq('document_id', documentId)
-      .gt('version', sinceVersion)
       .order('version', { ascending: true });
     
-    if (error || !data) {
+    // Add version filter if provided
+    if (fromVersion !== undefined) {
+      query.gt('version', fromVersion);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
       console.error('Error fetching Yjs updates:', error);
       return [];
     }
     
-    // Convert base64 data to Uint8Array
-    return data.map(item => ({
-      update: new Uint8Array(Buffer.from(item.update_content, 'base64')),
-      version: item.version
-    }));
+    // Process and decompress updates
+    const updates: Uint8Array[] = [];
+    
+    for (const row of data) {
+      try {
+        const update = row.update;
+        const isCompressed = row.is_compressed || false;
+        
+        // Decompress if needed
+        const decompressedUpdate = await decompressContent(update, isCompressed);
+        updates.push(decompressedUpdate);
+      } catch (err) {
+        console.error('Error processing update:', err);
+      }
+    }
+    
+    return updates;
   } catch (error) {
     console.error('Exception fetching Yjs updates:', error);
     return [];
@@ -226,9 +303,9 @@ export async function getLatestDocumentVersion(documentId: string): Promise<numb
 /**
  * Recover a document from its updates
  * @param documentId The document ID
- * @returns A new Y.Doc with all updates applied, or null if recovery failed
+ * @returns Encoded state as Uint8Array or null if recovery failed
  */
-export async function recoverDocumentFromUpdates(documentId: string): Promise<Y.Doc | null> {
+export async function recoverDocumentFromUpdates(documentId: string): Promise<Uint8Array | null> {
   try {
     // Create a new empty document
     const doc = new Y.Doc();
@@ -236,7 +313,7 @@ export async function recoverDocumentFromUpdates(documentId: string): Promise<Y.
     // Get all updates for this document
     const { data, error } = await supabase
       .from('yjs_updates')
-      .select('update_content, version')
+      .select('*')
       .eq('document_id', documentId)
       .order('version', { ascending: true });
     
@@ -247,8 +324,16 @@ export async function recoverDocumentFromUpdates(documentId: string): Promise<Y.
     
     // Apply all updates in order
     for (const update of data) {
-      const updateContent = new Uint8Array(Buffer.from(update.update_content, 'base64'));
-      Y.applyUpdate(doc, updateContent);
+      try {
+        const updateContent = update.update;
+        const isCompressed = update.is_compressed || false;
+        
+        // Decompress if needed
+        const decompressedUpdate = await decompressContent(updateContent, isCompressed);
+        Y.applyUpdate(doc, decompressedUpdate);
+      } catch (err) {
+        console.error('Error applying update during recovery:', err);
+      }
     }
     
     // Store the recovered document
@@ -256,7 +341,8 @@ export async function recoverDocumentFromUpdates(documentId: string): Promise<Y.
     const docContent = Y.encodeStateAsUpdate(doc);
     await storeYjsDocument(documentId, docContent, latestVersion);
     
-    return doc;
+    // Return the encoded state
+    return docContent;
   } catch (error) {
     console.error('Exception recovering document from updates:', error);
     return null;
@@ -317,7 +403,7 @@ export async function getDocumentStats(documentId: string): Promise<{
     // Get document size
     const { data: docData, error: docError } = await supabase
       .from('yjs_documents')
-      .select('document_content')
+      .select('document_state')
       .eq('document_id', documentId)
       .single();
     
@@ -338,7 +424,7 @@ export async function getDocumentStats(documentId: string): Promise<{
     }
     
     // Calculate stats
-    const documentSize = docData.document_content.length;
+    const documentSize = docData.document_state.length;
     const updatesCount = updatesData.length;
     const totalUpdatesSize = updatesData.reduce((sum, update) => sum + update.update_content.length, 0);
     
@@ -370,20 +456,14 @@ export async function getDocumentStats(documentId: string): Promise<{
  * @param documentContent The raw Yjs update as Uint8Array
  * @returns Compressed binary data as Uint8Array
  */
-export function compressUpdate(documentContent: Uint8Array): Uint8Array {
-  // In a real implementation, you might use a compression library like zlib
-  // For now, we'll just return the original content as this would require
-  // additional libraries and consistency in decompression
-  return documentContent;
-}
-
-/**
- * Decompress a stored document update
- * @param compressedContent Compressed binary data
- * @returns Original Yjs update as Uint8Array
- */
-export function decompressUpdate(compressedContent: Uint8Array): Uint8Array {
-  // Matching counterpart to compressUpdate
-  // Would implement actual decompression if compression was used
-  return compressedContent;
+export async function compressUpdate(documentContent: Uint8Array): Promise<Uint8Array> {
+  try {
+    // Use zlib compression for better results
+    const compressed = await gzip(Buffer.from(documentContent));
+    return new Uint8Array(compressed);
+  } catch (error) {
+    console.error('Error compressing update:', error);
+    // Return original content on error
+    return documentContent;
+  }
 } 

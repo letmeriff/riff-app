@@ -19,6 +19,9 @@ import {
 const CALLBACK_DEBOUNCE_WAIT = 2000;
 const CALLBACK_DEBOUNCE_MAXWAIT = 10000;
 const SNAPSHOT_INTERVAL = 5 * 60 * 1000; // Create snapshots every 5 minutes
+const BROADCAST_THROTTLE_TIME = 50; // Time in ms to throttle broadcasts
+const BROADCAST_DEBOUNCE_TIME = 100; // Time in ms to debounce broadcasts
+const POSITION_UPDATE_THROTTLE = 100; // Throttle frequent position updates
 
 type YjsWSMessage = {
   type: 'sync' | 'awareness' | 'auth';
@@ -40,6 +43,9 @@ const clients = new Map<WebSocket, { documentId: string; userId: string; clientI
 
 // Map of active snapshot timers, document-id -> NodeJS.Timeout
 const snapshotTimers = new Map<string, NodeJS.Timeout>();
+
+// Map of throttled/debounced broadcast functions by document ID
+const throttledBroadcasts = new Map<string, Function>();
 
 // Get or create Y.Doc instance for a document
 const getYDoc = async (documentId: string): Promise<Y.Doc> => {
@@ -151,6 +157,100 @@ const setupSnapshotTimer = (doc: Y.Doc, documentId: string) => {
   }, SNAPSHOT_INTERVAL);
   
   snapshotTimers.set(documentId, timer);
+};
+
+// Create a throttled broadcast function for a document
+const getThrottledBroadcast = (documentId: string, messageType: number): Function => {
+  const key = `${documentId}-${messageType}`;
+  
+  if (!throttledBroadcasts.has(key)) {
+    // Create a new throttled function
+    const throttledFn = (encoder: encoding.Encoder) => {
+      const message = encoding.toUint8Array(encoder);
+      const subscribers = documentSubscribers.get(documentId) || new Set<WebSocket>();
+      
+      // Broadcast to all subscribers
+      subscribers.forEach(client => {
+        try {
+          client.send(message);
+        } catch (err) {
+          console.error('Error broadcasting message:', err);
+        }
+      });
+    };
+    
+    // Store based on message type
+    if (messageType === POSITION_UPDATE_THROTTLE) {
+      // More aggressive throttling for position updates
+      throttledBroadcasts.set(key, throttle(throttledFn, BROADCAST_THROTTLE_TIME));
+    } else {
+      // Regular throttling for other updates
+      throttledBroadcasts.set(key, throttle(throttledFn, BROADCAST_DEBOUNCE_TIME));
+    }
+  }
+  
+  return throttledBroadcasts.get(key)!;
+};
+
+// Helper function for throttle implementation
+function throttle(func: Function, wait: number): Function {
+  let lastCall = 0;
+  let timeout: NodeJS.Timeout | null = null;
+  let lastArgs: any[] = [];
+  
+  return function(...args: any[]) {
+    const now = Date.now();
+    const diff = now - lastCall;
+    
+    lastArgs = args;
+    
+    if (diff >= wait) {
+      // If enough time has passed, execute immediately
+      lastCall = now;
+      func(...args);
+    } else if (!timeout) {
+      // Schedule execution for remaining time
+      timeout = setTimeout(() => {
+        lastCall = Date.now();
+        timeout = null;
+        func(...lastArgs);
+      }, wait - diff);
+    }
+  };
+}
+
+// Broadcast message to all subscribers of a document
+const broadcastMessage = (
+  documentId: string,
+  message: Uint8Array,
+  sender: WebSocket | null = null,
+  messageType: number = 0
+) => {
+  const subscribers = documentSubscribers.get(documentId);
+  if (!subscribers) return;
+  
+  // For high-frequency updates like position changes, use throttled broadcast
+  if (messageType === POSITION_UPDATE_THROTTLE) {
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, messageType);
+    encoding.writeUint8Array(encoder, message);
+    
+    // Get or create throttled broadcast function
+    const throttledBroadcast = getThrottledBroadcast(documentId, messageType);
+    throttledBroadcast(encoder);
+    return;
+  }
+  
+  // For regular updates, broadcast immediately
+  subscribers.forEach(client => {
+    if (client !== sender) {
+      try {
+        client.send(message);
+      } catch (err) {
+        console.error('Error broadcasting message:', err);
+      }
+    }
+  });
 };
 
 // Send update to all clients subscribed to a document
