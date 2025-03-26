@@ -23,6 +23,7 @@ import {
   generateLamportTimestamp 
 } from './utils/vectorClock';
 import { initYjsWebSocketServer } from './services/yjsWebSocketServer';
+import { updateNodePositionYjs, getYjsNodeId, getNodePositionYjs } from './services/yjsNodeService';
 // These route modules don't exist but were referenced
 // import authRoutes from './routes/authRoutes';
 // import userRoutes from './routes/userRoutes';
@@ -155,9 +156,9 @@ app.use('/api/attachments', attachmentRoutes);
 // app.use('/api/context-pull', contextPullRoutes);
 
 // API endpoint for saving node position during page unload
-app.post('/api/save-node-position', authMiddleware, async (req, res) => {
+app.post('/api/save-node-position', authMiddleware, async (req: Request & { user?: { id: string } }, res) => {
   try {
-    const { nodeId, position } = req.body;
+    const { nodeId, position, useYjs } = req.body;
     
     if (!nodeId || !position || typeof position.x !== 'number' || typeof position.y !== 'number') {
       return res.status(400).json({ error: 'Invalid node position data' });
@@ -165,7 +166,28 @@ app.post('/api/save-node-position', authMiddleware, async (req, res) => {
     
     console.log(`API: Saving position for node ${nodeId}: x=${position.x}, y=${position.y}`);
     
-    // Update the position in the database
+    // Check if we should use Yjs implementation
+    if (useYjs || process.env.USE_YJS_POSITIONS === 'true') {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+      
+      // Use Yjs for position updates
+      const documentId = `canvas-${nodeId}`;
+      const yjsNodeId = getYjsNodeId(nodeId);
+      
+      const result = await updateNodePositionYjs(documentId, yjsNodeId, position, userId);
+      
+      if (!result.success) {
+        console.error(`Failed to update position using Yjs for node ${nodeId}`);
+        // Fall back to traditional approach
+      } else {
+        return res.json({ success: true, implementation: 'yjs' });
+      }
+    }
+    
+    // Update the position in the database using traditional approach
     const { error } = await supabase
       .from('chat_nodes')
       .update({ 
@@ -179,7 +201,7 @@ app.post('/api/save-node-position', authMiddleware, async (req, res) => {
       return res.status(500).json({ error: 'Failed to update node position' });
     }
     
-    return res.json({ success: true });
+    return res.json({ success: true, implementation: 'standard' });
   } catch (error) {
     console.error('Error saving node position:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -189,13 +211,29 @@ app.post('/api/save-node-position', authMiddleware, async (req, res) => {
 // Endpoint for beacon API (fallback)
 app.post('/api/save-position', async (req, res) => {
   try {
-    const { nodeId, position_x, position_y } = req.body;
+    const { nodeId, position_x, position_y, useYjs, userId } = req.body;
     
     if (!nodeId || typeof position_x !== 'number' || typeof position_y !== 'number') {
       return res.status(400).json({ error: 'Invalid node position data' });
     }
     
     console.log(`Beacon API: Saving position for node ${nodeId}: x=${position_x}, y=${position_y}`);
+    
+    // Check if we should use Yjs implementation
+    if (useYjs && userId && process.env.USE_YJS_POSITIONS === 'true') {
+      // Use Yjs for position updates
+      const documentId = `canvas-${nodeId}`;
+      const yjsNodeId = getYjsNodeId(nodeId);
+      
+      const result = await updateNodePositionYjs(documentId, yjsNodeId, { x: position_x, y: position_y }, userId);
+      
+      if (!result.success) {
+        console.error(`Failed to update position using Yjs for node ${nodeId}`);
+        // Fall back to traditional approach
+      } else {
+        return res.json({ success: true, implementation: 'yjs' });
+      }
+    }
     
     // Update position in database
     const { error } = await supabase
@@ -208,7 +246,7 @@ app.post('/api/save-position', async (req, res) => {
       return res.status(500).json({ error: 'Failed to update node position' });
     }
     
-    return res.json({ success: true });
+    return res.json({ success: true, implementation: 'standard' });
   } catch (error) {
     console.error('Error in beacon save position:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -342,45 +380,76 @@ io.on('connection', (socket: Socket) => {
   });
 
   // Handle node position update
-  socket.on('node-position-update', async ({ nodeId, position, vectorClock, lamportTimestamp }) => {
+  socket.on('node-position-update', async ({ nodeId, position, vectorClock, lamportTimestamp, useYjs = false }) => {
     try {
       const userId = socket.data.user.id;
       console.log(`User ${userId} updated position of node ${nodeId}:`, position);
       
-      // Get or initialize vector clock
-      const userVectorClock = vectorClock || {};
-      
-      // Increment vector clock for this user if not already done by client
-      const updatedVectorClock = vectorClock ? vectorClock : incrementVectorClock(userVectorClock, userId);
-      
-      // Generate Lamport timestamp if not provided
-      const updatedLamportTimestamp = lamportTimestamp || generateLamportTimestamp();
-      
-      // Save the position using the CRDT function
-      const { data, error } = await supabase.rpc('update_node_position_crdt', {
-        node_id: parseInt(nodeId),
-        pos_x: position.x,
-        pos_y: position.y,
-        vector_clock: updatedVectorClock,
-        lamport_timestamp: updatedLamportTimestamp,
-        user_id: userId
-      });
-      
-      if (error) {
-        console.error('Error updating node position in database:', error);
-        return;
+      // Use Yjs implementation if specified or if feature flag is enabled
+      if (useYjs || process.env.USE_YJS_POSITIONS === 'true') {
+        // Use Yjs for position updates
+        const documentId = `canvas-${nodeId}`; // Use node ID as part of document ID for simplicity
+        const yjsNodeId = getYjsNodeId(nodeId);
+        
+        const result = await updateNodePositionYjs(documentId, yjsNodeId, position, userId);
+        
+        if (result.success) {
+          console.log(`Successfully updated position for node ${nodeId} using Yjs`);
+          
+          // Broadcast the position update to all users
+          io.emit('node-position-update', { 
+            nodeId, 
+            position,
+            implementation: 'yjs',
+            ...result.data
+          });
+        } else {
+          console.error(`Failed to update position for node ${nodeId} using Yjs`);
+          // Fall back to traditional approach if Yjs fails
+          handleLegacyPositionUpdate();
+        }
+      } else {
+        // Use traditional CRDT approach for backward compatibility
+        handleLegacyPositionUpdate();
       }
       
-      console.log(`Successfully updated position for node ${nodeId} in database:`, data);
-      
-      // Broadcast the position update along with vector clock to all users
-      io.emit('node-position-update', { 
-        nodeId, 
-        position,
-        vectorClock: updatedVectorClock,
-        lamportTimestamp: updatedLamportTimestamp,
-        applied: data.applied
-      });
+      async function handleLegacyPositionUpdate() {
+        // Get or initialize vector clock
+        const userVectorClock = vectorClock || {};
+        
+        // Increment vector clock for this user if not already done by client
+        const updatedVectorClock = vectorClock ? vectorClock : incrementVectorClock(userVectorClock, userId);
+        
+        // Generate Lamport timestamp if not provided
+        const updatedLamportTimestamp = lamportTimestamp || generateLamportTimestamp();
+        
+        // Save the position using the CRDT function
+        const { data, error } = await supabase.rpc('update_node_position_crdt', {
+          node_id: parseInt(nodeId),
+          pos_x: position.x,
+          pos_y: position.y,
+          vector_clock: updatedVectorClock,
+          lamport_timestamp: updatedLamportTimestamp,
+          user_id: userId
+        });
+        
+        if (error) {
+          console.error('Error updating node position in database:', error);
+          return;
+        }
+        
+        console.log(`Successfully updated position for node ${nodeId} in database using CRDT:`, data);
+        
+        // Broadcast the position update along with vector clock to all users
+        io.emit('node-position-update', { 
+          nodeId, 
+          position,
+          vectorClock: updatedVectorClock,
+          lamportTimestamp: updatedLamportTimestamp,
+          applied: data.applied,
+          implementation: 'crdt'
+        });
+      }
     } catch (error) {
       console.error('Error handling node position update:', error);
     }
@@ -666,6 +735,28 @@ app.get('/api/node-position-history/:nodeId', authMiddleware, async (req, res) =
     return res.json(data);
   } catch (error) {
     console.error('Error in position history API:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// API endpoint to fetch node position from Yjs
+app.get('/api/yjs-node-position/:documentId/:nodeId', authMiddleware, async (req: Request & { user?: { id: string } }, res) => {
+  try {
+    const { documentId, nodeId } = req.params;
+    
+    if (!documentId || !nodeId) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    const position = await getNodePositionYjs(documentId, nodeId);
+    
+    if (!position) {
+      return res.status(404).json({ error: 'Node position not found in Yjs document' });
+    }
+    
+    return res.json({ success: true, position });
+  } catch (error) {
+    console.error('Error fetching node position from Yjs:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
