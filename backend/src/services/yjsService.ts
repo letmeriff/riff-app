@@ -466,4 +466,108 @@ export async function compressUpdate(documentContent: Uint8Array): Promise<Uint8
     // Return original content on error
     return documentContent;
   }
+}
+
+/**
+ * Optimize document storage by pruning old updates after snapshot
+ * @param documentId The document ID
+ * @returns Success status
+ */
+export async function optimizeDocumentStorage(documentId: string): Promise<boolean> {
+  try {
+    // Get the latest document version
+    const currentVersion = await getLatestDocumentVersion(documentId);
+    
+    // Delete all updates up to this version as they're now in the snapshot
+    const { error } = await supabase
+      .from('yjs_updates')
+      .delete()
+      .eq('document_id', documentId)
+      .lte('version', currentVersion);
+    
+    if (error) {
+      console.error('Error optimizing document storage:', error);
+      return false;
+    }
+    
+    console.log(`Optimized storage for document ${documentId}, pruned updates up to version ${currentVersion}`);
+    return true;
+  } catch (error) {
+    console.error('Exception optimizing document storage:', error);
+    return false;
+  }
+}
+
+/**
+ * Create cleanup jobs for database maintenance
+ * Meant to be called on a schedule (e.g., daily)
+ * @returns Number of documents processed
+ */
+export async function runDatabaseMaintenanceJobs(): Promise<number> {
+  try {
+    // Get list of document IDs
+    const { data, error } = await supabase
+      .from('yjs_documents')
+      .select('document_id');
+    
+    if (error || !data) {
+      console.error('Error fetching documents for maintenance:', error);
+      return 0;
+    }
+    
+    let processedCount = 0;
+    
+    // Process each document
+    for (const doc of data) {
+      const documentId = doc.document_id;
+      
+      // 1. Cleanup old updates (older than 14 days)
+      await cleanupOldUpdates(documentId, 14);
+      
+      // 2. Create a fresh snapshot if needed
+      const docStats = await getDocumentStats(documentId);
+      if (docStats && docStats.updatesCount > 50) {
+        // If we have many updates, recover the document and create a new snapshot
+        const docData = await recoverDocumentFromUpdates(documentId);
+        if (docData) {
+          const ydoc = new Y.Doc();
+          Y.applyUpdate(ydoc, docData);
+          await createDocumentSnapshot(documentId, ydoc);
+          await optimizeDocumentStorage(documentId);
+        }
+      }
+      
+      processedCount++;
+    }
+    
+    return processedCount;
+  } catch (error) {
+    console.error('Exception running database maintenance jobs:', error);
+    return 0;
+  }
+}
+
+/**
+ * Advanced update tracking for analytics and debugging
+ * @param documentId The document ID
+ * @param clientId The client ID
+ * @param updateSize Update size in bytes
+ * @param isCompressed Whether the update was compressed
+ * @returns Success status
+ */
+export async function trackUpdateMetrics(
+  documentId: string,
+  clientId: string,
+  updateSize: number,
+  isCompressed: boolean
+): Promise<boolean> {
+  try {
+    // We could store this in a separate table for analytics
+    // For now, just log to console in development
+    console.log(`Update metrics - Document: ${documentId}, Client: ${clientId}, Size: ${updateSize}b, Compressed: ${isCompressed}`);
+    return true;
+  } catch (error) {
+    console.error('Exception tracking update metrics:', error);
+    return false;
+  }
 } 

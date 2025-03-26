@@ -1,4 +1,3 @@
-import * as Y from 'yjs';
 import { PositionAdapter } from './positionAdapter';
 import { 
   updateNodePositionYjs, 

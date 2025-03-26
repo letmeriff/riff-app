@@ -60,12 +60,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const { socket } = useSocket();
   const { 
     networkAdapter, 
-    connectionStatus, 
+    connectionStatus: _connectionStatus, 
     sendMessage, 
     subscribeToEvent, 
     updateUserPresence 
   } = useNetwork();
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,7 +93,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
-  const [avatarMenuOpen, setAvatarMenuOpen] = useState<number | null>(null);
+  const [_avatarMenuOpen, _setAvatarMenuOpen] = useState<number | null>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {

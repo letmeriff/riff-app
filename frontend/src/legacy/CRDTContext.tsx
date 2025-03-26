@@ -32,7 +32,7 @@ export const CRDTProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   const [nodeVectorClocks, setNodeVectorClocks] = useState<Map<string, VectorClock>>(new Map());
   const [pendingOperations, setPendingOperations] = useState<Map<string, NodePositionOperation[]>>(new Map());
-  const [isConnected, setIsConnected] = useState<boolean>(true); // Always true for CRDT
+  const [isConnected, _setIsConnected] = useState<boolean>(true); // Always true for CRDT
   const [nodePositions, setNodePositions] = useState<{[nodeId: string]: {x: number, y: number}}>({});
 
   /**

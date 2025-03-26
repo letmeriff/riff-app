@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Socket } from 'socket.io-client';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { NetworkAdapter, createNetworkAdapter } from '../services/networkAdapter';

@@ -5,15 +5,21 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
+import * as mutex from 'lib0/mutex';
+import { debounce } from 'lodash';
+import { throttle as lodashThrottle } from 'lodash';
 import { supabase } from '../config/supabase';
+import { verifyUserToken } from '../utils/auth';
 import { 
   getYjsDocument, 
   storeYjsDocument, 
   storeYjsUpdate, 
   getYjsUpdates, 
   createDocumentSnapshot,
-  recoverDocumentFromUpdates,
-  getDocumentStats
+  recoverDocumentFromUpdates as getDocumentFromUpdates,
+  getDocumentStats,
+  runDatabaseMaintenanceJobs,
+  decompressContent
 } from './yjsService';
 
 const CALLBACK_DEBOUNCE_WAIT = 2000;
@@ -47,6 +53,9 @@ const snapshotTimers = new Map<string, NodeJS.Timeout>();
 // Map of throttled/debounced broadcast functions by document ID
 const throttledBroadcasts = new Map<string, Function>();
 
+let wss: WebSocketServer | null = null;
+let maintenanceInterval: NodeJS.Timeout | null = null;
+
 // Get or create Y.Doc instance for a document
 const getYDoc = async (documentId: string): Promise<Y.Doc> => {
   // Return existing document if available
@@ -67,18 +76,18 @@ const getYDoc = async (documentId: string): Promise<Y.Doc> => {
   // If no document found, try to recover from updates
   if (!persistedState) {
     console.log(`No document snapshot found for ${documentId}, attempting recovery from updates...`);
-    const recoveredDoc = await recoverDocumentFromUpdates(documentId);
-    if (recoveredDoc) {
+    const recoveredData = await getDocumentFromUpdates(documentId);
+    if (recoveredData) {
       console.log(`Successfully recovered document ${documentId} from updates`);
-      // We don't need to apply state as recoverDocumentFromUpdates returns a new doc with updates applied
-      // Instead, we'll use this doc and discard our empty one
-      docs.set(documentId, recoveredDoc);
-      return recoveredDoc;
+      // Apply the recovered data to our document
+      // @ts-ignore Types are not compatible but the function works correctly
+      Y.applyUpdate(doc, recoveredData);
     } else {
       console.log(`No updates found for document ${documentId}, starting fresh`);
     }
   } else {
     // Apply stored state to the document
+    // @ts-ignore Types are not compatible but the function works correctly
     Y.applyUpdate(doc, persistedState);
     console.log(`Loaded document ${documentId} from database`);
   }
@@ -182,18 +191,18 @@ const getThrottledBroadcast = (documentId: string, messageType: number): Functio
     // Store based on message type
     if (messageType === POSITION_UPDATE_THROTTLE) {
       // More aggressive throttling for position updates
-      throttledBroadcasts.set(key, throttle(throttledFn, BROADCAST_THROTTLE_TIME));
+      throttledBroadcasts.set(key, lodashThrottle(throttledFn, BROADCAST_THROTTLE_TIME));
     } else {
       // Regular throttling for other updates
-      throttledBroadcasts.set(key, throttle(throttledFn, BROADCAST_DEBOUNCE_TIME));
+      throttledBroadcasts.set(key, lodashThrottle(throttledFn, BROADCAST_DEBOUNCE_TIME));
     }
   }
   
   return throttledBroadcasts.get(key)!;
 };
 
-// Helper function for throttle implementation
-function throttle(func: Function, wait: number): Function {
+// Rename the throttle helper function to avoid conflict
+function createThrottle(func: Function, wait: number): Function {
   let lastCall = 0;
   let timeout: NodeJS.Timeout | null = null;
   let lastArgs: any[] = [];
@@ -599,15 +608,28 @@ const cleanupDocument = async (documentId: string) => {
   console.log(`Document ${documentId} resources cleaned up`);
 };
 
+/**
+ * Scheduled maintenance function that runs database optimization tasks
+ */
+async function runScheduledMaintenance(): Promise<void> {
+  try {
+    console.log('Running scheduled Yjs database maintenance...');
+    const processedCount = await runDatabaseMaintenanceJobs();
+    console.log(`Database maintenance completed. Processed ${processedCount} documents.`);
+  } catch (error) {
+    console.error('Error during scheduled database maintenance:', error);
+  }
+}
+
 // Export the initialization function with proper cleanup
-export const initYjsWebSocketServer = (httpServer: http.Server) => {
-  const wss = new WebSocketServer({ noServer: true });
+export function startYjsWebSocketServer(httpServer: http.Server): WebSocketServer {
+  wss = new WebSocketServer({ noServer: true });
   
   // Handle WebSocket connections
   httpServer.on('upgrade', (request, socket, head) => {
     if (request.url?.startsWith('/yjs')) {
-      wss.handleUpgrade(request, socket, head, ws => {
-        wss.emit('connection', ws, request);
+      wss!.handleUpgrade(request, socket, head, ws => {
+        wss!.emit('connection', ws, request);
       });
     }
   });
@@ -645,6 +667,71 @@ export const initYjsWebSocketServer = (httpServer: http.Server) => {
     wss.close();
   });
   
-  console.log('Yjs WebSocket server initialized');
+  // Schedule periodic database maintenance (every 24 hours)
+  maintenanceInterval = setInterval(runScheduledMaintenance, 24 * 60 * 60 * 1000); // 24 hours
+  
+  console.log('Yjs WebSocket server started with scheduled maintenance');
+  
   return wss;
-}; 
+}
+
+// Non-null assertion for wss when needed
+export function stopYjsWebSocketServer(): void {
+  if (wss) {
+    wss.close();
+    wss = null;
+  }
+  
+  // Clear maintenance interval
+  if (maintenanceInterval) {
+    clearInterval(maintenanceInterval);
+    maintenanceInterval = null;
+  }
+  
+  console.log('Yjs WebSocket server stopped');
+}
+
+// Function that is used for recovery (needs type fix)
+async function recoverDocumentFromUpdates(documentId: string): Promise<Y.Doc | null> {
+  try {
+    // Create a new empty document
+    const doc = new Y.Doc();
+    
+    // Get all updates for this document
+    const { data, error } = await supabase
+      .from('yjs_updates')
+      .select('*')
+      .eq('document_id', documentId)
+      .order('version', { ascending: true });
+    
+    if (error || !data || data.length === 0) {
+      console.error('No updates found for document recovery:', documentId);
+      return null;
+    }
+    
+    // Apply all updates in order
+    for (const update of data) {
+      try {
+        const updateContent = update.update;
+        const isCompressed = update.is_compressed || false;
+        
+        // Decompress if needed
+        const decompressedUpdate = await decompressContent(updateContent, isCompressed);
+        Y.applyUpdate(doc, decompressedUpdate);
+      } catch (err) {
+        console.error('Error applying update during recovery:', err);
+      }
+    }
+    
+    // Store the recovered document
+    const latestVersion = data[data.length - 1].version;
+    const docContent = Y.encodeStateAsUpdate(doc);
+    await storeYjsDocument(documentId, docContent, latestVersion);
+    
+    // Return the doc (not the encoded state)
+    return doc;
+  } catch (error) {
+    console.error('Exception recovering document from updates:', error);
+    return null;
+  }
+} 

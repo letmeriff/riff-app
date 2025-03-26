@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import { Node, Edge } from 'reactflow';
+import { Node } from 'reactflow';
 import * as yjsService from './yjsService';
 import * as yjsSyncProtocol from '../utils/yjsSyncProtocol';
 import * as yjsOfflineSupport from '../utils/yjsOfflineSupport';
@@ -21,7 +21,7 @@ describe('yjsService', () => {
     // Set up basic mocks
     (Y.Doc as jest.Mock).mockImplementation(() => ({
       clientID: 1,
-      getMap: jest.fn().mockImplementation((name) => {
+      getMap: jest.fn().mockImplementation(() => {
         const map = new Map();
         map.has = jest.fn().mockReturnValue(false);
         map.set = jest.fn();
@@ -60,7 +60,7 @@ describe('yjsService', () => {
   
   describe('initYjsDocument', () => {
     it('should initialize a new Y.Doc if none exists', () => {
-      const doc = yjsService.initYjsDocument('user1', 'canvas1', 'ws://localhost:3001');
+      yjsService.initYjsDocument('user1', 'canvas1', 'ws://localhost:3001');
       
       expect(Y.Doc).toHaveBeenCalled();
       expect(WebsocketProvider).toHaveBeenCalledWith(
@@ -109,7 +109,7 @@ describe('yjsService', () => {
       yjsService.initYjsDocument('user1', 'canvas1');
       yjsService.updateAwareness({ cursor: { x: 100, y: 200 } });
       
-      const mockProvider = WebsocketProvider.mock.instances[0];
+      const mockProvider = (WebsocketProvider as jest.Mock).mock.instances[0];
       expect(mockProvider.awareness.setLocalState).toHaveBeenCalledWith(
         expect.objectContaining({ cursor: { x: 100, y: 200 } })
       );
@@ -134,8 +134,9 @@ describe('yjsService', () => {
       };
       
       // Setup mock Y.Map for node testing
-      const mockNodeMap = jest.fn();
-      mockNodeMap.set = jest.fn();
+      const mockNodeMap = {
+        set: jest.fn()
+      };
       (Y.Map as jest.Mock).mockImplementation(() => mockNodeMap);
       
       yjsService.initYjsDocument('user1', 'canvas1');
@@ -151,9 +152,9 @@ describe('yjsService', () => {
       yjsService.initYjsDocument('user1', 'canvas1');
       yjsService.destroyYjsDocument();
       
-      const mockDoc = Y.Doc.mock.instances[0];
-      const mockProvider = WebsocketProvider.mock.instances[0];
-      const mockPersistence = IndexeddbPersistence.mock.instances[0];
+      const mockDoc = (Y.Doc as jest.Mock).mock.instances[0];
+      const mockProvider = (WebsocketProvider as jest.Mock).mock.instances[0];
+      const mockPersistence = (IndexeddbPersistence as jest.Mock).mock.instances[0];
       
       expect(mockProvider.disconnect).toHaveBeenCalled();
       expect(mockProvider.destroy).toHaveBeenCalled();

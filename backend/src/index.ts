@@ -22,7 +22,7 @@ import {
   mergeVectorClocks, 
   generateLamportTimestamp 
 } from './legacy/vectorClock';
-import { initYjsWebSocketServer } from './services/yjsWebSocketServer';
+import { startYjsWebSocketServer } from './services/yjsWebSocketServer';
 import { updateNodePositionYjs, getYjsNodeId, getNodePositionYjs } from './services/yjsNodeService';
 // These route modules don't exist but were referenced
 // import authRoutes from './routes/authRoutes';
@@ -773,7 +773,7 @@ httpServer.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   
   // Initialize Yjs WebSocket server
-  const yjsWss = initYjsWebSocketServer(httpServer);
+  const yjsWss = startYjsWebSocketServer(httpServer);
   console.log('Yjs WebSocket server is listening for connections');
   
   // Start the summarization job scheduler

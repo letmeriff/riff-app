@@ -1,4 +1,3 @@
-import * as Y from 'yjs';
 import { 
   Node, 
   Edge, 
@@ -7,15 +6,13 @@ import {
   applyNodeChanges,
   applyEdgeChanges
 } from 'reactflow';
-import * as yjsService from '../services/yjsService';
-import {
-  syncNodeChangesToYjs,
+import { 
+  syncNodeChangesToYjs, 
   syncEdgeChangesToYjs,
-  syncNewNodeToYjs,
   syncNodeDeletionToYjs,
-  syncEdgeDeletionToYjs,
   setupYjsSubscription
 } from './reactFlowYjsBinding';
+import * as yjsService from '../services/yjsService';
 
 // Mock dependencies
 jest.mock('reactflow', () => ({
@@ -25,12 +22,14 @@ jest.mock('reactflow', () => ({
 
 jest.mock('../services/yjsService', () => ({
   updateNodePositionYjs: jest.fn(),
-  mapNodeToYjs: jest.fn(),
+  syncNodeDeletionToYjs: jest.fn(),
+  syncEdgeDeletionToYjs: jest.fn(),
+  getYjsDocument: jest.fn(),
   mapEdgeToYjs: jest.fn(),
 }));
 
 describe('reactFlowYjsBinding', () => {
-  let mockYDoc: any;
+  let mockDoc: any;
   let mockNodesMap: any;
   let mockEdgesMap: any;
   
@@ -54,7 +53,7 @@ describe('reactFlowYjsBinding', () => {
       delete: jest.fn(),
     };
     
-    mockYDoc = {
+    mockDoc = {
       getMap: jest.fn((name) => {
         if (name === 'nodes') return mockNodesMap;
         if (name === 'edges') return mockEdgesMap;
@@ -78,7 +77,7 @@ describe('reactFlowYjsBinding', () => {
       const nodes: Node[] = [{ id: '1', position: { x: 100, y: 100 }, data: {} }];
       const changes: NodeChange[] = [{ type: 'position', id: '1', position: { x: 200, y: 200 } }];
       
-      syncNodeChangesToYjs(changes, nodes, mockYDoc);
+      syncNodeChangesToYjs(changes, nodes, mockDoc);
       
       expect(applyNodeChanges).toHaveBeenCalledWith(changes, nodes);
       expect(yjsService.updateNodePositionYjs).toHaveBeenCalledWith('1', { x: 200, y: 200 });
@@ -103,30 +102,10 @@ describe('reactFlowYjsBinding', () => {
       
       (applyEdgeChanges as jest.Mock).mockReturnValue([newEdge]);
       
-      syncEdgeChangesToYjs(changes, edges, mockYDoc);
+      syncEdgeChangesToYjs(changes, edges, mockDoc);
       
       expect(applyEdgeChanges).toHaveBeenCalledWith(changes, edges);
       expect(yjsService.mapEdgeToYjs).toHaveBeenCalledWith(newEdge);
-    });
-  });
-  
-  describe('syncNewNodeToYjs', () => {
-    it('should not call mapNodeToYjs when doc is null', () => {
-      const node: Node = { id: '1', position: { x: 100, y: 100 }, data: {} };
-      const chatNode = { node_id: 1, title: 'Node 1', user_id: 'user1', owner_id: 'owner1', created_at: '2023-01-01' };
-      
-      syncNewNodeToYjs(node, chatNode, null);
-      
-      expect(yjsService.mapNodeToYjs).not.toHaveBeenCalled();
-    });
-    
-    it('should call mapNodeToYjs with node and chatNode', () => {
-      const node: Node = { id: '1', position: { x: 100, y: 100 }, data: {} };
-      const chatNode = { node_id: 1, title: 'Node 1', user_id: 'user1', owner_id: 'owner1', created_at: '2023-01-01' };
-      
-      syncNewNodeToYjs(node, chatNode, mockYDoc);
-      
-      expect(yjsService.mapNodeToYjs).toHaveBeenCalledWith(node, chatNode);
     });
   });
   
@@ -140,7 +119,7 @@ describe('reactFlowYjsBinding', () => {
     it('should delete node when it exists in Yjs', () => {
       mockNodesMap.has.mockReturnValue(true);
       
-      syncNodeDeletionToYjs('1', mockYDoc);
+      syncNodeDeletionToYjs('1', mockDoc);
       
       expect(mockNodesMap.has).toHaveBeenCalledWith('1');
       expect(mockNodesMap.delete).toHaveBeenCalledWith('1');
@@ -149,7 +128,7 @@ describe('reactFlowYjsBinding', () => {
     it('should not delete node when it doesn\'t exist in Yjs', () => {
       mockNodesMap.has.mockReturnValue(false);
       
-      syncNodeDeletionToYjs('1', mockYDoc);
+      syncNodeDeletionToYjs('1', mockDoc);
       
       expect(mockNodesMap.has).toHaveBeenCalledWith('1');
       expect(mockNodesMap.delete).not.toHaveBeenCalled();
@@ -172,7 +151,7 @@ describe('reactFlowYjsBinding', () => {
       const setNodes = jest.fn();
       const setEdges = jest.fn();
       
-      setupYjsSubscription(mockYDoc, setNodes, setEdges);
+      setupYjsSubscription(mockDoc, setNodes, setEdges);
       
       expect(mockNodesMap.observe).toHaveBeenCalled();
       expect(mockEdgesMap.observe).toHaveBeenCalled();
@@ -182,7 +161,7 @@ describe('reactFlowYjsBinding', () => {
       const setNodes = jest.fn();
       const setEdges = jest.fn();
       
-      const cleanup = setupYjsSubscription(mockYDoc, setNodes, setEdges);
+      const cleanup = setupYjsSubscription(mockDoc, setNodes, setEdges);
       cleanup();
       
       expect(mockNodesMap.unobserve).toHaveBeenCalled();

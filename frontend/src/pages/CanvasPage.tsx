@@ -285,7 +285,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
             
             // Update the position in the database as well
             try {
-              await updateNodePosition(chatNode.node_id, position);
+              await updateNodePosition(chatNode.node_id.toString(), position);
               console.log(`Updated default position for node ${nodeId} in database`);
             } catch (error) {
               console.error(`Error updating default position for node ${nodeId}:`, error);

@@ -1,7 +1,6 @@
-import { Socket } from 'socket.io-client';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
-import { NetworkAdapter, SocketIONetworkAdapter, YjsNetworkAdapter, createNetworkAdapter } from './networkAdapter';
+import { SocketIONetworkAdapter, YjsNetworkAdapter, createNetworkAdapter } from './networkAdapter';
 
 // Mock Socket.io
 jest.mock('socket.io-client');

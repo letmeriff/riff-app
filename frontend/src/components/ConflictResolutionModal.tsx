@@ -1,5 +1,4 @@
-import React, { useState, useEffect, CSSProperties } from 'react';
-import { useYjs } from '../contexts/YjsContext';
+import React, { useState, useEffect } from 'react';
 import { Node } from 'reactflow';
 
 interface ConflictResolutionModalProps {
@@ -111,7 +110,6 @@ const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = ({
   remoteNodes,
   onResolve
 }) => {
-  const { syncStatus } = useYjs();
   const [selectedResolution, setSelectedResolution] = useState<'local' | 'remote' | 'merge'>('merge');
   const [conflictedNodeIds, setConflictedNodeIds] = useState<string[]>([]);
   

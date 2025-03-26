@@ -1,5 +1,3 @@
-import { Node, Edge } from 'reactflow';
-
 // Define the common interface for position management
 export interface PositionAdapter {
   // Core position update operations
@@ -41,9 +39,11 @@ export const isYjsEnabled = (): boolean => {
 export const getPositionAdapter = (): PositionAdapter => {
   if (isYjsEnabled()) {
     // This will be lazily imported to avoid loading Yjs code when not needed
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('./yjsPositionAdapter').default;
   } else {
     // Legacy CRDT implementation
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('./crdtPositionAdapter').default;
   }
 }; 
