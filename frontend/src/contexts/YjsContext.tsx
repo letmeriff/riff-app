@@ -16,6 +16,7 @@ import {
 } from '../services/yjsService';
 import { useAuth } from './AuthContext';
 import { SyncStatus } from '../utils/yjsOfflineSupport';
+import { isYjsEnabled } from '../services/positionAdapter';
 
 // Import or define the YjsAwarenessState to match the one in yjsService
 interface YjsAwarenessState {
@@ -69,8 +70,8 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
   const [offlineChangesCount, setOfflineChangesCount] = useState<number>(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   
-  // Feature flag to control Yjs integration (can be fetched from config)
-  const [isFeatureEnabled] = useState<boolean>(true);
+  // Feature flag to control Yjs integration from our centralized adapter
+  const [isFeatureEnabled] = useState<boolean>(isYjsEnabled());
   
   // Function to force sync all changes
   const forceSync = async (): Promise<boolean> => {
@@ -222,6 +223,27 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
     hasPendingSyncs,
     forceSync
   };
+  
+  // If feature is disabled, provide a stripped-down context with default values
+  if (!isFeatureEnabled) {
+    // Return children directly wrapped in a context with default values
+    const defaultValue: YjsContextType = {
+      ydoc: null,
+      isConnected: false,
+      isOffline: false,
+      offlineChangesCount: 0,
+      syncStatus: null,
+      connectedUsers: [],
+      updateAwareness: () => {},
+      getNodesFromYjs: () => [],
+      getEdgesFromYjs: () => [],
+      isFeatureEnabled: false,
+      hasPendingSyncs: false,
+      forceSync: async () => false
+    };
+    
+    return <YjsContext.Provider value={defaultValue}>{children}</YjsContext.Provider>;
+  }
   
   return <YjsContext.Provider value={value}>{children}</YjsContext.Provider>;
 };

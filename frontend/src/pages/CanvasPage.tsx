@@ -58,6 +58,8 @@ import {
   ViewportBounds,
 } from '../utils/yjsOptimization';
 import { mapEdgeToYjs, mapNodeToYjs } from '../services/yjsService';
+import { isYjsEnabled, getPositionAdapter } from '../services/positionAdapter';
+import { debounce } from 'lodash';
 
 const nodeTypes: NodeTypes = {
   chatNode: ChatNode,
@@ -65,8 +67,10 @@ const nodeTypes: NodeTypes = {
 
 const initialEdges: Edge[] = [];
 
-// Feature flag for enabling Yjs - this would come from env/config in production
-const USE_YJS = true;
+// Use the centralized feature flag
+const USE_YJS = isYjsEnabled();
+// Get the appropriate position adapter based on the feature flag
+const positionAdapter = getPositionAdapter();
 
 interface CanvasPageProps {
   onNodeSelect: (nodeId: string | null, nodeTitle: string | null) => void;
@@ -664,78 +668,30 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
     }
   }, [socket, selectedNodeId, user]);
 
-  // Define handleNodePositionChange before it's used
-  const handleNodePositionChange = useCallback(
-    async (nodeId: string, position: { x: number; y: number }) => {
-      if (!user) return;
+  // Update node positions function - throttled to avoid excessive updates
+  const updateNodePosition = useCallback(
+    debounce((nodeId: string, position: { x: number; y: number }) => {
+      console.log(`Updating position for node ${nodeId}: x=${position.x}, y=${position.y}`);
       
-      try {
-        console.log(`Drag ended for node ${nodeId} - Updating position with CRDT: x=${position.x}, y=${position.y}`);
-        
-        // Set the updating node ID to avoid feedback loops
-        setUpdatingPositionNodeId(nodeId);
-        
-        // Get the current vector clock for this node
-        const currentVectorClock = getNodeVectorClock(nodeId);
-        
-        // Create the operation
-        const operation: NodePositionOperation = {
-          nodeId,
-          position,
-          vectorClock: currentVectorClock,
-          lamportTimestamp: generateLamportTimestamp(),
-          userId: user?.id || ''
-        };
-        
-        // Add to pending operations (for optimistic updates)
-        addPendingOperation(operation);
-        
-        // Save position to database with CRDT
-        const result = await updateNodePosition(
-          parseInt(nodeId), 
-          position,
-          user?.id,
-          currentVectorClock
-        );
-        
-        console.log(`Position saved for node ${nodeId}`, result);
-        
-        // If successful and we got a new vector clock, update it
-        if (result.success && result.vectorClock) {
-          updateNodeVectorClock(nodeId, result.vectorClock);
-        }
-        
-        // Emit position update for real-time collaboration
-        if (socket) {
-          socket.emit('node-position-update', {
-            nodeId,
-            position,
-            vectorClock: result.vectorClock || currentVectorClock,
-            lamportTimestamp: result.lamportTimestamp || generateLamportTimestamp()
-          });
-        }
-        
-        // Clear the updating node ID after a short delay
-        setTimeout(() => {
+      setUpdatingPositionNodeId(nodeId);
+      
+      // Use the position adapter for all position updates
+      positionAdapter.updateNodePosition(nodeId, position.x, position.y)
+        .then((success) => {
+          if (success) {
+            console.log('Position updated successfully via adapter');
+          } else {
+            console.error('Failed to update position via adapter');
+          }
+        })
+        .catch((error) => {
+          console.error('Error updating position via adapter:', error);
+        })
+        .finally(() => {
           setUpdatingPositionNodeId(null);
-        }, 200);
-      } catch (error) {
-        console.error(`Error saving position for node ${nodeId}:`, error);
-        setUpdatingPositionNodeId(null);
-        
-        // Remove from pending operations on error
-        removePendingOperation(nodeId, generateLamportTimestamp());
-      }
-    },
-    [
-      socket, 
-      user, 
-      setUpdatingPositionNodeId, 
-      getNodeVectorClock, 
-      updateNodeVectorClock, 
-      addPendingOperation, 
-      removePendingOperation
-    ]
+        });
+    }, 50),
+    [positionAdapter]
   );
 
   // Initialize optimized position updater
@@ -832,12 +788,12 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         // Handle position changes with original CRDT system
         changes.forEach(change => {
           if (change.type === 'position' && change.position) {
-            handleNodePositionChange(change.id, change.position);
+            updateNodePosition(change.id, change.position);
           }
         });
       }
     },
-    [onNodesChange, yjs, handleNodePositionChange]
+    [onNodesChange, yjs, updateNodePosition]
   );
 
   // Enhanced onEdgesChange handler with Yjs integration

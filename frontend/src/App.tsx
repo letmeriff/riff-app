@@ -12,9 +12,10 @@ import { supabase } from './services/supabase';
 import './styles/auth.css';
 import './styles/app.css';
 import ConnectionStatus from './components/ConnectionStatus';
+import { isYjsEnabled } from './services/positionAdapter';
 
-// Feature flag for enabling Yjs - this would come from env/config in production
-const USE_YJS = true;
+// Get the feature flag value once on load
+const USE_YJS = isYjsEnabled();
 
 const AppContent: React.FC = () => {
   const { user, session, signOut } = useAuth();
@@ -149,7 +150,10 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Prepare the content with both providers for proper transition
+  // Set Yjs feature flag on window to allow non-React code to check
+  (window as any).__USE_YJS = USE_YJS;
+
+  // Prepare the content
   const content = (
     <div style={{ 
       display: 'flex', 
@@ -210,19 +214,16 @@ const AppContent: React.FC = () => {
     />
   );
 
-  // Return with proper context providers
+  // Return with proper context providers - always include both providers
+  // but only activate Yjs when enabled using the adapter pattern
   return (
     <SocketProvider token={session?.access_token || null}>
       {/* Keep the CRDT provider for backward compatibility */}
       <CRDTProvider>
-        {/* Use conditional rendering based on feature flag */}
-        {USE_YJS ? (
-          <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
-            {content}
-          </YjsProvider>
-        ) : (
-          content
-        )}
+        {/* Always include YjsProvider, but it's only activated internally if feature flag is on */}
+        <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
+          {content}
+        </YjsProvider>
         {settingsModal}
       </CRDTProvider>
     </SocketProvider>
