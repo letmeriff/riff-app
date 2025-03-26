@@ -1,181 +1,244 @@
-import React, { useEffect, useState } from 'react';
-import { Node } from 'reactflow';
+import React, { useState, useEffect, CSSProperties } from 'react';
 import { useYjs } from '../contexts/YjsContext';
+import { Node } from 'reactflow';
 
 interface ConflictResolutionModalProps {
-  nodeId: string;
-  onResolve: (resolution: 'local' | 'remote') => void;
-  onCancel: () => void;
+  isOpen: boolean;
+  onClose: () => void;
+  localNodes: Node[];
+  remoteNodes: Node[];
+  onResolve: (resolution: 'local' | 'remote' | 'merge') => void;
 }
 
-const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = ({ 
-  nodeId, 
-  onResolve, 
-  onCancel 
+// CSS styles for the component
+const styles: Record<string, CSSProperties> = {
+  modal: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  content: {
+    backgroundColor: 'white',
+    padding: '24px',
+    borderRadius: '8px',
+    maxWidth: '600px',
+    width: '90%',
+    maxHeight: '80vh',
+    overflowY: 'auto',
+  },
+  heading: {
+    marginTop: 0,
+    color: '#e53935',
+  },
+  optionsContainer: {
+    margin: '20px 0',
+  },
+  option: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    marginBottom: '12px',
+  },
+  optionInput: {
+    marginTop: '4px',
+    marginRight: '12px',
+  },
+  optionLabel: {
+    flex: 1,
+  },
+  optionDescription: {
+    margin: '4px 0 0',
+    fontSize: '14px',
+    color: '#666',
+  },
+  conflictDetails: {
+    backgroundColor: '#f5f5f5',
+    padding: '12px',
+    borderRadius: '4px',
+    marginBottom: '20px',
+  },
+  conflictList: {
+    margin: 0,
+    paddingLeft: '20px',
+  },
+  conflictItem: {
+    marginBottom: '8px',
+  },
+  positionDiff: {
+    display: 'flex',
+    flexDirection: 'column',
+    fontSize: '14px',
+    marginTop: '4px',
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '20px',
+  },
+  primaryButton: {
+    backgroundColor: '#2196f3',
+    color: 'white',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    backgroundColor: '#f5f5f5',
+    color: '#333',
+    border: '1px solid #ddd',
+    padding: '8px 16px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  },
+};
+
+/**
+ * Component for resolving conflicts between local and remote changes
+ * during synchronization after being offline
+ */
+const ConflictResolutionModal: React.FC<ConflictResolutionModalProps> = ({
+  isOpen,
+  onClose,
+  localNodes,
+  remoteNodes,
+  onResolve
 }) => {
-  const { ydoc } = useYjs();
-  const [localNode, setLocalNode] = useState<Node | null>(null);
-  const [remoteNode, setRemoteNode] = useState<Node | null>(null);
+  const { syncStatus } = useYjs();
+  const [selectedResolution, setSelectedResolution] = useState<'local' | 'remote' | 'merge'>('merge');
+  const [conflictedNodeIds, setConflictedNodeIds] = useState<string[]>([]);
   
+  // Detect which nodes have conflicts
   useEffect(() => {
-    // In practice, Yjs handles most conflicts automatically
-    // This component is more for visual feedback when there are
-    // conflicts that the application wants to make the user aware of
-    // For this implementation, we'll simulate a conflict scenario
-    
-    if (!ydoc) return;
-    
-    // Here we would get the conflicting versions
-    // For now we'll simulate with mock data
-    const mockLocalNode: Node = {
-      id: nodeId,
-      position: { x: 100, y: 150 },
-      data: { label: 'Local version' },
-      type: 'chatNode'
-    };
-    
-    const mockRemoteNode: Node = {
-      id: nodeId,
-      position: { x: 250, y: 300 },
-      data: { label: 'Remote version' },
-      type: 'chatNode'
-    };
-    
-    setLocalNode(mockLocalNode);
-    setRemoteNode(mockRemoteNode);
-  }, [nodeId, ydoc]);
+    if (isOpen) {
+      const conflicts: string[] = [];
+      
+      // Compare local and remote nodes to find conflicts
+      localNodes.forEach(localNode => {
+        const remoteNode = remoteNodes.find(node => node.id === localNode.id);
+        
+        if (remoteNode) {
+          // Check for position differences
+          if (
+            remoteNode.position.x !== localNode.position.x ||
+            remoteNode.position.y !== localNode.position.y
+          ) {
+            conflicts.push(localNode.id);
+          }
+        }
+      });
+      
+      setConflictedNodeIds(conflicts);
+    }
+  }, [isOpen, localNodes, remoteNodes]);
   
-  if (!localNode || !remoteNode) {
-    return null;
-  }
+  if (!isOpen) return null;
   
   return (
-    <div className="conflict-resolution-modal">
-      <div className="modal-backdrop" 
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}
-      >
-        <div className="modal-content"
-          style={{
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            padding: '20px',
-            width: '500px',
-            maxWidth: '90%',
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)'
-          }}
-        >
-          <h3 style={{ marginTop: 0 }}>Conflicting Changes Detected</h3>
+    <div style={styles.modal}>
+      <div style={styles.content}>
+        <h2 style={styles.heading}>Sync Conflict Detected</h2>
+        <p>
+          Changes were made to the same nodes both locally and remotely while you were offline.
+          {conflictedNodeIds.length > 0 && (
+            <span> Conflicts detected in {conflictedNodeIds.length} nodes.</span>
+          )}
+        </p>
+        
+        <div style={styles.optionsContainer}>
+          <h3>Choose how to resolve:</h3>
           
-          <p>
-            Changes to this node were made simultaneously in multiple places. 
-            Please choose which version you want to keep:
-          </p>
-          
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            marginBottom: '20px',
-            gap: '20px'
-          }}>
-            <div style={{ 
-              flex: 1,
-              border: '2px solid #4CAF50',
-              borderRadius: '4px',
-              padding: '10px',
-              cursor: 'pointer'
-            }} 
-            onClick={() => onResolve('local')}
-            >
-              <h4 style={{ margin: '0 0 10px 0' }}>Your Version</h4>
-              <div>
-                <div>Position: ({localNode.position.x}, {localNode.position.y})</div>
-                <div>Content: {JSON.stringify(localNode.data)}</div>
-              </div>
-            </div>
-            
-            <div style={{ 
-              flex: 1,
-              border: '2px solid #2196F3',
-              borderRadius: '4px',
-              padding: '10px',
-              cursor: 'pointer'
-            }}
-            onClick={() => onResolve('remote')}
-            >
-              <h4 style={{ margin: '0 0 10px 0' }}>Remote Version</h4>
-              <div>
-                <div>Position: ({remoteNode.position.x}, {remoteNode.position.y})</div>
-                <div>Content: {JSON.stringify(remoteNode.data)}</div>
-              </div>
-            </div>
+          <div style={styles.option}>
+            <input
+              type="radio"
+              id="local"
+              name="resolution"
+              value="local"
+              checked={selectedResolution === 'local'}
+              onChange={() => setSelectedResolution('local')}
+              style={styles.optionInput}
+            />
+            <label htmlFor="local" style={styles.optionLabel}>
+              <strong>Keep my changes</strong>
+              <p style={styles.optionDescription}>Use your local changes and discard remote changes.</p>
+            </label>
           </div>
           
-          <div style={{ 
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '10px'
-          }}>
-            <button
-              style={{
-                padding: '8px 16px',
-                border: 'none',
-                backgroundColor: '#9E9E9E',
-                color: 'white',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              onClick={onCancel}
-            >
-              Cancel
-            </button>
-            <button
-              style={{
-                padding: '8px 16px',
-                border: 'none',
-                backgroundColor: '#FFC107',
-                color: 'black',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              onClick={() => onResolve('remote')}
-            >
-              Accept Remote
-            </button>
-            <button
-              style={{
-                padding: '8px 16px',
-                border: 'none',
-                backgroundColor: '#4CAF50',
-                color: 'white',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              onClick={() => onResolve('local')}
-            >
-              Keep Mine
-            </button>
+          <div style={styles.option}>
+            <input
+              type="radio"
+              id="remote"
+              name="resolution"
+              value="remote"
+              checked={selectedResolution === 'remote'}
+              onChange={() => setSelectedResolution('remote')}
+              style={styles.optionInput}
+            />
+            <label htmlFor="remote" style={styles.optionLabel}>
+              <strong>Use remote changes</strong>
+              <p style={styles.optionDescription}>Discard your local changes and use the remote version.</p>
+            </label>
           </div>
           
-          <div style={{ 
-            marginTop: '15px',
-            padding: '8px',
-            backgroundColor: '#F5F5F5',
-            borderRadius: '4px',
-            fontSize: '14px'
-          }}>
-            <strong>Note:</strong> Yjs usually resolves most conflicts automatically. This modal appears only for specific cases where user decision is required.
+          <div style={styles.option}>
+            <input
+              type="radio"
+              id="merge"
+              name="resolution"
+              value="merge"
+              checked={selectedResolution === 'merge'}
+              onChange={() => setSelectedResolution('merge')}
+              style={styles.optionInput}
+            />
+            <label htmlFor="merge" style={styles.optionLabel}>
+              <strong>Smart merge (Recommended)</strong>
+              <p style={styles.optionDescription}>Let Yjs automatically merge changes using its CRDT algorithm.</p>
+            </label>
           </div>
+        </div>
+        
+        {conflictedNodeIds.length > 0 && (
+          <div style={styles.conflictDetails}>
+            <h3>Affected Nodes:</h3>
+            <ul style={styles.conflictList}>
+              {conflictedNodeIds.map(nodeId => {
+                const localNode = localNodes.find(n => n.id === nodeId);
+                const remoteNode = remoteNodes.find(n => n.id === nodeId);
+                
+                return (
+                  <li key={nodeId} style={styles.conflictItem}>
+                    Node: {localNode?.data?.label || nodeId}
+                    <div style={styles.positionDiff}>
+                      <div>
+                        <strong>Local:</strong> ({localNode?.position.x.toFixed(0)}, 
+                        {localNode?.position.y.toFixed(0)})
+                      </div>
+                      <div>
+                        <strong>Remote:</strong> ({remoteNode?.position.x.toFixed(0)}, 
+                        {remoteNode?.position.y.toFixed(0)})
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        
+        <div style={styles.modalActions}>
+          <button onClick={() => onResolve(selectedResolution)} style={styles.primaryButton}>
+            Apply Resolution
+          </button>
+          <button onClick={onClose} style={styles.secondaryButton}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>

@@ -4,6 +4,15 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { Node, Edge } from 'reactflow';
 import { ChatNode } from './nodeService';
 import { setupCanvasSyncProtocol } from '../utils/yjsSyncProtocol';
+import { 
+  initOfflineSupport, 
+  getSyncStatus, 
+  syncPendingChanges,
+  registerOfflineChangeHandler,
+  createConflictResolver,
+  cleanupOfflineSupport,
+  SyncStatus
+} from '../utils/yjsOfflineSupport';
 
 // Define document structure types for TypeScript
 interface YjsNodeData {
@@ -40,6 +49,19 @@ let doc: Y.Doc | null = null;
 let wsProvider: WebsocketProvider | null = null;
 let dbProvider: IndexeddbPersistence | null = null;
 let awareness: any | null = null;
+
+// Reference to the conflict resolver
+let conflictResolver: { updateSyncedState: () => void; detectConflict: (update: Uint8Array) => boolean } | null = null;
+
+// Flag to track if we have pending sync operations
+let hasPendingSyncOperations = false;
+
+// Track offline changes
+let offlineChangesCount = 0;
+let offlineChangeHandler: (() => void) | null = null;
+
+// Track last sync status
+let lastSyncStatus: SyncStatus | null = null;
 
 /**
  * Initialize the Yjs document and providers
@@ -88,6 +110,52 @@ export const initYjsDocument = (
       updateAwareness({ 
         isOffline: !isOnline 
       } as Partial<YjsAwarenessState>);
+    });
+    
+    // Initialize enhanced offline support
+    initOfflineSupport(doc, wsProvider, dbProvider, canvasId);
+    
+    // Set up conflict resolver
+    conflictResolver = createConflictResolver(doc);
+    
+    // Register handler for offline changes
+    offlineChangeHandler = registerOfflineChangeHandler(doc, (update, isOffline) => {
+      if (isOffline) {
+        offlineChangesCount++;
+        console.log(`Offline change detected. Total offline changes: ${offlineChangesCount}`);
+      }
+    });
+    
+    // Schedule periodic sync status check
+    const syncStatusCheckInterval = setInterval(() => {
+      if (doc) {
+        const status = getSyncStatus(canvasId);
+        lastSyncStatus = status;
+        hasPendingSyncOperations = status.pendingChanges;
+        
+        // Update UI awareness with sync status
+        updateAwareness({
+          isOffline: !status.isConnected || !status.isOnline,
+          syncStatus: {
+            pendingChanges: status.pendingChanges,
+            lastSyncedAt: status.lastSyncedAt,
+            isReconnecting: status.isReconnecting
+          }
+        } as any);
+      } else {
+        clearInterval(syncStatusCheckInterval);
+      }
+    }, 2000);
+    
+    // Listen for sync completion
+    wsProvider.on('sync', (isSynced: boolean) => {
+      if (isSynced && conflictResolver) {
+        // Update our synchronized state when in sync
+        conflictResolver.updateSyncedState();
+        
+        // Reset offline changes counter
+        offlineChangesCount = 0;
+      }
     });
   }
 
@@ -256,11 +324,12 @@ export const getEdgesFromYjs = (): Edge[] => {
 };
 
 /**
- * Clean up Yjs providers
+ * Clean up and destroy Yjs document
  */
 export const destroyYjsDocument = () => {
   if (wsProvider) {
     wsProvider.disconnect();
+    wsProvider.destroy();
     wsProvider = null;
   }
   
@@ -268,6 +337,23 @@ export const destroyYjsDocument = () => {
     dbProvider.destroy();
     dbProvider = null;
   }
+  
+  // Clean up offline support
+  if (doc) {
+    const docName = doc.guid;
+    cleanupOfflineSupport(docName);
+  }
+  
+  // Remove offline change handler if exists
+  if (offlineChangeHandler) {
+    offlineChangeHandler();
+    offlineChangeHandler = null;
+  }
+  
+  // Reset counters and flags
+  offlineChangesCount = 0;
+  hasPendingSyncOperations = false;
+  lastSyncStatus = null;
   
   doc = null;
   awareness = null;
@@ -354,25 +440,36 @@ export const updateNodePositionYjs = (nodeId: string, position: { x: number; y: 
 };
 
 /**
- * Helper function to force a document sync with the server
- * Useful for ensuring all changes are synchronized
+ * Force document synchronization
+ * @returns Promise that resolves to true if sync was successful
  */
 export const forceDocumentSync = async (): Promise<boolean> => {
-  if (!doc || !wsProvider) return false;
-  
-  try {
-    // Only force sync if we're connected
-    if (wsProvider.wsconnected) {
-      // Create a small transaction to trigger sync
-      const docRef = doc;
-      docRef.transact(() => {
-        const metadata = docRef.getMap('metadata');
-        const lastSync = metadata.get('lastSync') || 0;
-        metadata.set('lastSync', Date.now());
-      });
-      return true;
-    }
+  if (!doc || !wsProvider) {
+    console.error('Cannot sync: Yjs document or provider not initialized');
     return false;
+  }
+
+  try {
+    // Get document ID from websocket provider
+    const docName = wsProvider.roomname;
+    
+    // Use enhanced sync pending changes
+    const result = await syncPendingChanges(doc, wsProvider, docName);
+    
+    if (result) {
+      console.log('Document synchronized successfully');
+      offlineChangesCount = 0;
+      
+      // Update sync state for conflict detection
+      if (conflictResolver) {
+        conflictResolver.updateSyncedState();
+      }
+      
+      return true;
+    } else {
+      console.warn('Document synchronization failed');
+      return false;
+    }
   } catch (error) {
     console.error('Error forcing document sync:', error);
     return false;
@@ -380,18 +477,46 @@ export const forceDocumentSync = async (): Promise<boolean> => {
 };
 
 /**
- * Check if there are pending changes that haven't been synced
- * Useful for UI indicators showing sync status
+ * Check if there are pending changes that need to be synchronized
+ * @returns Boolean indicating if there are pending changes
  */
 export const hasPendingChanges = (): boolean => {
   if (!doc || !wsProvider) return false;
   
-  // If we're not connected, and we have local changes, they're pending
-  if (!wsProvider.wsconnected) {
-    // This is a simplified check - in a real app you might want to 
-    // compare the local and remote state vectors
-    return true;
-  }
+  // Get document ID from websocket provider
+  const docName = wsProvider.roomname;
   
-  return false;
+  // Get sync status from offline support
+  const status = getSyncStatus(docName);
+  
+  return status.pendingChanges;
+};
+
+/**
+ * Get the current offline changes count
+ * @returns Number of changes made while offline
+ */
+export const getOfflineChangesCount = (): number => {
+  return offlineChangesCount;
+};
+
+/**
+ * Get detailed synchronization status
+ * @returns Current sync status or null if not initialized
+ */
+export const getSynchronizationStatus = (): SyncStatus | null => {
+  if (!doc || !wsProvider) return null;
+  
+  const docName = wsProvider.roomname;
+  return getSyncStatus(docName);
+};
+
+/**
+ * Detect if there are conflicts between local and remote changes
+ * @param remoteUpdate Update from server to check against local changes
+ * @returns Boolean indicating if there's a potential conflict
+ */
+export const detectConflicts = (remoteUpdate: Uint8Array): boolean => {
+  if (!conflictResolver) return false;
+  return conflictResolver.detectConflict(remoteUpdate);
 }; 
