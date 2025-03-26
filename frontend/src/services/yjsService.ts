@@ -3,6 +3,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { Node, Edge } from 'reactflow';
 import { ChatNode } from './nodeService';
+import { setupCanvasSyncProtocol } from '../utils/yjsSyncProtocol';
 
 // Define document structure types for TypeScript
 interface YjsNodeData {
@@ -32,6 +33,7 @@ interface YjsAwarenessState {
   user: { id: string };
   cursor?: { x: number; y: number };
   isTyping?: boolean;
+  isOffline?: boolean;
 }
 
 let doc: Y.Doc | null = null;
@@ -57,7 +59,13 @@ export const initYjsDocument = (
   doc = new Y.Doc();
 
   // Set up the WebSocket provider for real-time collaboration
-  wsProvider = new WebsocketProvider(websocketUrl, canvasId, doc);
+  wsProvider = new WebsocketProvider(websocketUrl, canvasId, doc, {
+    connect: true,
+    params: { token: userId },  // Pass user token for authentication
+  });
+  
+  // Store the provider globally for debugging
+  (window as any).yjsWebsocketProvider = wsProvider;
   
   // Get awareness instance for user presence features
   awareness = wsProvider.awareness;
@@ -71,6 +79,17 @@ export const initYjsDocument = (
 
   // Set up IndexedDB provider for offline persistence
   dbProvider = new IndexeddbPersistence(canvasId, doc);
+  
+  // Setup the synchronization protocol
+  if (wsProvider && dbProvider) {
+    setupCanvasSyncProtocol(doc, wsProvider, dbProvider, (isOnline) => {
+      console.log(`Sync protocol status changed: ${isOnline ? 'online' : 'offline'}`);
+      // Update awareness with online/offline status
+      updateAwareness({ 
+        isOffline: !isOnline 
+      } as Partial<YjsAwarenessState>);
+    });
+  }
 
   return doc;
 };
@@ -307,6 +326,7 @@ export const subscribeToYjsChanges = (
 
 /**
  * Update a node's position in the Yjs document
+ * Replaced custom vector clock with Yjs's CRDT algorithm
  */
 export const updateNodePositionYjs = (nodeId: string, position: { x: number; y: number }) => {
   if (!doc) throw new Error('Yjs document not initialized');
@@ -315,8 +335,63 @@ export const updateNodePositionYjs = (nodeId: string, position: { x: number; y: 
   const nodeY = nodes.get(nodeId) as Y.Map<any>;
   
   if (nodeY) {
-    const positionY = nodeY.get('position') as Y.Map<any>;
-    positionY.set('x', position.x);
-    positionY.set('y', position.y);
+    try {
+      // Get the position map from the node
+      const positionY = nodeY.get('position') as Y.Map<any>;
+      if (positionY) {
+        // Update position coordinates
+        // Yjs automatically handles the conflict resolution
+        // No need for vector clocks anymore
+        doc.transact(() => {
+          positionY.set('x', position.x);
+          positionY.set('y', position.y);
+        }, doc.clientID); // Use clientID as origin to identify the source
+      }
+    } catch (error) {
+      console.error(`Error updating node position in Yjs: ${error}`);
+    }
   }
+};
+
+/**
+ * Helper function to force a document sync with the server
+ * Useful for ensuring all changes are synchronized
+ */
+export const forceDocumentSync = async (): Promise<boolean> => {
+  if (!doc || !wsProvider) return false;
+  
+  try {
+    // Only force sync if we're connected
+    if (wsProvider.wsconnected) {
+      // Create a small transaction to trigger sync
+      const docRef = doc;
+      docRef.transact(() => {
+        const metadata = docRef.getMap('metadata');
+        const lastSync = metadata.get('lastSync') || 0;
+        metadata.set('lastSync', Date.now());
+      });
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error forcing document sync:', error);
+    return false;
+  }
+};
+
+/**
+ * Check if there are pending changes that haven't been synced
+ * Useful for UI indicators showing sync status
+ */
+export const hasPendingChanges = (): boolean => {
+  if (!doc || !wsProvider) return false;
+  
+  // If we're not connected, and we have local changes, they're pending
+  if (!wsProvider.wsconnected) {
+    // This is a simplified check - in a real app you might want to 
+    // compare the local and remote state vectors
+    return true;
+  }
+  
+  return false;
 }; 

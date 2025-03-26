@@ -211,25 +211,112 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
     case 0: { // Sync step 1: Client sends its state vector to request missing updates
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, 1); // Message type 1 = sync step 2
-      syncProtocol.writeSyncStep2(encoder, doc, decoding.readVarUint8Array(decoder));
+      
+      // Read client's state vector
+      const stateVector = decoding.readVarUint8Array(decoder);
+      
+      // Generate sync message with updates the client doesn't have
+      syncProtocol.writeSyncStep2(encoder, doc, stateVector);
+      
+      // Send response with missing updates
       ws.send(encoding.toUint8Array(encoder));
+      
+      // Log sync activity
+      console.log(`[SYNC] Client ${clientInfo.clientId} requested updates for document ${documentId}`);
       break;
     }
     case 1: { // Sync step 2: Server responds with missing updates (handled by client)
-      syncProtocol.readSyncStep2(decoder, doc, new Uint8Array());
+      // This case is typically handled by clients, but we include it for completeness
+      try {
+        // Apply the updates to our document
+        syncProtocol.readSyncStep2(decoder, doc, new Uint8Array());
+        console.log(`[SYNC] Received sync step 2 from client ${clientInfo.clientId}`);
+      } catch (error) {
+        console.error(`[SYNC] Error processing sync step 2: ${error}`);
+      }
       break;
     }
     case 2: { // Sync step 3: Client sends its updates to the server
-      const update = decoding.readVarUint8Array(decoder);
-      Y.applyUpdate(doc, update, ws);
-      // Broadcast the update to all other clients
-      broadcastDocumentUpdate(documentId, update, ws);
+      try {
+        // Read client's updates
+        const update = decoding.readVarUint8Array(decoder);
+        
+        // Apply updates to the document
+        Y.applyUpdate(doc, update, ws);
+        
+        // Store update in the database with timestamp-based version
+        const version = Date.now();
+        await storeYjsUpdate(documentId, update, clientInfo.clientId.toString(), version);
+        
+        // Log update
+        console.log(`[SYNC] Applied update from client ${clientInfo.clientId} to document ${documentId}`);
+        
+        // Broadcast the update to all other clients
+        broadcastDocumentUpdate(documentId, update, ws);
+        
+        // Periodically check if we should create a snapshot
+        const shouldSnapshot = Math.random() < 0.1; // ~10% chance on each update
+        if (shouldSnapshot) {
+          await createDocumentSnapshot(documentId, doc);
+          console.log(`[SYNC] Created snapshot for document ${documentId} after update`);
+        }
+      } catch (error) {
+        console.error(`[SYNC] Error processing update: ${error}`);
+      }
       break;
     }
     case 3: { // Awareness update
       if (!awareness) break;
-      const awarenessUpdate = decoding.readVarUint8Array(decoder);
-      awarenessProtocol.applyAwarenessUpdate(awareness, awarenessUpdate, ws);
+      
+      try {
+        // Read awareness update
+        const awarenessUpdate = decoding.readVarUint8Array(decoder);
+        
+        // Apply awareness update
+        awarenessProtocol.applyAwarenessUpdate(awareness, awarenessUpdate, ws);
+        
+        // Extract changed client IDs to broadcast
+        const changedClients = Array.from(
+          new Set(
+            Array.from(
+              new Uint8Array(awarenessUpdate.buffer, 0, awarenessUpdate.byteLength)
+            )
+          )
+        );
+        
+        // Broadcast awareness update to other clients
+        if (changedClients.length > 0) {
+          broadcastAwarenessUpdate(documentId, awareness, changedClients, ws);
+          
+          // Log awareness update
+          const states = awareness.getStates();
+          if (states.size > 0) {
+            console.log(`[AWARENESS] Document ${documentId} has ${states.size} active users`);
+          }
+        }
+      } catch (error) {
+        console.error(`[AWARENESS] Error processing awareness update: ${error}`);
+      }
+      break;
+    }
+    case 4: { // Sync status request - send if the client is in sync with the server
+      try {
+        // Read client's state vector
+        const stateVector = decoding.readVarUint8Array(decoder);
+        
+        // Create a diff update based on the client's state vector
+        const diffUpdate = Y.encodeStateAsUpdate(doc, stateVector);
+        
+        // Send response indicating if the client is in sync
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, 4); // Message type 4 = sync status response
+        encoding.writeVarUint(encoder, diffUpdate.length === 0 ? 1 : 0); // 1 = in sync, 0 = needs updates
+        ws.send(encoding.toUint8Array(encoder));
+        
+        console.log(`[SYNC STATUS] Client ${clientInfo.clientId} is ${diffUpdate.length === 0 ? 'in sync' : 'out of sync'}`);
+      } catch (error) {
+        console.error(`[SYNC STATUS] Error processing sync status request: ${error}`);
+      }
       break;
     }
     default:
@@ -249,60 +336,98 @@ const handleConnection = async (ws: WebSocket, req: http.IncomingMessage) => {
     return;
   }
 
+  // Authenticate the user
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.error('Authentication error:', authError);
+    ws.close(1008, 'Authentication failed');
+    return;
+  }
+  
   try {
-    // Authenticate the user
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
-      ws.close(1008, 'Authentication failed');
-      return;
-    }
-
-    // Set up the Y.Doc for this document
+    // Get document
     const doc = await getYDoc(documentId);
-    const awareness = documentAwareness.get(documentId);
-
+    
+    // Generate a unique client ID for this connection
+    const clientId = doc.clientID;
+    
     // Store client information
-    clients.set(ws, {
-      documentId,
+    const clientInfo = { 
+      documentId, 
       userId: user.id,
-      clientId: doc.clientID
-    });
-
+      clientId 
+    };
+    
+    // Add client to tracking maps
+    clients.set(ws, clientInfo);
+    
     // Add client to document subscribers
-    const subscribers = documentSubscribers.get(documentId);
-    if (subscribers) {
-      subscribers.add(ws);
+    let subscribers = documentSubscribers.get(documentId);
+    if (!subscribers) {
+      subscribers = new Set();
+      documentSubscribers.set(documentId, subscribers);
     }
-
+    subscribers.add(ws);
+    
+    // Get awareness instance
+    const awareness = documentAwareness.get(documentId);
+    
     console.log(`Client connected: ${user.id} to document: ${documentId}`);
 
-    // Send initial sync
-    const encoder = encoding.createEncoder();
-    encoding.writeVarUint(encoder, 0); // Message type 0 = sync step 1
-    syncProtocol.writeSyncStep1(encoder, doc);
-    ws.send(encoding.toUint8Array(encoder));
-
-    // Send initial awareness state if available
-    if (awareness) {
-      const awarenessStates = Array.from(awareness.getStates().keys());
-      if (awarenessStates.length > 0) {
-        const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, 3); // Message type 3 = awareness
-        encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(awareness, awarenessStates));
-        ws.send(encoding.toUint8Array(encoder));
+    // Set up message handler
+    ws.on('message', async (message: Buffer) => {
+      try {
+        await processMessage(ws, new Uint8Array(message));
+      } catch (error) {
+        console.error('Error processing message:', error);
       }
+    });
 
-      // Set up awareness handlers for this client
-      awareness.on('update', ({ added, updated, removed }: { added: number[], updated: number[], removed: number[] }) => {
-        const changedClients = [...added, ...updated, ...removed];
-        broadcastAwarenessUpdate(documentId, awareness, changedClients, null);
-      });
-    }
-
-    // Handle messages from client
-    ws.on('message', ((messageData: Buffer) => {
-      processMessage(ws, new Uint8Array(messageData));
-    }) as any);
+    // Send initial sync message when client connects
+    const initSync = async () => {
+      try {
+        // Get the document
+        const doc = await getYDoc(documentId);
+        
+        // Generate initial sync message (full document state)
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, 0); // Message type 0 = sync step 1 response
+        syncProtocol.writeSyncStep1(encoder, doc);
+        
+        // Send the sync message to the client
+        ws.send(encoding.toUint8Array(encoder));
+        
+        // Log sync activity
+        console.log(`[SYNC] Sent initial sync for document ${documentId} to client ${clientInfo.clientId}`);
+        
+        // Also send awareness states
+        const awareness = documentAwareness.get(documentId);
+        if (awareness) {
+          // Get all client IDs
+          const awarenessStates = awareness.getStates();
+          const awarenessClientIds = Array.from(awarenessStates.keys());
+          
+          if (awarenessClientIds.length > 0) {
+            // Send awareness update
+            const awarenessEncoder = encoding.createEncoder();
+            encoding.writeVarUint(awarenessEncoder, 1); // Message type 1 = awareness
+            encoding.writeVarUint8Array(
+              awarenessEncoder, 
+              awarenessProtocol.encodeAwarenessUpdate(awareness, awarenessClientIds)
+            );
+            ws.send(encoding.toUint8Array(awarenessEncoder));
+            
+            console.log(`[AWARENESS] Sent awareness update with ${awarenessClientIds.length} clients`);
+          }
+        }
+      } catch (error) {
+        console.error('Error sending initial sync:', error);
+      }
+    };
+    
+    // Initialize sync after a short delay to ensure the connection is stable
+    setTimeout(initSync, 100);
 
     // Handle client disconnect
     ws.on('close', (() => {
