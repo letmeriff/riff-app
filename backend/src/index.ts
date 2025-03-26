@@ -22,6 +22,7 @@ import {
   mergeVectorClocks, 
   generateLamportTimestamp 
 } from './utils/vectorClock';
+import { initYjsWebSocketServer } from './services/yjsWebSocketServer';
 // These route modules don't exist but were referenced
 // import authRoutes from './routes/authRoutes';
 // import userRoutes from './routes/userRoutes';
@@ -671,5 +672,12 @@ app.get('/api/node-position-history/:nodeId', authMiddleware, async (req, res) =
 
 // Start the server
 httpServer.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server is running on port ${port}`);
+  
+  // Initialize Yjs WebSocket server
+  const yjsWss = initYjsWebSocketServer(httpServer);
+  console.log('Yjs WebSocket server is listening for connections');
+  
+  // Start the summarization job scheduler
+  processPendingSummaries();
 });

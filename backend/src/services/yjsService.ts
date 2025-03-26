@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import * as Y from 'yjs';
 
 /**
  * Service for managing Yjs documents in the database
@@ -49,22 +50,27 @@ export async function storeYjsDocument(
     // Check if document exists
     const { data: existingDoc } = await supabase
       .from('yjs_documents')
-      .select('id')
+      .select('id, version')
       .eq('document_id', documentId)
       .single();
     
     let result;
     
     if (existingDoc) {
-      // Update existing document
-      result = await supabase
-        .from('yjs_documents')
-        .update({
-          document_content: base64Content,
-          version,
-          updated_at: new Date().toISOString()
-        })
-        .eq('document_id', documentId);
+      // Only update if the new version is higher than the stored version
+      if (existingDoc.version < version) {
+        result = await supabase
+          .from('yjs_documents')
+          .update({
+            document_content: base64Content,
+            version,
+            updated_at: new Date().toISOString()
+          })
+          .eq('document_id', documentId);
+      } else {
+        // Version is not newer, consider it a success but don't update
+        return true;
+      }
     } else {
       // Insert new document
       result = await supabase
@@ -76,7 +82,7 @@ export async function storeYjsDocument(
         });
     }
     
-    if (result.error) {
+    if (result?.error) {
       console.error('Error storing Yjs document:', result.error);
       return false;
     }
@@ -191,4 +197,193 @@ export async function cleanupOldUpdates(
     console.error('Exception cleaning up old Yjs updates:', error);
     return false;
   }
+}
+
+/**
+ * Get the latest document version
+ * @param documentId The document ID
+ * @returns The latest version number or 0 if not found
+ */
+export async function getLatestDocumentVersion(documentId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('yjs_documents')
+      .select('version')
+      .eq('document_id', documentId)
+      .single();
+    
+    if (error || !data) {
+      return 0;
+    }
+    
+    return data.version;
+  } catch (error) {
+    console.error('Exception getting latest document version:', error);
+    return 0;
+  }
+}
+
+/**
+ * Recover a document from its updates
+ * @param documentId The document ID
+ * @returns A new Y.Doc with all updates applied, or null if recovery failed
+ */
+export async function recoverDocumentFromUpdates(documentId: string): Promise<Y.Doc | null> {
+  try {
+    // Create a new empty document
+    const doc = new Y.Doc();
+    
+    // Get all updates for this document
+    const { data, error } = await supabase
+      .from('yjs_updates')
+      .select('update_content, version')
+      .eq('document_id', documentId)
+      .order('version', { ascending: true });
+    
+    if (error || !data || data.length === 0) {
+      console.error('No updates found for document recovery:', documentId);
+      return null;
+    }
+    
+    // Apply all updates in order
+    for (const update of data) {
+      const updateContent = new Uint8Array(Buffer.from(update.update_content, 'base64'));
+      Y.applyUpdate(doc, updateContent);
+    }
+    
+    // Store the recovered document
+    const latestVersion = data[data.length - 1].version;
+    const docContent = Y.encodeStateAsUpdate(doc);
+    await storeYjsDocument(documentId, docContent, latestVersion);
+    
+    return doc;
+  } catch (error) {
+    console.error('Exception recovering document from updates:', error);
+    return null;
+  }
+}
+
+/**
+ * Create a document snapshot and clean up old updates
+ * @param documentId The document ID
+ * @param doc The Y.Doc instance
+ * @returns Success status
+ */
+export async function createDocumentSnapshot(documentId: string, doc: Y.Doc): Promise<boolean> {
+  try {
+    // Create a snapshot of the current document state
+    const snapshot = Y.encodeStateAsUpdate(doc);
+    const version = Date.now(); // Use timestamp as version
+    
+    // Store the snapshot
+    const success = await storeYjsDocument(documentId, snapshot, version);
+    if (!success) {
+      return false;
+    }
+    
+    // After successful snapshot, clean up old updates
+    // We can now remove all updates older than the snapshot version
+    const { error } = await supabase
+      .from('yjs_updates')
+      .delete()
+      .eq('document_id', documentId)
+      .lt('version', version);
+    
+    if (error) {
+      console.error('Error cleaning up old updates after snapshot:', error);
+      // Don't fail the whole operation if cleanup fails
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Exception creating document snapshot:', error);
+    return false;
+  }
+}
+
+/**
+ * Get document size statistics
+ * @param documentId The document ID
+ * @returns Object containing size information
+ */
+export async function getDocumentStats(documentId: string): Promise<{
+  documentSize: number;
+  updatesCount: number;
+  totalUpdatesSize: number;
+  oldestUpdate: Date | null;
+  newestUpdate: Date | null;
+} | null> {
+  try {
+    // Get document size
+    const { data: docData, error: docError } = await supabase
+      .from('yjs_documents')
+      .select('document_content')
+      .eq('document_id', documentId)
+      .single();
+    
+    if (docError) {
+      console.error('Error fetching document for stats:', docError);
+      return null;
+    }
+    
+    // Get updates information
+    const { data: updatesData, error: updatesError } = await supabase
+      .from('yjs_updates')
+      .select('update_content, created_at')
+      .eq('document_id', documentId);
+    
+    if (updatesError) {
+      console.error('Error fetching updates for stats:', updatesError);
+      return null;
+    }
+    
+    // Calculate stats
+    const documentSize = docData.document_content.length;
+    const updatesCount = updatesData.length;
+    const totalUpdatesSize = updatesData.reduce((sum, update) => sum + update.update_content.length, 0);
+    
+    // Find oldest and newest update dates
+    let oldestUpdate = null;
+    let newestUpdate = null;
+    
+    if (updatesCount > 0) {
+      const dates = updatesData.map(update => new Date(update.created_at)).sort();
+      oldestUpdate = dates[0];
+      newestUpdate = dates[dates.length - 1];
+    }
+    
+    return {
+      documentSize,
+      updatesCount,
+      totalUpdatesSize,
+      oldestUpdate,
+      newestUpdate
+    };
+  } catch (error) {
+    console.error('Exception getting document stats:', error);
+    return null;
+  }
+}
+
+/**
+ * Optimize storage by compressing document using binary encoding
+ * @param documentContent The raw Yjs update as Uint8Array
+ * @returns Compressed binary data as Uint8Array
+ */
+export function compressUpdate(documentContent: Uint8Array): Uint8Array {
+  // In a real implementation, you might use a compression library like zlib
+  // For now, we'll just return the original content as this would require
+  // additional libraries and consistency in decompression
+  return documentContent;
+}
+
+/**
+ * Decompress a stored document update
+ * @param compressedContent Compressed binary data
+ * @returns Original Yjs update as Uint8Array
+ */
+export function decompressUpdate(compressedContent: Uint8Array): Uint8Array {
+  // Matching counterpart to compressUpdate
+  // Would implement actual decompression if compression was used
+  return compressedContent;
 } 
