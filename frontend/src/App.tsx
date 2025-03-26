@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
 import { CRDTProvider } from './legacy/CRDTContext';
 import { YjsProvider } from './contexts/YjsContext';
+import { NetworkProvider } from './contexts/NetworkContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import CanvasPage from './pages/CanvasPage';
@@ -222,7 +223,13 @@ const AppContent: React.FC = () => {
       <CRDTProvider>
         {/* Always include YjsProvider, but it's only activated internally if feature flag is on */}
         <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
-          {content}
+          {/* Add NetworkProvider to bridge Socket.IO and Yjs */}
+          <NetworkProvider
+            wsProvider={(window as any).yjsWebsocketProvider || null}
+            doc={(window as any).yjsDoc || null}
+          >
+            {content}
+          </NetworkProvider>
         </YjsProvider>
         {settingsModal}
       </CRDTProvider>

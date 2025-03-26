@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useSocket } from '../contexts/SocketContext';
+import { useNetwork } from '../contexts/NetworkContext';
+import { useAuth } from '../contexts/AuthContext';
 import { ChatNode, updateNodeTitle, updateNodeDescription } from '../services/nodeService';
 import { Prompt } from '../services/promptService';
 
@@ -56,6 +58,14 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   `;
 
   const { socket } = useSocket();
+  const { 
+    networkAdapter, 
+    connectionStatus, 
+    sendMessage, 
+    subscribeToEvent, 
+    updateUserPresence 
+  } = useNetwork();
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -83,6 +93,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState<number | null>(null);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
@@ -180,10 +191,10 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     fetchNodeDetails();
 
     // Set up real-time updates for messages
-    if (socket) {
-      // Use Socket.IO for real-time updates
-      socket.on('message-update', (payload) => {
-        console.log('Socket: Message update received:', payload);
+    if (networkAdapter) {
+      // Use NetworkAdapter for real-time updates
+      const unsubscribeMessage = subscribeToEvent('message-update', (payload) => {
+        console.log('Message update received:', payload);
         console.log('Current nodeId:', nodeId, 'Payload node_id:', payload.new?.node_id);
         if (payload.new && payload.new.node_id === parseInt(nodeId)) {
           setMessages((prev) => {
@@ -200,8 +211,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         }
       });
 
-      socket.on('presence-update', (payload) => {
-        console.log('Socket: Presence update received in ChatUI:', payload);
+      const unsubscribePresence = subscribeToEvent('presence-update', (payload) => {
+        console.log('Presence update received in ChatUI:', payload);
         if (payload.nodeId.toString() === nodeId) {
           // Extract emails of users who are typing (excluding the current user)
           const typing = payload.presence
@@ -214,8 +225,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       });
 
       // Listen for ownership updates
-      socket.on('ownership-update', (payload) => {
-        console.log('Socket: Ownership update received:', payload);
+      const unsubscribeOwnership = subscribeToEvent('ownership-update', (payload) => {
+        console.log('Ownership update received:', payload);
         if (payload.nodeId.toString() === nodeId) {
           setIsOwner(payload.ownerId === userId);
           
@@ -224,7 +235,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         }
       });
 
-      socket.on('transfer-ownership-error', (payload) => {
+      const unsubscribeTransferError = subscribeToEvent('transfer-ownership-error', (payload) => {
         if (payload.nodeId.toString() === nodeId) {
           console.error('Ownership transfer error:', payload.error);
           alert(`Failed to transfer ownership: ${payload.error}`);
@@ -233,7 +244,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       });
 
       // Listen for node updates
-      socket.on('node-update', (payload) => {
+      const unsubscribeNodeUpdate = subscribeToEvent('node-update', (payload) => {
         if (payload.new && payload.new.node_id.toString() === nodeId) {
           console.log('Node update detected, refreshing node details');
           fetchNodeDetails();
@@ -241,8 +252,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       });
 
       // Listen for attachment updates
-      socket.on('attachment-update', (payload) => {
-        console.log('Socket: Attachment update received:', payload);
+      const unsubscribeAttachmentUpdate = subscribeToEvent('attachment-update', (payload) => {
+        console.log('Attachment update received:', payload);
         if (payload.nodeId.toString() === nodeId) {
           setAttachments((prev) => {
             // Check if this attachment is already in the list to avoid duplicates
@@ -259,8 +270,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       });
 
       // Listen for attachment deletions
-      socket.on('attachment-delete', (payload) => {
-        console.log('Socket: Attachment delete received:', payload);
+      const unsubscribeAttachmentDelete = subscribeToEvent('attachment-delete', (payload) => {
+        console.log('Attachment delete received:', payload);
         if (payload.nodeId.toString() === nodeId) {
           setAttachments((prev) => 
             prev.filter((att) => att.attachment_id !== payload.attachmentId)
@@ -269,16 +280,16 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       });
 
       return () => {
-        socket.off('message-update');
-        socket.off('presence-update');
-        socket.off('ownership-update');
-        socket.off('transfer-ownership-error');
-        socket.off('attachment-update');
-        socket.off('attachment-delete');
-        socket.off('node-update');
+        unsubscribeMessage();
+        unsubscribePresence();
+        unsubscribeOwnership();
+        unsubscribeTransferError();
+        unsubscribeNodeUpdate();
+        unsubscribeAttachmentUpdate();
+        unsubscribeAttachmentDelete();
       };
     } else {
-      // Fallback to Supabase real-time if Socket.IO is not available
+      // Fallback to Supabase real-time if network adapter is not available
       const subscription = supabase
         .channel(`chat_messages:node_${nodeId}`)
         .on(
@@ -299,7 +310,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         supabase.removeChannel(subscription);
       };
     }
-  }, [nodeId, socket, userId]);
+  }, [nodeId, networkAdapter, subscribeToEvent, userId]);
 
   // Update editedTitle and editedDescription when nodeTitle or currentNode changes
   useEffect(() => {
@@ -318,10 +329,10 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
 
-    if (!socket || !nodeId || !isOwner) return;
+    if (!nodeId || !isOwner) return;
 
-    // Emit typing event
-    socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: true });
+    // Update typing status using network adapter
+    updateUserPresence(nodeId, true);
 
     // Clear previous timeout
     if (typingTimeoutRef.current) {
@@ -330,8 +341,8 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
 
     // Set a timeout to stop typing indication after 2 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
-      if (socket && nodeId) {
-        socket.emit('typing', { nodeId: parseInt(nodeId), isTyping: false });
+      if (nodeId) {
+        updateUserPresence(nodeId, false);
       }
     }, 2000);
   };
@@ -849,6 +860,28 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       console.error('Error fetching node details:', error);
     }
   };
+
+  // Join node room when component mounts
+  useEffect(() => {
+    if (!nodeId) return;
+    
+    // Use network adapter to join node
+    if (networkAdapter) {
+      sendMessage('join-node', { nodeId });
+    } else if (socket) {
+      // Fallback to direct socket usage
+      socket.emit('join-node', { nodeId });
+    }
+    
+    // Clean up when component unmounts
+    return () => {
+      if (networkAdapter) {
+        sendMessage('leave-node', { nodeId });
+      } else if (socket) {
+        socket.emit('leave-node', { nodeId });
+      }
+    };
+  }, [nodeId, networkAdapter, socket, sendMessage]);
 
   return (
     <div 

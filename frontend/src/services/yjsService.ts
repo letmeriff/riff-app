@@ -83,6 +83,9 @@ export const initYjsDocument = (
   // Create a new Y.Doc with a unique ID
   doc = new Y.Doc();
 
+  // Store the doc globally for debugging and for network adapter
+  (window as any).yjsDoc = doc;
+  
   // Set up the WebSocket provider for real-time collaboration
   wsProvider = new WebsocketProvider(websocketUrl, canvasId, doc, {
     connect: true,
