@@ -3,10 +3,9 @@ import { useYjs } from '../contexts/YjsContext';
 import '../styles/reactflow.css';
 
 interface YjsNodeControlsProps {
-  canvasId: string;
 }
 
-const YjsNodeControls: React.FC<YjsNodeControlsProps> = ({ canvasId }) => {
+const YjsNodeControls: React.FC<YjsNodeControlsProps> = () => {
   const { isConnected, isOffline, connectedUsers } = useYjs();
   const [showConnectedUsers, setShowConnectedUsers] = useState(false);
 

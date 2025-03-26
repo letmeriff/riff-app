@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import ReactFlow, {
   Background,
@@ -9,14 +10,17 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   Connection,
-  NodeRemoveChange,
   NodeChange,
   NodeTypes,
   NodeMouseHandler,
   EdgeChange,
-  ReactFlowState,
+  NodeAddChange,
+  NodePositionChange,
+  updateEdge,
+  OnEdgesChange,
+  OnNodesChange,
+  NodeDragHandler,
   OnMove,
-  Viewport
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../styles/reactflow.css';
@@ -29,7 +33,14 @@ import CollaborationStatus from '../components/CollaborationStatus';
 import { Prompt } from '../services/promptService';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
-import { ChatNode as ChatNodeType, SupabasePayload, createNode, fetchNodes, deleteNode, updateNodePosition } from '../services/nodeService';
+import { 
+  ChatNode as ChatNodeType,
+  SupabasePayload,
+  updateNodePosition,
+  fetchNodes,
+  createNode,
+  deleteNode,
+} from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
 import { useCRDT } from '../contexts/CRDTContext';
@@ -39,18 +50,14 @@ import { generateLamportTimestamp } from '../utils/vectorClock';
 import { 
   syncNodeChangesToYjs, 
   syncEdgeChangesToYjs, 
-  syncNewNodeToYjs,
   syncNodeDeletionToYjs,
   syncEdgeDeletionToYjs,
   setupYjsSubscription
 } from '../utils/reactFlowYjsBinding';
-import { mapEdgeToYjs } from '../services/yjsService';
 import {
-  selectivelyLoadNodes,
-  updateViewport,
-  createOptimizedPositionUpdater,
-  ViewportBounds
+  ViewportBounds,
 } from '../utils/yjsOptimization';
+import { mapEdgeToYjs, mapNodeToYjs } from '../services/yjsService';
 
 const nodeTypes: NodeTypes = {
   chatNode: ChatNode,
@@ -85,13 +92,13 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const [viewport, setViewport] = useState<ViewportBounds | null>(null);
   const optimizedPositionUpdater = useRef<((nodeId: string, position: { x: number; y: number }) => void) | null>(null);
 
-  // Add CRDT context
+  // Add CRDT context with the functions we need
   const { 
-    updateNodeVectorClock, 
-    getNodeVectorClock, 
     addPendingOperation, 
     removePendingOperation,
-    hasPendingOperations 
+    hasPendingOperations,
+    updateNodeVectorClock,
+    getNodeVectorClock
   } = useCRDT();
   
   // Add Yjs context - this will be undefined if Yjs is not enabled
@@ -163,7 +170,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       });
       
       const reactFlowNodes: Node[] = await Promise.all(
-        chatNodes.map(async (chatNode) => {
+        chatNodes.map(async (chatNode: ChatNodeType) => {
           // Get nodes this node pulls from
           const pulledConnections = await getContextPullsForNode(chatNode.node_id);
           const pulledConnectionsWithUpdates = await Promise.all(
@@ -1146,7 +1153,7 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
               <CollaborationStatus />
             </div>
             
-            <YjsNodeControls canvasId="canvas-1" />
+            <YjsNodeControls />
           </>
         )}
         

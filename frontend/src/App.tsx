@@ -22,7 +22,7 @@ const AppContent: React.FC = () => {
   const [selectedNodeTitle, setSelectedNodeTitle] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
-  const [canvasId, setCanvasId] = useState<string>('default-canvas');
+  const [canvasId] = useState<string>('default-canvas');
 
   const handleNodeSelect = (nodeId: string | null, nodeTitle: string | null) => {
     setSelectedNodeId(nodeId);
@@ -150,7 +150,7 @@ const AppContent: React.FC = () => {
   }
 
   // Prepare the content with both providers for proper transition
-  let content = (
+  const content = (
     <div style={{ 
       display: 'flex', 
       height: '100vh', 

@@ -28,7 +28,7 @@ const POSITION_DEBOUNCE_DELAY = 500; // Debounce delay for position updates in m
 // Map to store chunks and their loaded state
 const chunks = new Map<string, CanvasChunk>();
 // Track current viewport bounds
-let currentViewport: ViewportBounds | null = null;
+// let currentViewport: ViewportBounds | null = null;
 // Track loaded nodes to prevent redundant loading
 const loadedNodeIds = new Set<string>();
 
@@ -104,7 +104,7 @@ export const getVisibleChunks = (viewport: ViewportBounds): string[] => {
  * @returns Array of chunk IDs that need to be loaded
  */
 export const updateViewport = (viewport: ViewportBounds): string[] => {
-  currentViewport = viewport;
+  // currentViewport = viewport;
   const visibleChunks = getVisibleChunks(viewport);
   
   // Mark visible chunks as loaded
@@ -167,7 +167,7 @@ export const selectivelyLoadNodes = (
     const edgesMap = ydoc.getMap('edges');
     
     // Update current viewport
-    currentViewport = viewport;
+    // currentViewport = viewport;
     
     // Process nodes selectively
     nodesMap.forEach((nodeValue: any, nodeId: string) => {
@@ -344,5 +344,5 @@ export const createOptimizedPositionUpdater = (ydoc: Y.Doc | null) => {
 export const cleanupOptimization = () => {
   chunks.clear();
   loadedNodeIds.clear();
-  currentViewport = null;
+  // currentViewport = null;
 }; 

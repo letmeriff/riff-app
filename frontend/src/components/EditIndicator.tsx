@@ -93,7 +93,7 @@ const EditIndicator: React.FC<EditIndicatorProps> = ({ nodeId }) => {
         zIndex: 10,
       }}
     >
-      {editingUsers.map((user, index) => (
+      {editingUsers.map((user) => (
         <div 
           key={user.userId} 
           title={`Being edited by ${connectedUsers.find(u => u.userId === user.userId)?.userId || 'User'}`}

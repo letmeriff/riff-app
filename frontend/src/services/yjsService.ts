@@ -15,6 +15,8 @@ import {
 } from '../utils/yjsOfflineSupport';
 
 // Define document structure types for TypeScript
+// Commented out unused interfaces
+/* 
 interface YjsNodeData {
   title: string;
   model?: string;
@@ -35,6 +37,7 @@ interface YjsEdgeData {
   target_node_id: number;
   created_at: string;
 }
+*/
 
 interface YjsAwarenessState {
   clientID: number;
@@ -54,14 +57,14 @@ let awareness: any | null = null;
 let conflictResolver: { updateSyncedState: () => void; detectConflict: (update: Uint8Array) => boolean } | null = null;
 
 // Flag to track if we have pending sync operations
-let hasPendingSyncOperations = false;
+// let hasPendingSyncOperations = false;
 
 // Track offline changes
 let offlineChangesCount = 0;
 let offlineChangeHandler: (() => void) | null = null;
 
 // Track last sync status
-let lastSyncStatus: SyncStatus | null = null;
+// let lastSyncStatus: SyncStatus | null = null;
 
 /**
  * Initialize the Yjs document and providers
@@ -130,14 +133,14 @@ export const initYjsDocument = (
     const syncStatusCheckInterval = setInterval(() => {
       if (doc) {
         const status = getSyncStatus(canvasId);
-        lastSyncStatus = status;
-        hasPendingSyncOperations = status.pendingChanges;
+        // lastSyncStatus = status;
+        // hasPendingSyncOperations = status.pendingChanges;
         
         // Update UI awareness with sync status
         updateAwareness({
           isOffline: !status.isConnected || !status.isOnline,
           syncStatus: {
-            pendingChanges: status.pendingChanges,
+            // pendingChanges: status.pendingChanges,
             lastSyncedAt: status.lastSyncedAt,
             isReconnecting: status.isReconnecting
           }
@@ -352,8 +355,7 @@ export const destroyYjsDocument = () => {
   
   // Reset counters and flags
   offlineChangesCount = 0;
-  hasPendingSyncOperations = false;
-  lastSyncStatus = null;
+  // hasPendingSyncOperations = false;
   
   doc = null;
   awareness = null;
