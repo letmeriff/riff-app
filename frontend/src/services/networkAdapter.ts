@@ -223,18 +223,17 @@ export class YjsNetworkAdapter implements NetworkAdapter {
   }
   
   // Handle awareness changes and emit corresponding events
-  private handleAwarenessChange(changes: Map<number, Uint8Array>): void {
+  private handleAwarenessChange(changes: any): void {
     const awareness = this.awareness;
     if (!awareness) return;
     
-    // Process each changed client
-    changes.forEach((_, clientId) => {
+    // Get all awareness states to extract changes
+    const awarenessStates = awareness.getStates();
+    
+    // Process each client in awareness states
+    awarenessStates.forEach((state: any, clientId: number) => {
       // Skip our own changes
       if (clientId === this.doc?.clientID) return;
-      
-      // Get the client state
-      const awarenessStates = awareness.getStates();
-      const state = awarenessStates.get(clientId);
       
       if (state && state.events) {
         // Process each event in the state
