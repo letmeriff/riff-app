@@ -34,6 +34,8 @@
       Notes: Added comprehensive tests for WebSocket service covering connection handling, message broadcasting, room management, and error handling. Implemented tests for transfer-ownership, typing events, node position updates, and disconnect events. Added edge case handling and error recovery tests for robustness. All tests pass successfully with proper mocking of Socket.IO and related dependencies.
 - [x] Phase 2: Week 5 - Step 1: REST API
       Notes: Implemented tests for API endpoint responses, error handling, and data validation. Created comprehensive tests for promptRoutes.test.ts (endpoints for retrieving prompts/frameworks) and chatRoutes.test.ts (endpoints for AI chat interactions). Tests verify authentication, authorization, error handling, and proper data transformation. All tests pass successfully with 100% code coverage for the tested routes.
+- [x] Test File Location Standardization
+      Notes: Clarified the test file location pattern in the codebase - most test files are colocated with their implementation files, while the test-utils directory contains tests for utility functions without dedicated files. Updated the workflow documentation to ensure consistent test file placement going forward.
 
 ## In Progress
 
