@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
-import { CRDTProvider } from './legacy/CRDTContext';
 import { YjsProvider } from './contexts/YjsContext';
 import { NetworkProvider } from './contexts/NetworkContext';
 import Login from './components/Login';
@@ -215,24 +214,18 @@ const AppContent: React.FC = () => {
     />
   );
 
-  // Return with proper context providers - always include both providers
-  // but only activate Yjs when enabled using the adapter pattern
+  // Return with proper context providers
   return (
     <SocketProvider token={session?.access_token || null}>
-      {/* Keep the CRDT provider for backward compatibility */}
-      <CRDTProvider>
-        {/* Always include YjsProvider, but it's only activated internally if feature flag is on */}
-        <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
-          {/* Add NetworkProvider to bridge Socket.IO and Yjs */}
-          <NetworkProvider
-            wsProvider={(window as any).yjsWebsocketProvider || null}
-            doc={(window as any).yjsDoc || null}
-          >
-            {content}
-          </NetworkProvider>
-        </YjsProvider>
-        {settingsModal}
-      </CRDTProvider>
+      <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
+        <NetworkProvider
+          wsProvider={(window as any).yjsWebsocketProvider || null}
+          doc={(window as any).yjsDoc || null}
+        >
+          {content}
+        </NetworkProvider>
+      </YjsProvider>
+      {settingsModal}
     </SocketProvider>
   );
 };

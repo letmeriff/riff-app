@@ -15,7 +15,8 @@ export interface NetworkAdapter {
 
 // Feature flag to determine which network implementation to use
 export const isYjsNetworkEnabled = (): boolean => {
-  return process.env.REACT_APP_USE_YJS_NETWORK === 'true';
+  // Yjs is now the only implementation
+  return true;
 };
 
 // Socket.IO implementation of the network adapter

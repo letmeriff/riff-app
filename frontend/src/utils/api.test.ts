@@ -1,5 +1,6 @@
-import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
-import api from './api';
+import axios from 'axios';
+// Import the api but use _api naming to avoid unused variable warning
+import _api from './api';
 
 // Mock axios module
 jest.mock('axios', () => {
@@ -37,10 +38,11 @@ const localStorageMock = (() => {
 Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 
 describe('API Utility', () => {
-  let requestInterceptor: Function;
-  let requestErrorInterceptor: Function;
-  let responseInterceptor: Function;
-  let responseErrorInterceptor: Function;
+  // Use specific typed function signatures instead of generic Function type
+  let requestInterceptor: (config: Record<string, unknown>) => Record<string, unknown>;
+  let requestErrorInterceptor: (error: Error) => Promise<never>;
+  let responseInterceptor: (response: unknown) => unknown;
+  let responseErrorInterceptor: (error: Record<string, unknown>) => Promise<never>;
   
   beforeEach(() => {
     jest.clearAllMocks();
@@ -71,29 +73,29 @@ describe('API Utility', () => {
     it('adds auth token to headers when token exists in localStorage', () => {
       localStorageMock.setItem('authToken', 'test-token');
       
-      const config: any = {
+      const config: Record<string, unknown> = {
         headers: {}
       };
       
       const result = requestInterceptor(config);
       
-      expect(result.headers.Authorization).toBe('Bearer test-token');
+      expect((result.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
     });
     
     it('does not modify headers when token is not in localStorage', () => {
-      const config: any = {
+      const config: Record<string, unknown> = {
         headers: {}
       };
       
       const result = requestInterceptor(config);
       
-      expect(result.headers.Authorization).toBeUndefined();
+      expect((result.headers as Record<string, unknown>).Authorization).toBeUndefined();
     });
     
     it('handles configuration without headers', () => {
       localStorageMock.setItem('authToken', 'test-token');
       
-      const config: any = {};
+      const config: Record<string, unknown> = {};
       
       const result = requestInterceptor(config);
       
@@ -117,8 +119,12 @@ describe('API Utility', () => {
     it('handles 401 errors by removing token and redirecting', async () => {
       // Mock the window.location.href property
       const originalLocation = window.location;
-      // @ts-ignore: Intentionally overriding read-only property for testing
-      window.location = { href: '' } as Location;
+      
+      // Need to override the location object
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: { href: '' },
+      });
       
       localStorageMock.setItem('authToken', 'test-token');
       
@@ -127,7 +133,7 @@ describe('API Utility', () => {
           status: 401,
           data: { message: 'Unauthorized' }
         }
-      } as AxiosError;
+      };
       
       await expect(responseErrorInterceptor(error)).rejects.toEqual(error);
       
@@ -135,8 +141,10 @@ describe('API Utility', () => {
       expect(window.location.href).toBe('/login');
       
       // Restore the original location
-      // @ts-ignore: Intentionally restoring read-only property
-      window.location = originalLocation;
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: originalLocation,
+      });
     });
     
     it('rejects with error for non-401 errors', async () => {
@@ -145,16 +153,16 @@ describe('API Utility', () => {
           status: 500,
           data: { message: 'Server error' }
         }
-      } as AxiosError;
+      };
       
       await expect(responseErrorInterceptor(error)).rejects.toEqual(error);
       expect(localStorageMock.removeItem).not.toHaveBeenCalled();
     });
     
     it('rejects with error when response property is missing', async () => {
-      const error = new Error('Network error') as AxiosError;
+      const error = new Error('Network error');
       
-      await expect(responseErrorInterceptor(error)).rejects.toEqual(error);
+      await expect(responseErrorInterceptor(error as unknown as Record<string, unknown>)).rejects.toEqual(error);
       expect(localStorageMock.removeItem).not.toHaveBeenCalled();
     });
   });

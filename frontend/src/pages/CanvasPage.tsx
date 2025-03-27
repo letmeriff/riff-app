@@ -43,10 +43,7 @@ import {
 } from '../services/nodeService';
 import { getContextPullsForNode, getNodesPullingFromNode } from '../services/contextPullService';
 import { supabase } from '../services/supabase';
-import { useCRDT } from '../legacy/CRDTContext';
 import { useYjs } from '../contexts/YjsContext';
-import { NodePositionOperation } from '../legacy/crdt';
-import { generateLamportTimestamp } from '../legacy/vectorClock';
 import { 
   syncNodeChangesToYjs, 
   syncEdgeChangesToYjs, 
@@ -70,7 +67,7 @@ const nodeTypes: NodeTypes = {
 const initialEdges: Edge[] = [];
 
 // Use the centralized feature flag
-const USE_YJS = isYjsEnabled();
+const USE_YJS = true;
 // Get the appropriate position adapter based on the feature flag
 const positionAdapter = getPositionAdapter();
 
@@ -98,17 +95,8 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const [viewport, setViewport] = useState<ViewportBounds | null>(null);
   const optimizedPositionUpdater = useRef<((nodeId: string, position: { x: number; y: number }) => void) | null>(null);
 
-  // Add CRDT context with the functions we need
-  const { 
-    addPendingOperation, 
-    removePendingOperation,
-    hasPendingOperations,
-    updateNodeVectorClock,
-    getNodeVectorClock
-  } = useCRDT();
-  
-  // Add Yjs context - this will be undefined if Yjs is not enabled
-  const yjs = USE_YJS ? useYjs() : undefined;
+  // Yjs context is the only implementation now
+  const yjs = useYjs();
 
   // Add subscription tracking ref
   const yjsSubscriptionRef = useRef<(() => void) | null>(null);
@@ -477,45 +465,24 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
         });
       });
       
-      socket.on('node-position-update', ({ nodeId, position, vectorClock, lamportTimestamp, applied }) => {
-        console.log('Socket: Node position update received:', nodeId, position, vectorClock);
+      socket.on('node-position-update', (data: any) => {
+        const { nodeId, position } = data;
         
-        // Skip the update if we're still in the same cycle to avoid feedback loops
-        if (updatingPositionNodeId === nodeId) {
-          console.log('Ignoring position update for node we just updated locally');
-          return;
-        }
+        // Yjs implementation is now used for all position updates
+        console.log(`Received position update for node ${nodeId}:`, position);
         
-        // Update the node's vector clock
-        if (vectorClock) {
-          updateNodeVectorClock(nodeId, vectorClock);
-        }
-        
-        // For operations that were optimistically applied locally, remove from pending
-        if (hasPendingOperations(nodeId) && lamportTimestamp) {
-          // Remove this operation from pending operations if it matches
-          removePendingOperation(nodeId, lamportTimestamp);
-        }
-        
-        // Only update the position if the server applied the change
-        // Or if it's not our own optimistic update
-        if (applied !== false) {
-          setNodes((nds) =>
-            nds.map((node) => {
-              if (node.id === nodeId) {
-                console.log(`Updating position of node ${nodeId} from socket event: x=${position.x}, y=${position.y}`);
-                return {
-                  ...node,
-                  position: {
-                    x: position.x,
-                    y: position.y
-                  },
-                };
-              }
-              return node;
-            })
-          );
-        }
+        // Update node positions in React Flow state
+        setNodes((nds) =>
+          nds.map((node) => {
+            if (node.id === nodeId) {
+              return {
+                ...node,
+                position
+              };
+            }
+            return node;
+          })
+        );
       });
       
       // Return cleanup function
@@ -972,65 +939,22 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
   const onNodeDragStop: NodeMouseHandler = useCallback((event, node) => {
     // Skip if updating is locked
     if (updatingPositionNodeId === node.id) {
-      console.log(`Node ${node.id} is already being updated, skipping`);
       return;
     }
-    
-    console.log(`Node ${node.id} position changed: x=${node.position.x}, y=${node.position.y}`);
-    
-    // Set updating flag to prevent feedback loops
+
+    // Mark node as being updated to prevent loops
     setUpdatingPositionNodeId(node.id);
     
-    if (USE_YJS && yjs && yjs.ydoc) {
-      // Use optimized updater for Yjs
-      if (!optimizedPositionUpdater.current) {
-        // Import and initialize the optimized updater
-        import('../utils/yjsOptimization').then(({ createOptimizedPositionUpdater }) => {
-          optimizedPositionUpdater.current = createOptimizedPositionUpdater(yjs.ydoc);
-          
-          // Use it immediately for this update
-          if (optimizedPositionUpdater.current) {
-            optimizedPositionUpdater.current(node.id, node.position);
-          }
-          
-          // Clear updating flag after a delay
-          setTimeout(() => {
-            setUpdatingPositionNodeId(null);
-          }, 100);
-        });
-      } else {
-        // Use existing optimized updater
-        optimizedPositionUpdater.current(node.id, node.position);
-        
-        // Clear updating flag after a delay
-        setTimeout(() => {
-          setUpdatingPositionNodeId(null);
-        }, 100);
-      }
+    if (optimizedPositionUpdater.current) {
+      // Use the optimized position updater if available
+      optimizedPositionUpdater.current(node.id, node.position);
     } else {
-      // Use legacy CRDT system
-      const lamportTimestamp = generateLamportTimestamp();
-      const currentVectorClock = getNodeVectorClock(node.id);
-      
-      // Create a position operation matching the expected interface
-      const operation: NodePositionOperation = {
-        nodeId: node.id,
-        position: node.position,
-        vectorClock: currentVectorClock,
-        lamportTimestamp: lamportTimestamp,
-        userId: user?.id || 'unknown'
-      };
-      
-      // Add to pending operations - with correct argument
-      addPendingOperation(operation);
-      
-      // Update node position through nodeService - with correct arguments
-      updateNodePosition(node.id, node.position);
-      
-      // Clear updating flag
-      setUpdatingPositionNodeId(null);
+      console.warn('Position updater not initialized');
     }
-  }, [user, yjs, optimizedPositionUpdater, addPendingOperation, getNodeVectorClock, removePendingOperation]);
+    
+    // Clear updating flag
+    setUpdatingPositionNodeId(null);
+  }, [user, yjs, optimizedPositionUpdater]);
 
   // Handle direct node updates from external sources
   const handleExternalNodeUpdate = useCallback((
@@ -1058,20 +982,6 @@ const CanvasPage: React.FC<CanvasPageProps> = ({ onNodeSelect, onOpenSettings })
       );
     }
   }, [setNodes, yjs]);
-
-  // Handle socket events for position updates
-  useEffect(() => {
-    if (!socket || USE_YJS) return; // Don't use socket for position updates if Yjs is enabled
-    
-    // Listen for node position updates
-    socket.on('node-position-update', (data: any) => {
-      // ... existing socket event handling ...
-    });
-    
-    return () => {
-      socket.off('node-position-update');
-    };
-  }, [socket, updateNodeVectorClock, setNodes]);
 
   // Set up Yjs awareness for cursor tracking
   useEffect(() => {

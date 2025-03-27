@@ -99,4 +99,108 @@ describe('authMiddleware', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Authentication failed' });
     expect(mockNext).not.toHaveBeenCalled();
   });
+  
+  it('properly extracts token from Authorization header with Bearer prefix', async () => {
+    const mockUser = { id: 'user-id', email: 'test@example.com' };
+    const req = mockRequest({ 
+      authorization: 'Bearer test-token-123' 
+    }) as Request;
+    const res = mockResponse() as Response;
+
+    // Mock Supabase auth.getUser to return user
+    (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
+      data: { user: mockUser },
+      error: null,
+    });
+
+    await authMiddleware(req, res, mockNext);
+
+    // Verify that getUser was called with the correct token
+    expect(supabase.auth.getUser).toHaveBeenCalledWith('test-token-123');
+    expect(mockNext).toHaveBeenCalled();
+  });
+  
+  it('ignores malformed Authorization headers', async () => {
+    const req = mockRequest({ 
+      authorization: 'InvalidFormat' 
+    }) as Request;
+    const res = mockResponse() as Response;
+
+    await authMiddleware(req, res, mockNext);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'No token provided' });
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+  
+  it('returns 401 if user is null but no error is returned', async () => {
+    const req = mockRequest({
+      authorization: 'Bearer expired-token',
+    }) as Request;
+    const res = mockResponse() as Response;
+
+    // Mock Supabase auth.getUser to return null user without error
+    (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
+      data: { user: null },
+      error: null,
+    });
+
+    await authMiddleware(req, res, mockNext);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid token' });
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+  
+  it('attaches complete user object to request', async () => {
+    const mockUser = { 
+      id: 'user-id', 
+      email: 'test@example.com',
+      app_metadata: { provider: 'email' },
+      user_metadata: { name: 'Test User' },
+      aud: 'authenticated',
+      created_at: '2023-01-01T00:00:00Z'
+    };
+    const req = mockRequest({ authorization: 'Bearer valid-token' }) as Request;
+    const res = mockResponse() as Response;
+
+    // Mock Supabase auth.getUser to return user with complete data
+    (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
+      data: { user: mockUser },
+      error: null,
+    });
+
+    await authMiddleware(req, res, mockNext);
+
+    // Check that the full user object is attached
+    expect(req.user).toEqual(mockUser);
+    expect(mockNext).toHaveBeenCalled();
+  });
+  
+  it('preserves original request data while adding user', async () => {
+    const mockUser = { id: 'user-id', email: 'test@example.com' };
+    const req = {
+      headers: { authorization: 'Bearer valid-token' },
+      body: { data: 'test-data' },
+      params: { id: '123' },
+      query: { filter: 'active' }
+    } as unknown as Request;
+    const res = mockResponse() as Response;
+
+    // Mock Supabase auth.getUser to return user
+    (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
+      data: { user: mockUser },
+      error: null,
+    });
+
+    await authMiddleware(req, res, mockNext);
+
+    // Check that original request data is preserved
+    expect(req.body).toEqual({ data: 'test-data' });
+    expect(req.params).toEqual({ id: '123' });
+    expect(req.query).toEqual({ filter: 'active' });
+    // And user is added
+    expect(req.user).toEqual(mockUser);
+    expect(mockNext).toHaveBeenCalled();
+  });
 });

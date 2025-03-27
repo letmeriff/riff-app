@@ -25,10 +25,12 @@
   Notes: Created ChatUI.test.tsx with tests covering empty state rendering, chat interface loading, owner controls display, and typing status indicators. Implemented proper testing patterns for asynchronous component rendering and handling React context dependencies. Resolved several testing challenges including scrollIntoView browser API mocking and React act() wrapper implementation.
 - [x] Phase 2: Week 3 - Step 3: UI Components
   Notes: Implemented tests for multiple UI components including NodeSettingsModal (tabs, form validation, saving), SettingsModal (API key management, error handling), Login form (authentication, validation), and LibrarySidebar (filtering, sorting, drag-and-drop). Some test failures remain to be fixed, particularly around React act() warnings.
+- [x] Phase 2: Week 4 - Step 1: User Service
+  Notes: Implemented comprehensive tests for authentication flows, user profile management, and permissions. Created tests for AuthContext (frontend), auth middleware (backend), modelService (user API key management), and modelRoutes (API endpoints). Added auth utility functions and tests for token management. All tests pass successfully.
 
 ## In Progress
-- Phase 2: Week 4 - Step 1: User Service
-  Progress: Planning tests for authentication flows, user profile management, and permissions.
+- Phase 2: Week 4 - Step 2: Canvas Service
+  Progress: Planning tests for canvas operations, including creation, deletion, sharing, and permissions.
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
@@ -48,11 +50,12 @@
    - Fix React act() warnings in Login.test.tsx and other component tests
    - Fix validation issues in LibrarySidebar.test.tsx
 
-2. **Proceed to User Service Testing (Phase 2: Week 4 - Step 1):**
-   - Test user authentication flows
-   - Test profile management functions
-   - Test permissions and authorization
+2. **Proceed to Canvas Service Testing (Phase 2: Week 4 - Step 2):**
+   - Test canvas creation and deletion operations
+   - Test node and edge operations
+   - Test canvas sharing and permissions
+   - Test canvas metadata management
 
-3. **Plan for Canvas Service Testing (Phase 2: Week 4 - Step 2):**
-   - Develop test strategy for canvas operations
-   - Create test fixtures for canvas data 
+3. **Plan for WebSocket Service Testing (Phase 2: Week 4 - Step 3):**
+   - Develop test strategy for WebSocket connection handling
+   - Create test fixtures for WebSocket messages 

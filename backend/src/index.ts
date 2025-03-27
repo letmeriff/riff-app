@@ -17,11 +17,6 @@ import presenceRoutes from './routes/presenceRoutes';
 import attachmentRoutes from './routes/attachmentRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
-import { 
-  incrementVectorClock, 
-  mergeVectorClocks, 
-  generateLamportTimestamp 
-} from './legacy/vectorClock';
 import { startYjsWebSocketServer } from './services/yjsWebSocketServer';
 import { updateNodePositionYjs, getYjsNodeId, getNodePositionYjs } from './services/yjsNodeService';
 // These route modules don't exist but were referenced
@@ -380,82 +375,29 @@ io.on('connection', (socket: Socket) => {
   });
 
   // Handle node position update
-  socket.on('node-position-update', async ({ nodeId, position, vectorClock, lamportTimestamp, useYjs = false }) => {
+  socket.on('node-position-update', async ({ nodeId, position }) => {
     try {
       const userId = socket.data.user.id;
       console.log(`User ${userId} updated position of node ${nodeId}:`, position);
       
-      // Use Yjs implementation if specified or if feature flag is enabled
-      if (useYjs || process.env.USE_YJS_POSITIONS === 'true') {
-        // Use Yjs for position updates
-        const documentId = `canvas-${nodeId}`; // Use node ID as part of document ID for simplicity
-        const yjsNodeId = getYjsNodeId(nodeId);
-        
-        const result = await updateNodePositionYjs(documentId, yjsNodeId, position, userId);
-        
-        if (result.success) {
-          console.log(`Successfully updated position for node ${nodeId} using Yjs`);
-          
-          // Broadcast the position update to all users
-          io.emit('node-position-update', { 
-            nodeId, 
-            position,
-            implementation: 'yjs',
-            ...result.data
-          });
-        } else {
-          console.error(`Failed to update position for node ${nodeId} using Yjs`);
-          // Fall back to traditional approach if Yjs fails
-          handleLegacyPositionUpdate();
-        }
-      } else {
-        // Use traditional CRDT approach for backward compatibility
-        handleLegacyPositionUpdate();
-      }
+      // Yjs implementation is now the only supported method
+      const documentId = `canvas-${nodeId}`; // Use node ID as part of document ID for simplicity
+      const yjsNodeId = getYjsNodeId(nodeId);
       
-      /**
-       * @deprecated This function uses the legacy CRDT implementation for position updates.
-       * It is maintained for backward compatibility and will be removed in future releases.
-       * Use the Yjs implementation instead.
-       */
-      async function handleLegacyPositionUpdate() {
-        console.warn('Using deprecated CRDT position update - Yjs should be used instead');
+      const result = await updateNodePositionYjs(documentId, yjsNodeId, position, userId);
+      
+      if (result.success) {
+        console.log(`Successfully updated position for node ${nodeId} using Yjs`);
         
-        // Get or initialize vector clock
-        const userVectorClock = vectorClock || {};
-        
-        // Increment vector clock for this user if not already done by client
-        const updatedVectorClock = vectorClock ? vectorClock : incrementVectorClock(userVectorClock, userId);
-        
-        // Generate Lamport timestamp if not provided
-        const updatedLamportTimestamp = lamportTimestamp || generateLamportTimestamp();
-        
-        // Save the position using the CRDT function
-        const { data, error } = await supabase.rpc('update_node_position_crdt', {
-          node_id: parseInt(nodeId),
-          pos_x: position.x,
-          pos_y: position.y,
-          vector_clock: updatedVectorClock,
-          lamport_timestamp: updatedLamportTimestamp,
-          user_id: userId
-        });
-        
-        if (error) {
-          console.error('Error updating node position in database:', error);
-          return;
-        }
-        
-        console.log(`Successfully updated position for node ${nodeId} in database using CRDT:`, data);
-        
-        // Broadcast the position update along with vector clock to all users
+        // Broadcast the position update to all users
         io.emit('node-position-update', { 
           nodeId, 
           position,
-          vectorClock: updatedVectorClock,
-          lamportTimestamp: updatedLamportTimestamp,
-          applied: data.applied,
-          implementation: 'crdt'
+          implementation: 'yjs',
+          ...result.data
         });
+      } else {
+        console.error(`Failed to update position for node ${nodeId} using Yjs`);
       }
     } catch (error) {
       console.error('Error handling node position update:', error);
