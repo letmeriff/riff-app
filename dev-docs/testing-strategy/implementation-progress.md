@@ -29,10 +29,10 @@
   Notes: Implemented comprehensive tests for authentication flows, user profile management, and permissions. Created tests for AuthContext (frontend), auth middleware (backend), modelService (user API key management), and modelRoutes (API endpoints). Added auth utility functions and tests for token management. All tests pass successfully.
 - [x] Phase 2: Week 4 - Step 2: Canvas Service
   Notes: Implemented comprehensive tests for canvas functionality, including canvasService.test.ts for testing node position operations via Yjs, canvasOperations.test.ts for testing CRUD operations, and canvasPermissions.test.ts for testing sharing and permission management. Improved Yjs mocking approach for reliable testing. Commit: 2101b65
+- [x] Phase 2: Week 4 - Step 3: WebSocket Service
+  Notes: Added comprehensive tests for WebSocket service covering connection handling, message broadcasting, room management, and error handling. Implemented tests for transfer-ownership, typing events, node position updates, and disconnect events. Added edge case handling and error recovery tests for robustness. All tests pass successfully with proper mocking of Socket.IO and related dependencies.
 
 ## In Progress
-- Phase 2: Week 4 - Step 3: WebSocket Service
-  Progress: Planning tests for WebSocket server, including connection handling, room management, message broadcasting, and error handling.
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
@@ -52,12 +52,12 @@
    - Fix React act() warnings in Login.test.tsx and other component tests
    - Fix validation issues in LibrarySidebar.test.tsx
 
-2. **Proceed to WebSocket Service Testing (Phase 2: Week 4 - Step 3):**
-   - Test connection handling 
-   - Test message broadcasting
-   - Test room management
+2. **Proceed to REST API Testing (Phase 2: Week 5 - Step 1):**
+   - Test all endpoint responses
    - Test error handling
+   - Test authentication and authorization
+   - Test data validation
 
-3. **Plan for API Integration Testing (Phase 2: Week 5 - Step 1):**
-   - Prepare for testing REST API endpoints
-   - Set up test environment for API testing 
+3. **Plan for WebSocket API Testing (Phase 2: Week 5 - Step 2):**
+   - Prepare for testing WebSocket API communication
+   - Set up test environment for socket testing 
