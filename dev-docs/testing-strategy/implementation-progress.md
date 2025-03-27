@@ -24,4 +24,25 @@
 
 ## Issues
 
-## Next Steps 
+## Next Steps
+1. **Fix failing tests:**
+   - Fix `api.test.ts` tests that have issues with axios mocking
+   - Fix `networkAdapter.test.ts` to adapt to the Yjs-only implementation
+   - Fix `yjsService.test.ts` to properly mock Yjs dependencies
+
+2. **Improve test coverage for utilities:**
+   - Increase coverage for `yjsSyncProtocol.ts` beyond current 29.16%
+   - Add more comprehensive tests for `yjsService.ts` (currently 34.8%)
+
+3. **Add tests for core components:**
+   - Add tests for shared UI components
+   - Create tests for `SocketContext.tsx` 
+   - Create basic tests for `App.tsx`
+
+4. **Add tests for business logic:**
+   - Create tests for `nodeService.ts` (currently 0% coverage)
+   - Create focused tests for key functionality in `CanvasPage.tsx`
+
+5. **Update test documentation:**
+   - Document patterns for testing React components with Yjs integration
+   - Create examples of mocking complex dependencies like Yjs and WebsocketProvider 
