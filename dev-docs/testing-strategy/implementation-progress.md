@@ -19,14 +19,16 @@
   Notes: Created comprehensive documentation for testing patterns, examples, and contribution guidelines. Updated README with testing information. Documentation covers Yjs mocking, Supabase integration, WebSocket testing, and general testing conventions. Commit: 3c4f727
 - [x] Phase 2: Week 3 - Step 1: Canvas Components (Partial - Component Level)
   Notes: Successfully created tests for ChatNode component with 100% pass rate. Tests cover rendering of node content, interactions (double-click to open settings), and various node states including minimal node data. Also implemented tests for user presence indicators and typing status.
+- [x] Phase 2: Week 3 - Step 1: Canvas Components (Collaboration Components)
+  Notes: Created comprehensive tests for collaboration-related components including CollaborationStatus, YjsNodeControls, and UserCursors. Tests cover various connection states (connected, connecting, offline), user presence rendering, and interactive behavior. All tests pass successfully with proper YjsContext mocking.
 
 ## In Progress
-- Phase 2: Week 3 - Step 1: Canvas Components (Remaining Integration Tests)
-  Progress: Created a test structure for CanvasPage.tsx but facing significant integration challenges:
-  - CSS module import handling in Jest
-  - Complex context interactions with YJS, Sockets, and Auth
-  - Axios imports and module mocking
-  - ReactFlow component mocking
+- Phase 2: Week 3 - Step 2: Chat Components
+  Progress: Starting implementation of tests for chat-related components:
+  - ChatUI component testing
+  - Message display and formatting
+  - Input handling and message submission
+  - Message history loading
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
@@ -42,18 +44,18 @@
    - Need to improve test isolation to avoid state leakage between tests.
 
 ## Next Steps
-1. **Continue Canvas Component Testing:**
-   - Test more individual components used in the canvas (e.g., FloatingMenu, YjsNodeControls, CollaborationStatus)
-   - Break down the CanvasPage tests into smaller, more isolated tests for specific functionality
-   - Create a specialized test setup for ReactFlow components with proper mocks
-   - Consider using React Testing Library's `renderHook` for testing the hooks that power the canvas functionality
+1. **Complete Chat Components Testing:**
+   - Test message display and formatting
+   - Test input handling and submission
+   - Test message history loading
+   - Test AI interaction components
 
 2. **Fix remaining frontend tests:**
    - Fix `networkAdapter.test.ts` by improving the WebsocketProvider mock
    - Fix `api.test.ts` with proper axios mocking patterns
 
-3. **Proceed to Chat Components:**
-   - Test message display and formatting
-   - Test input handling and submission
-   - Test message history loading
-   - Test AI interaction components 
+3. **Proceed to UI Components:**
+   - Test modals and dialogs
+   - Test forms and input validation
+   - Test navigation and sidebar components
+   - Test error states and notifications 
