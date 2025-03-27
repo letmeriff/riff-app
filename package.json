@@ -11,6 +11,12 @@
     "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm run start\"",
     "build": "cd frontend && npm run build && cd ../backend && npm run build",
     "test": "cd frontend && npm run test && cd ../backend && npm run test",
+    "test:coverage": "npm run test:frontend:coverage && npm run test:backend:coverage",
+    "test:frontend:coverage": "npm run test:coverage --workspace=frontend",
+    "test:backend:coverage": "npm run test:coverage --workspace=backend",
+    "test:integration": "npm run test:integration --workspace=backend",
+    "test:e2e": "npx playwright test",
+    "generate-coverage-report": "node scripts/generate-coverage-report.js",
     "start:frontend": "npm run start --workspace=frontend",
     "start:backend": "npm run start --workspace=backend",
     "build:frontend": "npm run build --workspace=frontend",
@@ -35,6 +41,7 @@
     ]
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
     "@types/lodash": "^4.17.16",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
@@ -45,7 +52,13 @@
     "eslint-plugin-react": "^7.34.0",
     "eslint-plugin-testing-library": "^5.11.1",
     "husky": "^9.0.11",
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-instrument": "^6.0.3",
+    "istanbul-lib-report": "^3.0.1",
+    "istanbul-merge": "^2.0.0",
+    "istanbul-reports": "^3.1.6",
     "lint-staged": "^15.2.2",
+    "nyc": "^15.1.0",
     "prettier": "^3.2.5"
   }
 }

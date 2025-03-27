@@ -123,4 +123,24 @@ You can also trigger the workflow manually:
 After a deployment, the workflow creates:
 - A comment on the related pull request (if applicable)
 - Audit reports for accessibility and performance
-- Deployment links for easy access to the deployed application 
+- Deployment links for easy access to the deployed application
+
+## GitHub Action Workflows
+
+This directory contains the GitHub Action workflows for the Riff application:
+
+- `ci.yml`: CI pipeline for testing and deploying to the staging environment
+- `ci-cd.yml`: Comprehensive CI/CD pipeline with multi-environment support
+- `deploy-production.yml`: Production deployment triggered by releases
+- `tests.yml`: Dedicated testing workflow with detailed coverage reporting
+
+### Testing Workflow
+
+The `tests.yml` workflow is a dedicated pipeline for running tests and generating coverage reports:
+
+- **Unit Tests**: Run unit tests for both frontend and backend with coverage reporting
+- **Integration Tests**: Run integration tests with a Postgres database
+- **End-to-End Tests**: Run Playwright tests against the full application
+- **Coverage Report**: Generate combined coverage reports and check against thresholds
+
+The testing workflow can be triggered manually via the GitHub Actions UI or automatically on push/PR to main and develop branches 
