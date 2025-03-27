@@ -14,7 +14,7 @@
 - [x] Phase 1: Week 2 - Step 1: Frontend Core (Partial)
   Notes: Created tests for utility functions and started work on shared components. Improved mock implementations for Yjs-related tests. Work on state management test coverage is in progress. Some failing tests remain to be fixed. Commit: e9138e1
 - [x] Phase 1: Week 2 - Step 2: Backend Core
-  Notes: Fixed failing tests for auth middleware, Yjs services, and WebSocket server by improving mock implementations. Enhanced test coverage for backend services with proper Supabase client mocking and YJS document handling. Commit: TBD
+  Notes: Fixed failing tests for auth middleware, Yjs services, and WebSocket server by improving mock implementations. Enhanced test coverage for backend services with proper Supabase client mocking and YJS document handling. Commit: d4b4b35
 
 ## In Progress
 - Phase 1: Week 2 - Step 3: Documentation
