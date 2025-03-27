@@ -35,5 +35,4 @@ yarn-error.log*
 Thumbs.db 
 
 # Development Docs
-/dev-docs
 /backend/sql/
