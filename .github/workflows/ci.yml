@@ -59,11 +59,11 @@ jobs:
         run: |
           # Ensure node_modules/.bin is in PATH
           export PATH=$PATH:$(pwd)/node_modules/.bin
-          CI=true npm test -- --watchAll=false --passWithNoTests --transformIgnorePatterns "node_modules/(?!(@testing-library)/)/"
+          npm run test:ci
 
       - name: Run backend tests
         working-directory: backend
-        run: npm test --passWithNoTests
+        run: npm run test:ci
 
   deploy-staging:
     needs: lint-and-test
