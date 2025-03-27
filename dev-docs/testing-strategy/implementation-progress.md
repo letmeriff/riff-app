@@ -30,7 +30,7 @@
 
 ## In Progress
 - Phase 2: Week 4 - Step 2: Canvas Service
-  Progress: Planning tests for canvas operations, including creation, deletion, sharing, and permissions.
+  Progress: Implementing tests for canvas operations, including creation, deletion, sharing, and permissions. Creating canvasService.test.ts to test canvas CRUD operations and related functionality.
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
