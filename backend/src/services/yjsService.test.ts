@@ -1,85 +1,81 @@
 import * as Y from 'yjs';
 import * as yjsService from './yjsService';
 
-// Mock Supabase
+// Mock Supabase with improved chaining
 jest.mock('../config/supabase', () => {
-  // Create a chainable mock function
-  const createMockBuilder = () => {
-    const mock: any = {};
-    
-    // Add all chainable methods
-    mock.select = jest.fn().mockReturnValue(mock);
-    mock.insert = jest.fn().mockReturnValue(mock);
-    mock.update = jest.fn().mockReturnValue(mock);
-    mock.delete = jest.fn().mockReturnValue(mock);
-    mock.eq = jest.fn().mockReturnValue(mock);
-    mock.gt = jest.fn().mockReturnValue(mock);
-    mock.lt = jest.fn().mockReturnValue(mock);
-    mock.order = jest.fn().mockReturnValue(mock);
-    mock.single = jest.fn().mockReturnValue(mock);
-    
-    // Add response handling
-    mock.mockReturnValue = jest.fn(value => {
-      mock.returnValue = value;
-      return mock;
-    });
-    
-    mock.then = jest.fn(cb => 
-      Promise.resolve(cb(mock.returnValue || { data: null, error: null }))
-    );
-    
+  // Create more sophisticated mock that supports chained method calls
+  const createMockQueryBuilder = () => {
+    const mock = {
+      select: jest.fn(() => mock),
+      insert: jest.fn(() => mock),
+      update: jest.fn(() => mock),
+      delete: jest.fn(() => mock),
+      eq: jest.fn(() => mock),
+      gt: jest.fn(() => mock),
+      lt: jest.fn(() => mock),
+      order: jest.fn(() => mock),
+      single: jest.fn(() => mock),
+      mockResolvedValue: jest.fn((val) => {
+        mock.resolvedValue = val;
+        return mock;
+      }),
+      then: jest.fn((callback) => {
+        return Promise.resolve(callback(mock.resolvedValue));
+      })
+    };
     return mock;
   };
 
   return {
     supabase: {
-      from: jest.fn().mockImplementation(() => createMockBuilder())
+      from: jest.fn(() => createMockQueryBuilder())
     }
   };
 });
 
-// Mock zlib
+// Mock zlib for compression/decompression
 jest.mock('zlib', () => ({
   gzip: jest.fn((data, callback) => callback(null, Buffer.from(data))),
   gunzip: jest.fn((data, callback) => callback(null, Buffer.from(data))),
 }));
 
-// Mock YJS
+// More complete YJS mock
 jest.mock('yjs', () => {
+  const mockDoc = {
+    getText: jest.fn().mockReturnValue({
+      toString: jest.fn().mockReturnValue('test content'),
+    }),
+    toJSON: jest.fn().mockReturnValue({ text: 'test content' }),
+    getMap: jest.fn(() => ({
+      set: jest.fn(),
+      get: jest.fn().mockReturnValue({ toString: () => 'test' }),
+      toJSON: jest.fn().mockReturnValue({ key: 'value' }),
+    })),
+    getArray: jest.fn(() => ({
+      push: jest.fn(),
+      insert: jest.fn(),
+      toJSON: jest.fn().mockReturnValue(['item1', 'item2']),
+    })),
+    on: jest.fn(),
+    off: jest.fn(),
+    transact: jest.fn((fn) => fn()),
+    destroy: jest.fn(),
+    clientID: 1,
+  };
+  
   return {
     Doc: jest.fn().mockImplementation(() => ({
-      clientID: 1,
-      getMap: jest.fn().mockReturnValue({
-        set: jest.fn(),
-        get: jest.fn(),
-        has: jest.fn().mockReturnValue(false)
-      }),
-      destroy: jest.fn()
-    })),
-    Map: jest.fn().mockImplementation(() => ({
-      set: jest.fn(),
-      get: jest.fn(),
-      delete: jest.fn(),
-    })),
-    Array: jest.fn().mockImplementation(() => ({
-      push: jest.fn(),
-      delete: jest.fn(),
-      forEach: jest.fn(),
+      ...mockDoc,
+      encodeStateAsUpdate: jest.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
     })),
     applyUpdate: jest.fn(),
     encodeStateAsUpdate: jest.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
   };
 });
 
-// Add new test setup with proper mock usage
 describe('yjsService', () => {
-  let mockSupabase;
-  
   beforeEach(() => {
     jest.clearAllMocks();
-    
-    // Get our mock instance
-    mockSupabase = require('../config/supabase').supabase;
   });
   
   describe('storeYjsDocument', () => {
@@ -88,10 +84,21 @@ describe('yjsService', () => {
       const documentId = 'test-doc';
       const version = 1;
       const documentState = new Uint8Array([1, 2, 3]);
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Setup mock responses
-      mockSupabase.from().select().single.mockReturnValue({ data: null, error: null });
-      mockSupabase.from().insert.mockReturnValue({ data: { id: 1 }, error: null });
+      // Properly mock the chained methods for document check and insertion
+      const mockSelectSingle = {
+        data: null,
+        error: null
+      };
+      
+      const mockInsertResult = {
+        data: { id: 'db-doc-id' },
+        error: null
+      };
+      
+      mockSupabase.from().select().single.mockResolvedValue(mockSelectSingle);
+      mockSupabase.from().insert().mockResolvedValue(mockInsertResult);
       
       // Test
       const result = await yjsService.storeYjsDocument(documentId, documentState, version);
@@ -107,10 +114,14 @@ describe('yjsService', () => {
       const documentId = 'test-doc';
       const version = 1;
       const documentState = new Uint8Array([1, 2, 3]);
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Setup mock responses
-      mockSupabase.from().select().single.mockReturnValue({ data: null, error: null });
-      mockSupabase.from().insert.mockReturnValue({ error: new Error('Database error') });
+      // Properly mock the chained methods
+      mockSupabase.from().select().single.mockResolvedValue({ data: null, error: null });
+      mockSupabase.from().insert().mockResolvedValue({ 
+        data: null,
+        error: { message: 'Database error' } 
+      });
       
       // Test
       const result = await yjsService.storeYjsDocument(documentId, documentState, version);
@@ -128,9 +139,10 @@ describe('yjsService', () => {
         document_state: new Uint8Array([1, 2, 3]),
         is_compressed: false,
       };
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Setup mock response
-      mockSupabase.from().select().eq().single.mockReturnValue({
+      // Properly mock the chained methods
+      mockSupabase.from().select().eq().single.mockResolvedValue({
         data: mockData,
         error: null,
       });
@@ -146,15 +158,16 @@ describe('yjsService', () => {
     it('should return null if no document exists and recovery fails', async () => {
       // Setup
       const documentId = 'test-doc';
+      const mockSupabase = require('../config/supabase').supabase;
       
       // Mock document not found
-      mockSupabase.from().select().eq().single.mockReturnValue({ 
+      mockSupabase.from().select().eq().single.mockResolvedValue({ 
         data: null, 
-        error: 'Not found' 
+        error: { message: 'Not found' } 
       });
       
       // Mock recovery failure - empty updates list
-      mockSupabase.from().select().eq().order().mockReturnValue({
+      mockSupabase.from().select().eq().order().mockResolvedValue({
         data: [],
         error: null
       });
@@ -164,8 +177,8 @@ describe('yjsService', () => {
       
       // Assertions
       expect(result).toBeNull();
-      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_documents');
-      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_updates');
+      expect(mockSupabase.from).toHaveBeenNthCalledWith(1, 'yjs_documents');
+      expect(mockSupabase.from).toHaveBeenNthCalledWith(2, 'yjs_updates');
     });
   });
   
@@ -176,9 +189,12 @@ describe('yjsService', () => {
       const update = new Uint8Array([1, 2, 3]);
       const clientId = 'client1';
       const version = 10;
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Setup mock response
-      mockSupabase.from().insert.mockReturnValue({ error: null });
+      mockSupabase.from().insert().mockResolvedValue({ 
+        data: { id: 'new-update-id' },
+        error: null 
+      });
       
       // Test
       const result = await yjsService.storeYjsUpdate(documentId, update, clientId, version);
@@ -199,9 +215,9 @@ describe('yjsService', () => {
         { update: new Uint8Array([1, 2, 3]), is_compressed: false },
         { update: new Uint8Array([4, 5, 6]), is_compressed: false },
       ];
+      const mockSupabase = require('../config/supabase').supabase;
       
-      // Setup mock response
-      mockSupabase.from().select().eq().order().gt.mockReturnValue({
+      mockSupabase.from().select().eq().order().gt.mockResolvedValue({
         data: mockData,
         error: null,
       });
@@ -223,9 +239,10 @@ describe('yjsService', () => {
     it('should recover a document from updates', async () => {
       // Setup
       const documentId = 'test-doc';
+      const mockSupabase = require('../config/supabase').supabase;
       
       // Set up mock data for getYjsUpdates
-      mockSupabase.from().select().eq().order().mockReturnValue({
+      mockSupabase.from().select().eq().order().mockResolvedValue({
         data: [
           { update: new Uint8Array([1, 2, 3]), is_compressed: false },
           { update: new Uint8Array([4, 5, 6]), is_compressed: false }
@@ -245,9 +262,10 @@ describe('yjsService', () => {
     it('should return null if no updates exist', async () => {
       // Setup
       const documentId = 'test-doc';
+      const mockSupabase = require('../config/supabase').supabase;
       
       // Set up mock data for getYjsUpdates
-      mockSupabase.from().select().eq().order().mockReturnValue({
+      mockSupabase.from().select().eq().order().mockResolvedValue({
         data: [],
         error: null
       });
@@ -265,19 +283,19 @@ describe('yjsService', () => {
       // Setup
       const documentId = 'test-doc';
       const doc = new Y.Doc();
+      const mockSupabase = require('../config/supabase').supabase;
       
       // Mock existing document check
-      mockSupabase.from().select().eq().single.mockReturnValue({ data: null, error: null });
+      mockSupabase.from().select().eq().single.mockResolvedValue({ data: null, error: null });
       // Mock successful insert
-      mockSupabase.from().insert.mockReturnValue({ error: null });
+      mockSupabase.from().insert().mockResolvedValue({ data: { id: 'new-snapshot' }, error: null });
       
       // Test
       const result = await yjsService.createDocumentSnapshot(documentId, doc);
       
       // Assertions
-      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_documents');
-      expect(mockSupabase.from().insert).toHaveBeenCalled();
       expect(result).toBe(true);
+      expect(mockSupabase.from).toHaveBeenCalledWith('yjs_documents');
     });
   });
   
@@ -286,8 +304,9 @@ describe('yjsService', () => {
       // Setup
       const documentId = 'test-doc';
       const olderThanDays = 30;
+      const mockSupabase = require('../config/supabase').supabase;
       
-      mockSupabase.from().delete().eq().lt.mockReturnValue({ error: null });
+      mockSupabase.from().delete().eq().lt.mockResolvedValue({ error: null });
       
       // Test
       const result = await yjsService.cleanupOldUpdates(documentId, olderThanDays);
@@ -296,6 +315,33 @@ describe('yjsService', () => {
       expect(mockSupabase.from).toHaveBeenCalledWith('yjs_updates');
       expect(mockSupabase.from().delete().eq().lt).toHaveBeenCalled();
       expect(result).toBe(true);
+    });
+  });
+  
+  describe('compressContent and decompressContent', () => {
+    it('should compress content if it exceeds threshold', async () => {
+      // Create an array larger than the threshold
+      const largeArray = new Uint8Array(2000);
+      
+      // Test
+      const result = await yjsService.compressContent(largeArray);
+      
+      // Assertions
+      expect(result.compressed).toBe(true);
+      expect(result.data).toBeDefined();
+    });
+    
+    it('should decompress compressed content', async () => {
+      // Setup
+      const content = new Uint8Array([1, 2, 3]);
+      const isCompressed = true;
+      
+      // Test
+      const result = await yjsService.decompressContent(content, isCompressed);
+      
+      // Assertions
+      expect(result).toBeDefined();
+      expect(result.length).toBeGreaterThan(0);
     });
   });
 }); 

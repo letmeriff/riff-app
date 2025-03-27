@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { authMiddleware } from './auth';
 import { supabase } from '../config/supabase';
 
-// Mock Supabase client
+// Mock Supabase client with proper typing
 jest.mock('../config/supabase', () => {
   const mockGetUser = jest.fn();
   return {
@@ -54,10 +54,10 @@ describe('authMiddleware', () => {
     }) as Request;
     const res = mockResponse() as Response;
 
-    // Use the imported mock instance directly
+    // Mock Supabase auth.getUser to return error for invalid token
     (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
       data: { user: null },
-      error: 'Invalid token',
+      error: { message: 'Invalid token' },
     });
 
     await authMiddleware(req, res, mockNext);
@@ -72,7 +72,7 @@ describe('authMiddleware', () => {
     const req = mockRequest({ authorization: 'Bearer valid-token' }) as Request;
     const res = mockResponse() as Response;
 
-    // Use the imported mock instance directly
+    // Mock Supabase auth.getUser to return user for valid token
     (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
       data: { user: mockUser },
       error: null,
@@ -88,7 +88,7 @@ describe('authMiddleware', () => {
     const req = mockRequest({ authorization: 'Bearer token' }) as Request;
     const res = mockResponse() as Response;
 
-    // Use the imported mock instance directly
+    // Mock Supabase auth.getUser to throw an error
     (supabase.auth.getUser as jest.Mock).mockRejectedValueOnce(
       new Error('Network error')
     );
