@@ -22,12 +22,24 @@ This document tracks the progress of implementing the CanvasPage component refac
   - Documented critical user flows and edge cases in user-flows.md
   - Notes: Established solid testing foundation for the refactoring process
 
+- [x] Phase 1: Preparation and Testing - Step 2: Extract Types and Interfaces
+  - Created dedicated types file (frontend/src/types/canvas.ts)
+  - Defined interfaces for all components and hooks
+  - Documented prop types and callback signatures
+  - Notes: Established clear contract for components and hooks to follow
+
+- [x] Phase 1: Preparation and Testing - Step 3: Set Up Project Structure
+  - Created directory structure for new components
+  - Created directory structure for custom hooks
+  - Created placeholder files for main components and hooks
+  - Notes: Set up foundation for implementing the refactored components
+
 ## In Progress
 
-- [ ] Phase 1: Preparation and Testing - Step 2: Extract Types and Interfaces
-  - Defining interfaces for hooks and components
-  - Documenting prop types and callback signatures
-  - Creating dedicated type file for canvas-related types
+- [ ] Phase 2: Custom Hooks Extraction - Step 1: Extract Node Management Hooks
+  - Working on implementing useCanvasNodes hook
+  - Extracting node CRUD operations from CanvasPage
+  - Creating tests for the hook
 
 ## Issues
 
@@ -46,26 +58,35 @@ This document tracks the progress of implementing the CanvasPage component refac
    - Several effects have complex dependencies on state variables
    - Need careful extraction to preserve behavior
 
+4. **Type Definition Challenges:**
+   - ReactFlow type definitions can be complex and sometimes require type assertions
+   - Solution: Created clear type definitions in `frontend/src/types/canvas.ts` to establish consistent interfaces
+   - Using type assertions where necessary to maintain type safety
+
 ## Next Steps
 
-1. Complete extraction of types and interfaces (Current task)
-   - Define clear interfaces for hooks and components
-   - Document prop types and callback signatures
-   - Create dedicated type file for canvas-related types
+1. Implement useCanvasNodes hook (Current task)
+   - Extract node management logic from CanvasPage
+   - Implement node CRUD operations
+   - Ensure proper integration with Yjs
+   - Write tests for the hook
 
-2. Set up project structure (Phase 1, Step 3)
-   - Create folder structure for new components
-   - Set up build and test configurations
-   - Prepare documentation templates
+2. Implement useCanvasEdges hook
+   - Extract edge management logic from CanvasPage
+   - Implement edge CRUD operations
+   - Ensure proper integration with Yjs
+   - Write tests for the hook
 
-3. Begin extracting custom hooks (Phase 2)
-   - Start with useCanvasNodes hook
-   - Implement tests for the hook
-   - Ensure hook properly manages all node-related functionality
+3. Implement useYjsIntegration hook
+   - Extract Yjs integration logic from CanvasPage
+   - Implement real-time collaboration features
+   - Handle offline mode and synchronization
+   - Write tests for the hook
 
 ## Lessons Learned
 
 1. Mocking complex third-party libraries like ReactFlow requires creating behavior-focused mocks rather than implementation-focused mocks
 2. Testing real-time collaboration features benefits greatly from dedicated testing utilities that can simulate network events and multi-user interactions
 3. Comprehensive test coverage before refactoring is essential to validate that the refactored code maintains the same behavior
-4. Documenting user flows and edge cases helps identify critical functionality that must be preserved during refactoring 
+4. Documenting user flows and edge cases helps identify critical functionality that must be preserved during refactoring
+5. Strong type definitions help enforce consistency across components and make refactoring safer 
