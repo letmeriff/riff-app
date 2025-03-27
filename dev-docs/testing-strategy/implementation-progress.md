@@ -23,14 +23,12 @@
   Notes: Created comprehensive tests for collaboration-related components including CollaborationStatus, YjsNodeControls, and UserCursors. Tests cover various connection states (connected, connecting, offline), user presence rendering, and interactive behavior. All tests pass successfully with proper YjsContext mocking.
 - [x] Phase 2: Week 3 - Step 2: Chat Components
   Notes: Created ChatUI.test.tsx with tests covering empty state rendering, chat interface loading, owner controls display, and typing status indicators. Implemented proper testing patterns for asynchronous component rendering and handling React context dependencies. Resolved several testing challenges including scrollIntoView browser API mocking and React act() wrapper implementation.
+- [x] Phase 2: Week 3 - Step 3: UI Components
+  Notes: Implemented tests for multiple UI components including NodeSettingsModal (tabs, form validation, saving), SettingsModal (API key management, error handling), Login form (authentication, validation), and LibrarySidebar (filtering, sorting, drag-and-drop). Some test failures remain to be fixed, particularly around React act() warnings.
 
 ## In Progress
-- Phase 2: Week 3 - Step 3: UI Components
-  Progress: Starting implementation of tests for UI components:
-  - Modals and dialogs
-  - Forms and input validation
-  - Navigation components
-  - Error state notifications
+- Phase 2: Week 4 - Step 1: User Service
+  Progress: Planning tests for authentication flows, user profile management, and permissions.
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
@@ -40,21 +38,21 @@
 
 2. **Remaining Frontend failing tests:**
    - `api.test.ts`: Problems with axios mocking in API utility tests still need to be addressed.
+   - React act() warnings in UI component tests need to be fixed by properly wrapping state updates.
 
 3. **Yjs integration issues:**
    - Need to improve test isolation to avoid state leakage between tests.
 
 ## Next Steps
-1. **Fix remaining API utility tests:**
-   - Fix `api.test.ts` with proper axios mocking patterns
+1. **Fix remaining frontend tests:**
+   - Fix React act() warnings in Login.test.tsx and other component tests
+   - Fix validation issues in LibrarySidebar.test.tsx
 
-2. **Proceed to UI Components (Phase 2: Week 3 - Step 3):**
-   - Test modals and dialogs
-   - Test forms and input validation
-   - Test navigation and sidebar components
-   - Test error states and notifications 
+2. **Proceed to User Service Testing (Phase 2: Week 4 - Step 1):**
+   - Test user authentication flows
+   - Test profile management functions
+   - Test permissions and authorization
 
-3. **Plan for Backend Service Testing (Phase 2: Week 4):**
-   - Prepare test cases for User Service
-   - Develop testing strategy for Canvas Service
-   - Design tests for WebSocket Service 
+3. **Plan for Canvas Service Testing (Phase 2: Week 4 - Step 2):**
+   - Develop test strategy for canvas operations
+   - Create test fixtures for canvas data 
