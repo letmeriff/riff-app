@@ -12,13 +12,13 @@
 
 ## In Progress
 - Phase 1: Week 2 - Step 1: Frontend Core
-  Working on writing tests for utility functions, shared components, state management logic, and basic navigation components.
+  Currently working on writing tests for utility functions. Will then proceed with shared components, state management logic, and navigation components.
   
-  Made the following adjustments after CRDT code cleanup:
-  - Removed `frontend/src/utils/vectorClock.test.ts` since the CRDT implementation was removed
-  - Updated `networkAdapter.test.ts` to reflect that only Yjs implementation is used now
-  - Added `yjsPositionAdapter.test.ts` to test the Yjs position adapter
-  - Added `yjsSyncProtocol.test.ts` to test the Yjs synchronization protocol that replaced vector clocks
+  Specific focus areas:
+  - Writing tests for remaining utility functions in the `src/utils` directory
+  - Creating tests for shared UI components
+  - Testing state management with context providers 
+  - Ensuring navigation components work correctly
 
 ## Issues
 
