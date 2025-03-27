@@ -1,43 +1,49 @@
 import * as Y from 'yjs';
-import * as yjsService from './yjsService';
+import {
+  getYjsDocument,
+  storeYjsDocument,
+  storeYjsUpdate,
+  getYjsUpdates,
+  cleanupOldUpdates,
+  compressContent,
+  decompressContent,
+  getLatestDocumentVersion,
+  recoverDocumentFromUpdates
+} from './yjsService';
 import { supabase } from '../config/supabase';
 
-// Mock Supabase with improved chaining
-jest.mock('../config/supabase', () => {
-  // Create more sophisticated mock that supports chained method calls
-  const createMockQueryBuilder = () => {
-    const mock = {
-      select: jest.fn(() => mock),
-      insert: jest.fn(() => mock),
-      update: jest.fn(() => mock),
-      delete: jest.fn(() => mock),
-      eq: jest.fn(() => mock),
-      gt: jest.fn(() => mock),
-      lt: jest.fn(() => mock),
-      order: jest.fn(() => mock),
-      single: jest.fn(() => mock),
-      mockResolvedValue: jest.fn((val) => {
-        mock.resolvedValue = val;
-        return mock;
-      }),
-      then: jest.fn((callback) => {
-        return Promise.resolve(callback(mock.resolvedValue));
-      })
-    };
-    return mock;
-  };
+// Mock external dependencies
+jest.mock('../config/supabase', () => ({
+  supabase: {
+    from: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    insert: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
+    delete: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    gt: jest.fn().mockReturnThis(),
+    lt: jest.fn().mockReturnThis(),
+    lte: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    rpc: jest.fn().mockReturnThis(),
+    single: jest.fn(),
+    then: jest.fn()
+  }
+}));
 
-  return {
-    supabase: {
-      from: jest.fn(() => createMockQueryBuilder())
-    }
-  };
-});
-
-// Mock zlib for compression/decompression
+// Mock zlib methods
+const mockGzip = jest.fn();
+const mockGunzip = jest.fn();
 jest.mock('zlib', () => ({
-  gzip: jest.fn((data, callback) => callback(null, Buffer.from(data))),
-  gunzip: jest.fn((data, callback) => callback(null, Buffer.from(data))),
+  gzip: jest.fn(),
+  gunzip: jest.fn()
+}));
+jest.mock('util', () => ({
+  promisify: jest.fn((fn) => {
+    if (fn === require('zlib').gzip) return mockGzip;
+    if (fn === require('zlib').gunzip) return mockGunzip;
+    return jest.fn();
+  })
 }));
 
 // More complete YJS mock
@@ -101,7 +107,7 @@ describe('yjsService', () => {
       (supabase.from as jest.Mock)().insert().mockResolvedValue(mockInsertResult);
       
       // Test
-      const result = await yjsService.storeYjsDocument(documentId, documentState, version);
+      const result = await storeYjsDocument(documentId, documentState, version);
       
       // Assertions
       expect(result).toBe(true);
@@ -123,7 +129,7 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.storeYjsDocument(documentId, documentState, version);
+      const result = await storeYjsDocument(documentId, documentState, version);
       
       // Assertions
       expect(result).toBe(false);
@@ -146,7 +152,7 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.getYjsDocument(documentId);
+      const result = await getYjsDocument(documentId);
       
       // Assertions
       expect(supabase.from).toHaveBeenCalledWith('yjs_documents');
@@ -170,7 +176,7 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.getYjsDocument(documentId);
+      const result = await getYjsDocument(documentId);
       
       // Assertions
       expect(result).toBeNull();
@@ -193,7 +199,7 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.storeYjsUpdate(documentId, update, clientId, version);
+      const result = await storeYjsUpdate(documentId, update, clientId, version);
       
       // Assertions
       expect(result).toBe(true);
@@ -218,7 +224,7 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.getYjsUpdates(documentId, fromVersion);
+      const result = await getYjsUpdates(documentId, fromVersion);
       
       // Assertions
       expect(supabase.from).toHaveBeenCalledWith('yjs_updates');
@@ -245,7 +251,7 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.recoverDocumentFromUpdates(documentId);
+      const result = await recoverDocumentFromUpdates(documentId);
       
       // Assertions
       expect(supabase.from).toHaveBeenCalledWith('yjs_updates');
@@ -264,30 +270,36 @@ describe('yjsService', () => {
       });
       
       // Test
-      const result = await yjsService.recoverDocumentFromUpdates(documentId);
+      const result = await recoverDocumentFromUpdates(documentId);
       
       // Assertions
       expect(result).toBeNull();
     });
   });
   
-  describe('createDocumentSnapshot', () => {
-    it('should create a snapshot of the document', async () => {
-      // Setup
-      const documentId = 'test-doc';
-      const doc = new Y.Doc();
+  describe('getLatestDocumentVersion', () => {
+    it('should return the latest version from document', async () => {
+      const documentId = 'test-doc-1';
       
-      // Mock existing document check
-      (supabase.from as jest.Mock)().select().eq().single.mockResolvedValue({ data: null, error: null });
-      // Mock successful insert
-      (supabase.from as jest.Mock)().insert().mockResolvedValue({ data: { id: 'new-snapshot' }, error: null });
-      
-      // Test
-      const result = await yjsService.createDocumentSnapshot(documentId, doc);
-      
-      // Assertions
-      expect(result).toBe(true);
+      // Mock Supabase query for document version
+      (supabase.from as jest.Mock).mockImplementationOnce(() => ({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { version: 10 },
+          error: null
+        })
+      }));
+
+      const result = await getLatestDocumentVersion(documentId);
+
+      // Verify Supabase was called correctly
       expect(supabase.from).toHaveBeenCalledWith('yjs_documents');
+      expect(supabase.select).toHaveBeenCalledWith('version');
+      expect(supabase.eq).toHaveBeenCalledWith('document_id', documentId);
+
+      // Verify correct version returned
+      expect(result).toBe(10);
     });
   });
   
@@ -300,7 +312,7 @@ describe('yjsService', () => {
       (supabase.from as jest.Mock)().delete().eq().lt.mockResolvedValue({ error: null });
       
       // Test
-      const result = await yjsService.cleanupOldUpdates(documentId, olderThanDays);
+      const result = await cleanupOldUpdates(documentId, olderThanDays);
       
       // Assertions
       expect(supabase.from).toHaveBeenCalledWith('yjs_updates');
@@ -315,7 +327,7 @@ describe('yjsService', () => {
       const largeArray = new Uint8Array(2000);
       
       // Test
-      const result = await yjsService.compressContent(largeArray);
+      const result = await compressContent(largeArray);
       
       // Assertions
       expect(result.compressed).toBe(true);
@@ -328,7 +340,7 @@ describe('yjsService', () => {
       const isCompressed = true;
       
       // Test
-      const result = await yjsService.decompressContent(content, isCompressed);
+      const result = await decompressContent(content, isCompressed);
       
       // Assertions
       expect(result).toBeDefined();
