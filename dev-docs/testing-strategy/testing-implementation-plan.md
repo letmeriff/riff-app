@@ -2,6 +2,15 @@
 
 This document outlines the phased approach for implementing the comprehensive testing strategy for the Riff application.
 
+## Test-Driven Development Integration
+
+Each phase of this implementation plan should follow Test-Driven Development (TDD) principles as outlined in [TDD-riff](./TDD-riff). Specifically:
+
+1. Write tests before implementing functionality
+2. Validate against requirements, not current implementation
+3. Follow the red-green-refactor cycle
+4. Document test rationale with references to requirements
+
 ## Phase 1: Core Testing Infrastructure (Weeks 1-2)
 
 Focus on setting up the testing infrastructure and basic test coverage for critical components.
@@ -14,6 +23,7 @@ Focus on setting up the testing infrastructure and basic test coverage for criti
    - Configure TypeScript integration with ts-jest
    - Set up React Testing Library for component testing
    - Configure code coverage reporting
+   - Establish TDD workflow documentation and examples
 
 2. **Create Testing Utilities**
 
@@ -21,12 +31,14 @@ Focus on setting up the testing infrastructure and basic test coverage for criti
    - Create test data generators and fixtures
    - Set up mocking utilities for external dependencies
    - Create helper functions for common test operations
+   - Develop Yjs testing utilities for collaborative features
 
 3. **Set Up CI/CD Pipeline**
    - Configure GitHub Actions for automated testing
    - Set up test environments for different test types
    - Implement test result reporting
    - Configure code coverage thresholds
+   - Add TDD validation checks for PRs
 
 ### Week 2: Core Unit Tests
 
@@ -36,6 +48,7 @@ Focus on setting up the testing infrastructure and basic test coverage for criti
    - Test basic shared components
    - Create tests for state management logic
    - Test routing and navigation components
+   - Follow TDD approach for all new components
 
 2. **Backend Core**
 
@@ -43,12 +56,14 @@ Focus on setting up the testing infrastructure and basic test coverage for criti
    - Write tests for authentication middleware
    - Test API route validation
    - Create tests for utility functions
+   - Document source of truth for each test case
 
 3. **Documentation**
    - Document testing patterns and conventions
    - Create test examples for reference
    - Update README with testing instructions
    - Create contribution guidelines for tests
+   - Add TDD workflow examples
 
 ## Phase 2: Component and Service Coverage (Weeks 3-5)
 
@@ -276,6 +291,7 @@ Establish processes for ongoing test maintenance and improvement.
    - Identify areas needing more tests
    - Set goals for test coverage
    - Report on testing progress
+   - Monitor TDD adoption metrics
 
 2. **Test Maintenance**
 
@@ -283,6 +299,7 @@ Establish processes for ongoing test maintenance and improvement.
    - Refactor tests for improved reliability
    - Remove obsolete tests
    - Improve test performance
+   - Ensure tests validate requirements, not just implementation
 
 3. **Test Automation**
 
@@ -290,12 +307,14 @@ Establish processes for ongoing test maintenance and improvement.
    - Improve CI/CD integration
    - Automate test data generation
    - Integrate testing into development workflow
+   - Enforce TDD in continuous integration
 
 4. **Documentation**
    - Keep testing documentation updated
    - Document testing patterns and examples
    - Create onboarding materials for testing
    - Document known issues and workarounds
+   - Share successful TDD case studies
 
 ## Resource Allocation
 
@@ -334,6 +353,7 @@ Establish processes for ongoing test maintenance and improvement.
 - **Integration Tests**: All critical paths covered
 - **End-to-End Tests**: All user journeys covered
 - **Accessibility**: WCAG 2.1 AA compliance
+- **TDD Adoption**: 90% of new features developed using TDD
 
 ### Quality Metrics
 
@@ -341,5 +361,6 @@ Establish processes for ongoing test maintenance and improvement.
 - **Test Performance**: Full suite runs < 10 minutes
 - **Bug Prevention**: 90% of bugs caught by tests before release
 - **Regression Prevention**: No regressions in covered functionality
+- **Requirement Validation**: 100% of tests validate against documented requirements
 
 By following this implementation plan, we will establish a comprehensive testing strategy that ensures the reliability, correctness, and performance of the Riff application's collaborative features.

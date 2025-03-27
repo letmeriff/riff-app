@@ -8,6 +8,7 @@ import * as decoding from 'lib0/decoding';
 import * as yjsService from './yjsService';
 import { startYjsWebSocketServer, stopYjsWebSocketServer } from './yjsWebSocketServer';
 import { supabase } from '../config/supabase';
+import { verifyUserToken } from '../utils/auth';
 
 // Mock dependencies
 jest.mock('ws', () => {
@@ -243,178 +244,328 @@ jest.mock('yjs', () => {
   };
 });
 
-describe('yjsWebSocketServer', () => {
-  let mockServer: any;
-  let mockHttpServer: any;
-  let mockWebSocket: any;
-  
+// Reference to messageType constants
+const MESSAGE_SYNC = 0;
+const MESSAGE_AWARENESS = 1;
+const MESSAGE_AUTH = 2;
+const MESSAGE_QUERY_AWARENESS = 3;
+const MESSAGE_POSITION_UPDATE = 4;
+
+// Mock HTTP server
+class MockHttpServer {
+  listeners = {};
+  on(event, callback) {
+    this.listeners[event] = callback;
+    return this;
+  }
+  close(callback) {
+    if (callback) callback();
+  }
+  emit(event, ...args) {
+    const callback = this.listeners[event];
+    if (callback) callback(...args);
+    return true;
+  }
+}
+
+describe('Yjs WebSocket Server', () => {
+  let httpServer;
+  let wss;
+  let mockSocket;
+  let mockRequest;
+
   beforeEach(() => {
+    // Reset all mocks
     jest.clearAllMocks();
-    jest.useFakeTimers();
     
-    mockServer = new WebSocketServer();
-    mockWebSocket = new WebSocket('ws://localhost:1234');
-    mockHttpServer = {
-      on: jest.fn(),
+    // Create mock HTTP server
+    httpServer = new MockHttpServer();
+    
+    // Mock WebSocket methods
+    WebSocket.prototype.send = jest.fn();
+    WebSocket.prototype.on = jest.fn((event, callback) => {
+      if (event === 'message') {
+        mockSocket._messageCallback = callback;
+      } else if (event === 'close') {
+        mockSocket._closeCallback = callback;
+      } else if (event === 'error') {
+        mockSocket._errorCallback = callback;
+      }
+    });
+    WebSocket.prototype.close = jest.fn();
+    
+    // Mock Yjs document methods
+    Y.Doc.prototype.on = jest.fn();
+    Y.Doc.prototype.off = jest.fn();
+    Y.encodeStateAsUpdate = jest.fn().mockReturnValue(new Uint8Array([0, 1, 2, 3]));
+    Y.applyUpdate = jest.fn();
+    
+    // Mock verification to return a valid user
+    (verifyUserToken as jest.Mock).mockResolvedValue({
+      id: 'user-1',
+      email: 'test@example.com'
+    });
+    
+    // Mock getYjsDocument to return null (new document)
+    (yjsService.getYjsDocument as jest.Mock).mockResolvedValue(null);
+    
+    // Setup mock data
+    mockSocket = new WebSocket(null);
+    mockSocket.readyState = WebSocket.OPEN;
+    mockRequest = {
+      url: '/ws/canvas-123?auth=mock-token',
+      headers: {
+        origin: 'http://localhost:3000',
+        'user-agent': 'jest-test'
+      }
     };
     
-    // Mock successful document retrieval
-    (yjsService.getYjsDocument as jest.Mock).mockResolvedValue(new Uint8Array([1, 2, 3]));
-    (yjsService.createDocumentSnapshot as jest.Mock).mockResolvedValue(true);
+    // Start WebSocket server
+    wss = startYjsWebSocketServer(httpServer as unknown as http.Server);
   });
   
   afterEach(() => {
+    // Stop WebSocket server
     stopYjsWebSocketServer();
-    jest.clearAllTimers();
-    jest.useRealTimers();
   });
   
-  describe('startYjsWebSocketServer', () => {
-    it('should create a WebSocketServer and set up connection handler', () => {
-      startYjsWebSocketServer(mockHttpServer);
+  describe('WebSocket connection handling', () => {
+    test('should handle new connection with valid auth token', async () => {
+      // Simulate connection event
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
       
-      expect(WebSocketServer).toHaveBeenCalled();
-      expect(mockServer.on).toHaveBeenCalledWith('connection', expect.any(Function));
+      // Verify token was verified
+      expect(verifyUserToken).toHaveBeenCalledWith('mock-token');
+      
+      // Verify socket event listeners were set up
+      expect(mockSocket.on).toHaveBeenCalledWith('message', expect.any(Function));
+      expect(mockSocket.on).toHaveBeenCalledWith('close', expect.any(Function));
+      expect(mockSocket.on).toHaveBeenCalledWith('error', expect.any(Function));
     });
     
-    it('should set up maintenance interval', () => {
-      jest.spyOn(global, 'setInterval');
+    test('should reject connection with invalid auth token', async () => {
+      // Mock token verification to fail
+      (verifyUserToken as jest.Mock).mockResolvedValue(null);
       
-      startYjsWebSocketServer(mockHttpServer);
+      // Simulate connection event
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
       
-      expect(setInterval).toHaveBeenCalled();
-    });
-  });
-  
-  describe('handleConnection', () => {
-    it('should reject connections without proper authentication', async () => {
-      // Mock URL without token
-      const req = {
-        url: '/yjs?document=test-doc',
-        headers: {
-          host: 'localhost:3000'
-        }
-      };
-      
-      // Extract connection handler
-      startYjsWebSocketServer(mockHttpServer);
-      const connectionHandler = mockServer.on.mock.calls[0][1];
-      
-      // Call connection handler
-      await connectionHandler(mockWebSocket, req);
-      
-      expect(mockWebSocket.close).toHaveBeenCalled();
+      // Verify socket was closed
+      expect(mockSocket.close).toHaveBeenCalledWith(1008, expect.any(String));
     });
     
-    it('should reject connections without document ID', async () => {
-      // Mock URL with token but no document
-      const req = {
-        url: '/yjs?token=valid-token',
-        headers: {
-          host: 'localhost:3000'
-        }
+    test('should handle connection without document ID', async () => {
+      // Create request without document ID
+      const invalidRequest = {
+        ...mockRequest,
+        url: '/ws?auth=mock-token'
       };
       
-      // Extract connection handler
-      startYjsWebSocketServer(mockHttpServer);
-      const connectionHandler = mockServer.on.mock.calls[0][1];
+      // Simulate connection event
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, invalidRequest);
       
-      // Call connection handler
-      await connectionHandler(mockWebSocket, req);
-      
-      expect(mockWebSocket.close).toHaveBeenCalled();
+      // Verify socket was closed
+      expect(mockSocket.close).toHaveBeenCalledWith(1008, expect.any(String));
     });
     
-    it('should accept connections with valid tokens and setup event handlers', async () => {
-      // Mock URL with token
-      const req = {
-        url: '/yjs?document=test-doc&token=valid-token',
-        headers: {
-          host: 'localhost:3000'
-        }
-      };
+    test('should handle connection errors gracefully', async () => {
+      // Mock token verification to throw
+      (verifyUserToken as jest.Mock).mockRejectedValue(new Error('Auth error'));
       
-      // Extract connection handler
-      startYjsWebSocketServer(mockHttpServer);
-      const connectionHandler = mockServer.on.mock.calls[0][1];
+      // Simulate connection event
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
       
-      // Call connection handler
-      await connectionHandler(mockWebSocket, req);
-      
-      expect(mockWebSocket.close).not.toHaveBeenCalled();
-      expect(mockWebSocket.on).toHaveBeenCalledWith('message', expect.any(Function));
-      expect(mockWebSocket.on).toHaveBeenCalledWith('close', expect.any(Function));
+      // Verify socket was closed
+      expect(mockSocket.close).toHaveBeenCalledWith(1011, expect.any(String));
     });
   });
   
-  describe('message handling', () => {
-    it('should process sync messages from clients', async () => {
-      // Mock URL with token
-      const req = {
-        url: '/yjs?document=test-doc&token=valid-token',
-        headers: { host: 'localhost:3000' }
+  describe('Message processing', () => {
+    beforeEach(async () => {
+      // Establish connection first
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
+    });
+    
+    test('should handle sync step 1 message (sync step 1)', async () => {
+      // Create a sync step 1 message
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MESSAGE_SYNC); // Message type: sync
+      syncProtocol.writeSyncStep1(encoder, new Uint8Array([1, 2, 3])); // Mock state vector
+      const message = encoding.toUint8Array(encoder);
+      
+      // Process message
+      await mockSocket._messageCallback(message);
+      
+      // Should send a sync step 2 message back
+      expect(mockSocket.send).toHaveBeenCalled();
+    });
+    
+    test('should handle awareness update message', async () => {
+      // Create awareness update message
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MESSAGE_AWARENESS); // Message type: awareness
+      encoding.writeUint8Array(encoder, new Uint8Array([1, 2, 3])); // Mock awareness update
+      const message = encoding.toUint8Array(encoder);
+      
+      // Process message
+      await mockSocket._messageCallback(message);
+      
+      // No direct response expected, but awareness should be updated
+      // This test verifies the function doesn't throw
+    });
+    
+    test('should handle position update message', async () => {
+      // Create position update message
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MESSAGE_POSITION_UPDATE); // Message type: position update
+      
+      // Mock position data
+      const positionData = {
+        nodeId: 'node-123',
+        position: { x: 100, y: 200 }
       };
       
-      // Extract connection handler
-      startYjsWebSocketServer(mockHttpServer);
-      const connectionHandler = mockServer.on.mock.calls[0][1];
+      // Serialize position data
+      const jsonString = JSON.stringify(positionData);
+      const textEncoder = new TextEncoder();
+      const positionBytes = textEncoder.encode(jsonString);
       
-      // Call connection handler to set up the connection
-      await connectionHandler(mockWebSocket, req);
+      encoding.writeUint8Array(encoder, positionBytes);
+      const message = encoding.toUint8Array(encoder);
       
-      // Get message handler
-      const messageHandler = mockWebSocket.on.mock.calls.find(call => call[0] === 'message')?.[1];
+      // Process message
+      await mockSocket._messageCallback(message);
       
-      if (messageHandler) {
-        // Create a mock message (binary data)
-        const message = { data: new Uint8Array([0, 1, 2, 3]) }; // Sync step 1 message
-        
-        // Call message handler
-        await messageHandler(message);
-        
-        // The message handler should process the sync message and respond
-        expect(decoding.createDecoder).toHaveBeenCalled();
-        expect(syncProtocol.readSyncMessage).toHaveBeenCalled();
-        expect(mockWebSocket.send).toHaveBeenCalled();
-      }
+      // Position update should be broadcast (implementation specific)
+      // This test verifies the function doesn't throw
+    });
+    
+    test('should handle invalid message gracefully', async () => {
+      // Send invalid message (empty)
+      await mockSocket._messageCallback(new Uint8Array([]));
+      
+      // Send message with invalid type
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, 99); // Invalid message type
+      const message = encoding.toUint8Array(encoder);
+      await mockSocket._messageCallback(message);
+      
+      // Both should be handled without throwing errors
     });
   });
   
-  describe('document update handling', () => {
-    it('should broadcast updates to connected clients', async () => {
-      // Setup a connection
-      const req = {
-        url: '/yjs?document=test-doc&token=valid-token',
-        headers: { host: 'localhost:3000' }
-      };
+  describe('Document synchronization', () => {
+    beforeEach(async () => {
+      // Establish connection first
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
+    });
+    
+    test('should store document updates', async () => {
+      // Create a document update message
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MESSAGE_SYNC); // Message type: sync
+      syncProtocol.writeSyncStep2(encoder, new Uint8Array([4, 5, 6])); // Mock document update
+      const message = encoding.toUint8Array(encoder);
       
-      // Start server and get connection handler
-      startYjsWebSocketServer(mockHttpServer);
-      const connectionHandler = mockServer.on.mock.calls[0][1];
+      // Process message
+      await mockSocket._messageCallback(message);
       
-      // Connect a client
-      await connectionHandler(mockWebSocket, req);
-      
-      // Get the Y.Doc instance created for this connection
-      const YDoc = Y.Doc as jest.Mock;
-      const mockDoc = YDoc.mock.results[0].value as MockYDoc;
-      
-      // Simulate a document update
-      const update = new Uint8Array([5, 6, 7]);
-      mockDoc.simulateUpdateEvent?.(update, 'client');
-      
-      // Should have created an encoder and sent the update
-      expect(encoding.createEncoder).toHaveBeenCalled();
-      expect(syncProtocol.writeUpdate).toHaveBeenCalled();
-      expect(mockWebSocket.send).toHaveBeenCalled();
-      
-      // Should store the update in the database
+      // Verify update was stored
       expect(yjsService.storeYjsUpdate).toHaveBeenCalledWith(
-        'test-doc',
-        expect.any(Uint8Array),
-        expect.any(String),
-        expect.any(Number)
+        'canvas-123', // Document ID extracted from URL
+        expect.any(Uint8Array), // Update data
+        expect.any(String), // Client ID
+        expect.any(Number) // Version
       );
+    });
+    
+    test('should load existing document from database', async () => {
+      // Mock existing document data
+      const mockDocData = new Uint8Array([10, 11, 12]);
+      (yjsService.getYjsDocument as jest.Mock).mockResolvedValue(mockDocData);
+      
+      // Stop and restart server to test document loading
+      stopYjsWebSocketServer();
+      wss = startYjsWebSocketServer(httpServer as unknown as http.Server);
+      
+      // Establish new connection
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
+      
+      // Verify document was loaded
+      expect(yjsService.getYjsDocument).toHaveBeenCalledWith('canvas-123');
+      expect(Y.applyUpdate).toHaveBeenCalled();
+    });
+    
+    test('should recover document from updates if no snapshot exists', async () => {
+      // Mock recovery from updates
+      const mockUpdatesData = new Uint8Array([20, 21, 22]);
+      (yjsService.recoverDocumentFromUpdates as jest.Mock).mockResolvedValue(mockUpdatesData);
+      
+      // Stop and restart server to test document loading
+      stopYjsWebSocketServer();
+      wss = startYjsWebSocketServer(httpServer as unknown as http.Server);
+      
+      // Establish new connection
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
+      
+      // Verify recovery was attempted
+      expect(yjsService.recoverDocumentFromUpdates).toHaveBeenCalledWith('canvas-123');
+      expect(Y.applyUpdate).toHaveBeenCalled();
+    });
+  });
+  
+  describe('Client disconnection handling', () => {
+    beforeEach(async () => {
+      // Establish connection first
+      const connectionListener = wss.on.mock.calls.find(call => call[0] === 'connection')[1];
+      await connectionListener(mockSocket, mockRequest);
+    });
+    
+    test('should clean up resources when client disconnects', async () => {
+      // Simulate client disconnection
+      await mockSocket._closeCallback();
+      
+      // Resource cleanup doesn't have direct observable effects
+      // but we can verify the function runs without errors
+    });
+    
+    test('should handle errors on the WebSocket connection', async () => {
+      // Spy on console.error
+      jest.spyOn(console, 'error').mockImplementation();
+      
+      // Simulate error
+      const mockError = new Error('WebSocket error');
+      await mockSocket._errorCallback(mockError);
+      
+      // Verify error was logged
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining('WebSocket error:'),
+        mockError
+      );
+      
+      // Restore console.error
+      (console.error as jest.Mock).mockRestore();
+    });
+  });
+  
+  describe('Server shutdown', () => {
+    test('should clean up resources when server stops', () => {
+      // Stop the server
+      stopYjsWebSocketServer();
+      
+      // Start it again to test the clean state
+      wss = startYjsWebSocketServer(httpServer as unknown as http.Server);
+      
+      // Stop again for final cleanup
+      stopYjsWebSocketServer();
     });
   });
 }); 

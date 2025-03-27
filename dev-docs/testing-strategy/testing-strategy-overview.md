@@ -15,6 +15,17 @@ Our testing strategy follows a balanced pyramid approach:
 - **End-to-End Tests (10%)**: Testing complete user flows and scenarios
 - **Manual/Exploratory Testing (5%)**: Testing edge cases and usability aspects
 
+## Test-Driven Development Approach
+
+We use Test-Driven Development (TDD) to ensure that our code meets requirements before implementation:
+
+1. **Write Tests First**: Create tests based on requirements before implementing functionality
+2. **Test for Correctness**: Validate against requirements, not current implementation
+3. **Red-Green-Refactor**: Start with failing tests, implement code to pass, then refactor
+4. **Continuous Validation**: Run tests frequently to catch regressions early
+
+For detailed guidance on implementing TDD in the Riff codebase, refer to [TDD-riff](./TDD-riff).
+
 ## Key Testing Areas
 
 1. **Frontend Components**: React components, canvas interactions, chat UI
@@ -33,6 +44,7 @@ Our testing strategy follows a balanced pyramid approach:
 - [Test Data Strategy](./test-data-strategy.md)
 - [Implementation Plan](./testing-implementation-plan.md)
 - [Test Examples](./test-examples.md)
+- [TDD Workflow](./TDD-riff)
 
 ## Testing Metrics and Goals
 
@@ -40,6 +52,7 @@ Our testing strategy follows a balanced pyramid approach:
 - **Critical Path Coverage**: 100% test coverage for authentication, data persistence, and synchronization
 - **Test Performance**: Complete test suite runs in under 10 minutes
 - **Test Reliability**: Less than 1% flaky tests
+- **TDD Adoption**: 90% of new features developed using TDD approach
 
 ## Best Practices
 
@@ -53,3 +66,23 @@ Our testing strategy follows a balanced pyramid approach:
 8. **Test Asynchronous Code Properly**: Use async/await with proper error handling
 9. **Leverage Test Hooks**: Use beforeEach/afterEach for setup and teardown
 10. **Follow AAA Pattern**: Arrange, Act, Assert in each test
+11. **Test Against Requirements**: Ensure tests validate what code should do, not what it currently does
+12. **Write Tests Before Code**: Follow TDD principles for new features
+
+## Testing for Correctness vs. Conformance
+
+A key principle of our testing strategy is to test against requirements, not existing implementations:
+
+1. **Source of Truth**: Use product requirements, specifications, and user stories as the source of truth
+2. **Document Test Rationale**: Include comments in tests that reference specific requirements
+3. **Question Discrepancies**: When test expectations differ from current behavior, investigate which is correct
+4. **Review Test Quality**: Regularly review tests to ensure they're validating requirements
+
+## Integration with Development Workflow
+
+Testing is integrated into our development workflow:
+
+1. **Pull Request Requirements**: All PRs must include tests for new functionality
+2. **Code Review Focus**: Reviewers should ensure tests validate requirements, not just implementation
+3. **Continuous Integration**: Tests run automatically on PR submission and before deployment
+4. **Test-First Development**: New features should follow TDD workflow outlined in [TDD-riff](./TDD-riff)

@@ -9,31 +9,36 @@ This document provides a workflow for an AI coding agent to implement the testin
 - The AI agent can read/write files in `./dev-docs/testing-strategy/` and modify the codebase.
 - Git is initialized in the project root, and the agent can commit changes.
 
+## Test-Driven Development Integration
+
+This workflow incorporates Test-Driven Development (TDD) principles from [TDD-riff](./TDD-riff). When implementing tests:
+
+1. **Start with requirements**, not current implementation
+2. **Write failing tests first**, then implement code to make them pass
+3. **Document test rationale** with references to requirements
+4. **Test for correctness**, not just conformance to existing behavior
+
 ## Project Structure Overview
 
 Riff follows a modern full-stack application structure:
 
-- `./frontend/` - React application with TypeScript
+- `./app/` - React application with TypeScript
 
-  - `./frontend/src/` - Source code
-    - `./frontend/src/components/` - React components
-    - `./frontend/src/services/` - API clients and services
-    - `./frontend/src/utils/` - Utility functions
-    - Test files are colocated with source files (e.g., `Component.tsx` and `Component.test.tsx`)
+  - `./app/components/` - React components
+    - Tests are colocated in `__tests__` directories
+  - `./app/lib/` - API clients, services, and Yjs integration
+  - `./app/utils/` - Utility functions
 
-- `./backend/` - Node.js/Express application with TypeScript
+- `./server/` - Node.js/Express application with TypeScript
 
-  - `./backend/src/` - Source code
-    - `./backend/src/routes/` - API routes
-    - `./backend/src/services/` - Service layer
-    - `./backend/src/controllers/` - Controller logic
-    - `./backend/src/middleware/` - Express middleware
-    - `./backend/src/db/` - Database access
-    - `./backend/src/test-utils/` - Test utilities and tests for utility functions without dedicated files
-    - Test files are colocated with their implementation files (e.g., `service.ts` and `service.test.ts`)
+  - `./server/services/` - Service layer
+  - `./server/routes/` - API routes
+  - `./server/middleware/` - Express middleware
+  - Tests are colocated in `__tests__` directories
 
-- `./dev-docs/` - Development documentation
-  - `./dev-docs/testing-strategy/` - Testing strategy documentation
+- `./e2e/` - End-to-end tests using Playwright
+
+- `./test/` - Test utilities and fixtures
 
 ## Workflow Steps
 
@@ -45,6 +50,7 @@ Riff follows a modern full-stack application structure:
    - **`testing-strategy-overview.md`**: Purpose, testing pyramid, key areas, best practices.
    - **`testing-implementation-plan.md`**: Phased approach and weekly tasks.
    - **`testing-tools-environment.md`**: Tools and environment setup.
+   - **`TDD-riff`**: Test-Driven Development approach for Riff.
 
 2. **Understand the Basics**  
    Ensure you grasp:
@@ -52,6 +58,7 @@ Riff follows a modern full-stack application structure:
    - Goal: Comprehensive testing for Riff, emphasizing reliability, correctness, and collaboration.
    - Structure: 11-week plan, 6 phases, weekly steps.
    - Tools: Jest, Playwright, etc.
+   - TDD Workflow: Red-green-refactor cycle.
    - Progress: Tracked in `implementation-progress.md`.
 
 3. **Initialize `implementation-progress.md` (if needed)**
@@ -72,32 +79,15 @@ Riff follows a modern full-stack application structure:
      ```
 
 4. **Cache Documents**
-   - Store the initial three documents in memory, refreshing only if modified (e.g., check file timestamps).
+   - Store the initial documents in memory, refreshing only if modified (e.g., check file timestamps).
 
 ### Step 2: Determine Next Subsection
 
 1. **Parse `implementation-progress.md`**
 
-   - Use regex (e.g., `-\s*\[x\]\s*Phase\s*(\d+):\s*Week\s*(\d+)\s*-\s*Step\s*(\d+):[^\n]*`) to extract completed tasks.
+   - Use regex to extract completed tasks.
    - If no matches, start at Phase 1, Week 1, Step 1.
-   - Otherwise, find the last completed task and select the next from `testing-implementation-plan.md`:
-     - Phase 1: Core Testing Infrastructure (Weeks 1-2)
-       - Week 1: Step 1, Step 2, Step 3
-       - Week 2: Step 1, Step 2, Step 3
-     - Phase 2: Component and Service Coverage (Weeks 3-5)
-       - Week 3: Step 1, Step 2, Step 3
-       - Week 4: Step 1, Step 2, Step 3
-       - Week 5: Step 1, Step 2, Step 3
-     - Phase 3: Collaborative Feature Testing (Weeks 6-8)
-       - Week 6: Step 1, Step 2, Step 3
-       - Week 7: Step 1, Step 2, Step 3
-       - Week 8: Step 1, Step 2, Step 3
-     - Phase 4: Performance and Stress Testing (Weeks 9-10)
-       - Week 9: Step 1, Step 2, Step 3
-       - Week 10: Step 1, Step 2, Step 3
-     - Phase 5: User Acceptance and Accessibility Testing (Week 11)
-       - Week 11: Step 1, Step 2, Step 3
-     - Phase 6: Continuous Improvement (Ongoing, skip unless instructed)
+   - Otherwise, find the last completed task and select the next from `testing-implementation-plan.md`.
 
 2. **Update 'In Progress' Section**
    - Add the next task to "In Progress":
@@ -111,166 +101,138 @@ Riff follows a modern full-stack application structure:
 1. **Identify Relevant Documents**
 
    - Map the subsection to additional documents:
-     - **Phase 1: Core Testing Infrastructure**
-       - Week 1, Step 1: `testing-tools-environment.md`
-       - Week 1, Step 2: `test-data-strategy.md`, `test-examples.md`
-       - Week 1, Step 3: `testing-tools-environment.md`
-       - Week 2, Step 1: `frontend-testing-strategy.md`, `test-examples.md`
-       - Week 2, Step 2: `backend-testing-strategy.md`, `test-examples.md`
-       - Week 2, Step 3: None additional
-     - **Phase 2: Component and Service Coverage**
-       - Week 3: `frontend-testing-strategy.md`, `test-examples.md`
-       - Week 4: `backend-testing-strategy.md`, `test-examples.md`
-       - Week 5: `backend-testing-strategy.md`, `test-examples.md`
-     - **Phase 3: Collaborative Feature Testing**
-       - Week 6: `yjs-testing-strategy.md`, `test-examples.md`
-       - Week 7: `collaborative-testing-strategy.md`, `test-examples.md`
-       - Week 8: `collaborative-testing-strategy.md`, `test-examples.md`
-     - **Phase 4: Performance and Stress Testing**
-       - Week 9: `testing-tools-environment.md`, `test-examples.md`
-       - Week 10: `testing-tools-environment.md`, `test-examples.md`
-     - **Phase 5: User Acceptance and Accessibility Testing**
-       - Week 11: `testing-tools-environment.md`, `test-examples.md`
+     - **Phase 1**: `testing-tools-environment.md`, `test-data-strategy.md`, `test-examples.md`
+     - **Phase 2**: `frontend-testing-strategy.md`, `backend-testing-strategy.md`, `test-examples.md`
+     - **Phase 3**: `yjs-testing-strategy.md`, `collaborative-testing-strategy.md`, `test-examples.md`
+     - **Phase 4**: `testing-tools-environment.md`, `test-examples.md`
+     - **Phase 5**: `testing-tools-environment.md`, `test-examples.md`
+   - Always include `TDD-riff` document for guidance on test-driven development
 
 2. **Load and Cache Documents**
-   - Fetch only the identified documents from `./dev-docs/testing-strategy/`.
-   - Cache them in memory, pruning older irrelevant documents (keep only initial three + current step's docs).
+   - Fetch the identified documents from `./dev-docs/testing-strategy/`.
+   - Cache them in memory, pruning older irrelevant documents.
 
 ### Step 4: Discover Relevant Code Files
 
 1. **Identify Target Files for Testing**
    - Use a progressive search strategy to find relevant files:
-     - Start with `grep_search` to find code related to the feature being tested (e.g., "canvas", "user", "yjs").
-     - Look for files with relevant naming patterns (e.g., "canvasService", "userRoutes").
-     - Check for existing test files with similar names (e.g., "_.test.ts", "_.spec.ts").
+     - Start with `grep_search` to find code related to the feature being tested.
+     - Look for files with relevant naming patterns.
+     - Check for existing test files with similar names (e.g., `_.test.ts`, `_.spec.ts`).
+
 2. **Discover Test File Patterns and Locations**
-
    - Run `list_dir` on key directories to understand how tests are organized.
-   - **Primary Pattern**: Tests are colocated with their implementation files:
-     - Routes: `/backend/src/routes/routeName.ts` and `/backend/src/routes/routeName.test.ts`
-     - Services: `/backend/src/services/serviceName.ts` and `/backend/src/services/serviceName.test.ts`
-     - Middleware: `/backend/src/middleware/middlewareName.ts` and `/backend/src/middleware/middlewareName.test.ts`
-   - **Exception**: For utility functions without dedicated files or for testing cross-functional concerns:
-     - Tests are located in `/backend/src/test-utils/` directory
-     - Examples include `canvasOperations.test.ts` (testing canvas CRUD operations) and `canvasPermissions.test.ts` (testing permission management)
+   - Follow the pattern of colocated tests in `__tests__` directories.
 
-3. **Identify File Relationships**
-
-   - For each implementation file that needs testing:
-     - Check if a test file already exists.
-     - Create a new test file in the same directory as the implementation file unless it's a utility function without a dedicated file.
-     - Map dependencies that will need to be mocked.
+3. **Identify Requirements and Source of Truth**
+   - Locate relevant requirements documentation or specifications for the feature.
+   - Identify the source of truth for expected behavior before examining the implementation.
+   - Document the requirements that each test will validate.
 
 4. **Create a Code Map**
    - Build an in-memory representation of:
      - Files that need to be tested.
      - Existing test files that can be referenced.
      - Mock dependencies that will be needed.
-     - Test utilities/fixtures that can be reused.
+     - Requirements that tests should validate.
 
-### Step 5: Implement the Subsection
+### Step 5: Implement the Subsection with TDD
 
-1. **Execute the Task**
+1. **Write Failing Tests First**
 
-   - Follow instructions in `testing-implementation-plan.md` for the subsection.
-   - Use loaded documents for guidance (e.g., `test-examples.md` for patterns).
-   - Example: "Week 1, Step 1 - Configure Testing Frameworks":
-     - Set up Jest/ts-jest per `testing-tools-environment.md`.
-     - Create `jest.config.js` files.
+   - Start with the expected behavior based on requirements.
+   - Create test files with detailed assertions before implementing functionality.
+   - Include comments referencing specific requirements or specifications.
+   - Follow the AAA pattern (Arrange, Act, Assert).
 
-2. **Follow Project Patterns**
+2. **Implement Code to Pass Tests**
+
+   - Write the minimal code required to make the tests pass.
+   - Refactor for improved quality while ensuring tests continue to pass.
+   - Document any discrepancies between requirements and current implementation.
+
+3. **Follow Project Patterns**
 
    - Use existing test files as templates for structure and style.
    - Maintain consistent patterns with the rest of the codebase.
    - Use proper naming conventions for tests.
 
-3. **Apply Best Practices**
+4. **Apply Best Practices**
 
    - Use `testing-strategy-overview.md` for AAA pattern, isolation, etc.
-
-4. **Generate Test Data (if needed)**
-
-   - Refer to `test-data-strategy.md` when loaded (e.g., Week 1, Step 2).
+   - Test edge cases and error conditions.
+   - Isolate tests by mocking dependencies.
 
 5. **Verify Implementation**
 
-   - Run tests (e.g., `npm run test:unit`) to confirm success.
-   - Run `npm run coverage` and check against 80% goal from `testing-strategy-overview.md`.
+   - Run tests to confirm they pass and validate the correct behavior.
+   - Check coverage against targets from `testing-strategy-overview.md`.
 
-6. **Handle Errors**
-   - If tests fail or coverage is below 80%, log in "Issues":
-     ```
-     ## Issues
-     - Phase <PhaseNumber>: Week <WeekNumber> - Step <StepNumber>: <StepTitle>
-       Details: <Error description, e.g., "Coverage at 75%, missing edge cases">
-     ```
-   - Retry once; if still failing, escalate to supervisor.
+6. **Handle Discrepancies**
+   - If tests fail but current code behavior seems intentional, investigate:
+     - Consult requirements documentation
+     - Look for comments explaining the behavior
+     - Document the discrepancy in "Issues" section of progress tracking
+   - Never modify tests just to pass existing code without confirming requirements
 
 ### Step 6: Document and Commit Progress
 
 1. **Update `implementation-progress.md`**
 
-   - Move the task from "In Progress" to "Completed Tasks":
-     ```
-     ## Completed Tasks
-     - [x] Phase <PhaseNumber>: Week <WeekNumber> - Step <StepNumber>: <StepTitle>
-     ```
-   - Add notes with coverage results:
-     ```
-     Notes: Set up Jest and ts-jest with jest.config.js files. Coverage: 82%.
-     ```
+   - Move the task from "In Progress" to "Completed Tasks".
+   - Add notes with coverage results and TDD implementation details.
    - Clear "In Progress" section.
-   - Update "Next Steps":
-     ```
-     ## Next Steps
-     - Phase <NextPhase>: Week <NextWeek> - Step <NextStep>: <NextTitle>
-     ```
+   - Update "Next Steps".
 
 2. **Commit Changes to Git**
-   - Commit with message: `git commit -m "Implement Phase <PhaseNumber> Week <WeekNumber> Step <StepNumber>"`.
-   - Note commit hash in notes:
-     ```
-     Notes: ... Commit: abc123
-     ```
-   - Push to a branch (e.g., `feature/testing-strategy`): `git push origin feature/testing-strategy`.
+   - Use descriptive commit messages that reference the phase and step.
+   - Include TDD steps in commit message (e.g., "Implement with TDD: wrote tests, implemented code, refactored").
+   - Push to appropriate branch.
 
 ### Step 7: Iterate
 
 - Return to Step 2 to parse progress and select the next subsection.
-- Repeat Steps 3-7 until Phases 1-5 are complete (skip Phase 6 unless instructed).
+- Repeat Steps 3-7 until all phases are complete.
 
-## Example Workflow Execution with File Discovery
+## Example TDD Implementation
 
-### Example: Implementing Canvas Service Tests
+### Example: Testing Canvas Service
 
-1. **Parse Progress**: Determine we need to implement Phase 2, Week 4, Step 2: Canvas Service.
+1. **Identify Requirements**:
+   - Canvas should support creating, updating, and deleting nodes
+   - Changes should be synchronized via Yjs
+   - User permissions should be enforced on all operations
 
-2. **Discover Canvas Service Files**:
+2. **Write Failing Tests**:
+   ```typescript
+   // server/__tests__/services/CanvasService.test.ts
+   describe('CanvasService', () => {
+     // Reference: REQ-104 Canvas Creation
+     it('should create a new canvas with initial Y.Doc structure', async () => {
+       // Test code here
+     });
+     
+     // Reference: REQ-105 Canvas Authorization
+     it('should reject canvas operations for unauthorized users', async () => {
+       // Test code here
+     });
+   });
+   ```
 
-   - Search with `grep_search` for "canvas" in key directories (services, routes, controllers).
-   - If no direct match for "canvasService.ts", look for files containing canvas-related functionality.
-   - Check for patterns like `*Canvas*.ts` or references to canvas in other files.
+3. **Implement Code**:
+   ```typescript
+   // server/services/CanvasService.ts
+   export class CanvasService {
+     // Implementation code here
+   }
+   ```
 
-3. **Identify Test Structure**:
+4. **Refactor and Verify**:
+   - Run tests to verify implementation
+   - Refactor for improved design while ensuring tests pass
+   - Document any issues or questions about requirements
 
-   - Check if there are existing test files colocated with source files.
-   - Examine how other services are tested (e.g., userService.test.ts).
-   - Determine whether tests should be in same directory or in a `__tests__` folder.
-
-4. **Create Test File**:
-
-   - Based on discovered patterns, create a new test file (e.g., "yjsCanvasService.test.ts").
-   - Follow existing test patterns to maintain consistency.
-
-5. **Implement Tests**:
-
-   - Test canvas CRUD operations (create, read, update, delete).
-   - Test canvas sharing and permissions.
-   - Test canvas metadata management.
-
-6. **Verify and Document**:
-   - Run tests to confirm functionality.
-   - Update implementation progress document with results.
+This example demonstrates how to follow TDD principles while implementing the testing strategy for the Riff application.
 
 ## Troubleshooting and Fallback Strategies
 
