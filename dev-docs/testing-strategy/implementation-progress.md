@@ -27,10 +27,12 @@
   Notes: Implemented tests for multiple UI components including NodeSettingsModal (tabs, form validation, saving), SettingsModal (API key management, error handling), Login form (authentication, validation), and LibrarySidebar (filtering, sorting, drag-and-drop). Some test failures remain to be fixed, particularly around React act() warnings.
 - [x] Phase 2: Week 4 - Step 1: User Service
   Notes: Implemented comprehensive tests for authentication flows, user profile management, and permissions. Created tests for AuthContext (frontend), auth middleware (backend), modelService (user API key management), and modelRoutes (API endpoints). Added auth utility functions and tests for token management. All tests pass successfully.
+- [x] Phase 2: Week 4 - Step 2: Canvas Service
+  Notes: Implemented comprehensive tests for canvas functionality, including canvasService.test.ts for testing node position operations via Yjs, canvasOperations.test.ts for testing CRUD operations, and canvasPermissions.test.ts for testing sharing and permission management. Improved Yjs mocking approach for reliable testing. Commit: 2101b65
 
 ## In Progress
-- Phase 2: Week 4 - Step 2: Canvas Service
-  Progress: Implementing tests for canvas operations, including creation, deletion, sharing, and permissions. Creating canvasService.test.ts to test canvas CRUD operations and related functionality.
+- Phase 2: Week 4 - Step 3: WebSocket Service
+  Progress: Planning tests for WebSocket server, including connection handling, room management, message broadcasting, and error handling.
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
@@ -50,12 +52,12 @@
    - Fix React act() warnings in Login.test.tsx and other component tests
    - Fix validation issues in LibrarySidebar.test.tsx
 
-2. **Proceed to Canvas Service Testing (Phase 2: Week 4 - Step 2):**
-   - Test canvas creation and deletion operations
-   - Test node and edge operations
-   - Test canvas sharing and permissions
-   - Test canvas metadata management
+2. **Proceed to WebSocket Service Testing (Phase 2: Week 4 - Step 3):**
+   - Test connection handling 
+   - Test message broadcasting
+   - Test room management
+   - Test error handling
 
-3. **Plan for WebSocket Service Testing (Phase 2: Week 4 - Step 3):**
-   - Develop test strategy for WebSocket connection handling
-   - Create test fixtures for WebSocket messages 
+3. **Plan for API Integration Testing (Phase 2: Week 5 - Step 1):**
+   - Prepare for testing REST API endpoints
+   - Set up test environment for API testing 
