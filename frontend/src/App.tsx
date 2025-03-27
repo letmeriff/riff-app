@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, ErrorInfo } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
 import { YjsProvider } from './contexts/YjsContext';
 import { NetworkProvider } from './contexts/NetworkContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
-import CanvasPage from './pages/CanvasPage';
+// Import the Canvas Page component
+import { CanvasPage } from './components/Canvas';
 import ChatUI from './components/ChatUI';
 import SettingsModal from './components/SettingsModal';
 import { supabase } from './services/supabase';
@@ -17,6 +19,63 @@ import { isYjsEnabled } from './services/positionAdapter';
 // Get the feature flag value once on load
 const USE_YJS = isYjsEnabled();
 
+// Error fallback component for Canvas
+const CanvasErrorFallback = ({ error, resetErrorBoundary }: { error: Error, resetErrorBoundary: () => void }) => (
+  <div style={{ 
+    padding: '20px', 
+    backgroundColor: '#f8d7da', 
+    color: '#721c24',
+    border: '1px solid #f5c6cb',
+    borderRadius: '4px',
+    margin: '20px',
+    textAlign: 'center'
+  }}>
+    <h3>Something went wrong with the Canvas</h3>
+    <p>{error.message}</p>
+    <button 
+      onClick={resetErrorBoundary}
+      style={{
+        padding: '8px 16px',
+        backgroundColor: '#dc3545',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        marginTop: '10px'
+      }}
+    >
+      Try Again
+    </button>
+  </div>
+);
+
+// Loading indicator for suspense
+const LoadingIndicator = () => (
+  <div style={{ 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    height: '100%',
+    flexDirection: 'column'
+  }}>
+    <div style={{ 
+      width: '40px', 
+      height: '40px', 
+      border: '4px solid #f3f3f3',
+      borderTop: '4px solid #3498db',
+      borderRadius: '50%',
+      animation: 'spin 1s linear infinite',
+    }} />
+    <p style={{ marginTop: '10px' }}>Loading Canvas...</p>
+    <style>{`
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `}</style>
+  </div>
+);
+
 const AppContent: React.FC = () => {
   const { user, session, signOut } = useAuth();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -24,6 +83,7 @@ const AppContent: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
   const [canvasId] = useState<string>('default-canvas');
+  const [, setCanvasError] = useState<Error | null>(null);
 
   const handleNodeSelect = (nodeId: string | null, nodeTitle: string | null) => {
     setSelectedNodeId(nodeId);
@@ -32,6 +92,20 @@ const AppContent: React.FC = () => {
 
   const handleOpenSettings = () => {
     setIsSettingsOpen(true);
+  };
+
+  // Reset canvas error when caught by error boundary
+  const handleCanvasErrorReset = () => {
+    setCanvasError(null);
+    console.log('Canvas error boundary reset');
+  };
+  
+  // Log canvas errors if detailed error reporting is enabled
+  const handleCanvasError = (error: Error) => {
+    setCanvasError(error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Canvas Error caught by ErrorBoundary:', error);
+    }
   };
 
   // Listen for custom event when a node is created via branching
@@ -150,8 +224,13 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // Update the window property typing
+  interface CustomWindow extends Window {
+    __USE_YJS: boolean;
+  }
+
   // Set Yjs feature flag on window to allow non-React code to check
-  (window as any).__USE_YJS = USE_YJS;
+  (window as unknown as CustomWindow).__USE_YJS = USE_YJS;
 
   // Prepare the content
   const content = (
@@ -166,7 +245,17 @@ const AppContent: React.FC = () => {
     }}>
       {/* Canvas (61.8%) - Golden Ratio */}
       <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
-        <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
+        <ErrorBoundary 
+          FallbackComponent={CanvasErrorFallback}
+          onReset={handleCanvasErrorReset}
+          onError={(error: Error, info: ErrorInfo) => {
+            handleCanvasError(error);
+          }}
+        >
+          <Suspense fallback={<LoadingIndicator />}>
+            <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
+          </Suspense>
+        </ErrorBoundary>
       </div>
 
       {/* Chat UI (38.2%) */}
