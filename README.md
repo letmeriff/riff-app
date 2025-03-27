@@ -144,6 +144,10 @@ The following secrets need to be configured in GitHub:
 
 ## Testing
 
+Riff implements a comprehensive testing strategy that covers all aspects of the application, from unit tests to end-to-end tests.
+
+### Running Tests
+
 Run all tests:
 
 ```bash
@@ -161,6 +165,57 @@ Run backend tests:
 ```bash
 npm run test:backend
 ```
+
+Run end-to-end tests:
+
+```bash
+npm run test:e2e
+```
+
+Run tests with coverage:
+
+```bash
+npm run coverage
+```
+
+### Testing Structure
+
+Our testing strategy follows a layered approach:
+
+1. **Unit Tests**: Test individual functions and components in isolation
+2. **Integration Tests**: Test interactions between components
+3. **End-to-End Tests**: Test complete user flows
+
+### Test Organization
+
+- `__tests__/`: Contains test files for corresponding components and functions
+- `test-utils/`: Utility functions, mocks, and fixtures for testing
+- `e2e/`: End-to-end tests using Playwright
+
+### Technologies
+
+- **Jest**: Test runner and assertion library
+- **React Testing Library**: Testing React components
+- **Supertest**: Testing REST APIs
+- **Playwright**: End-to-end testing
+
+### Test Documentation
+
+For more detailed information about our testing approach, see the testing documentation:
+
+- [Testing Strategy Overview](./dev-docs/testing-strategy/riff-testing-strategy-overview.md)
+- [Testing Patterns and Conventions](./dev-docs/testing-strategy/test-patterns.md)
+- [Test Examples](./dev-docs/testing-strategy/test-examples.md)
+
+### Writing Tests
+
+When writing tests, follow these guidelines:
+
+1. Follow the Arrange-Act-Assert (AAA) pattern
+2. Keep tests focused and isolated
+3. Use descriptive test names
+4. Mock external dependencies appropriately
+5. Use the testing utilities and helpers provided
 
 ## Code Quality
 
