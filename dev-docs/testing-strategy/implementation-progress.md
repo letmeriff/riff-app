@@ -17,29 +17,40 @@
   Notes: Fixed failing tests for auth middleware, Yjs services, and WebSocket server by improving mock implementations. Enhanced test coverage for backend services with proper Supabase client mocking and YJS document handling. Commit: d4b4b35
 - [x] Phase 1: Week 2 - Step 3: Documentation
   Notes: Created comprehensive documentation for testing patterns, examples, and contribution guidelines. Updated README with testing information. Documentation covers Yjs mocking, Supabase integration, WebSocket testing, and general testing conventions. Commit: 3c4f727
+- [x] Phase 2: Week 3 - Step 1: Canvas Components (Partial - Component Level)
+  Notes: Successfully created tests for ChatNode component with 100% pass rate. Tests cover rendering of node content, interactions (double-click to open settings), and various node states including minimal node data. Also implemented tests for user presence indicators and typing status.
 
 ## In Progress
-- Phase 2: Week 3 - Step 1: Canvas Components
-  Working on creating tests for canvas components including node rendering, edge creation, and canvas interaction.
+- Phase 2: Week 3 - Step 1: Canvas Components (Remaining Integration Tests)
+  Progress: Created a test structure for CanvasPage.tsx but facing significant integration challenges:
+  - CSS module import handling in Jest
+  - Complex context interactions with YJS, Sockets, and Auth
+  - Axios imports and module mocking
+  - ReactFlow component mocking
 
 ## Issues
-1. **Remaining Frontend failing tests:**
+1. **Canvas Component Testing Challenges:**
+   - The CanvasPage component has complex dependencies that make it challenging to test in isolation.
+   - Need to develop a more comprehensive mocking strategy for ReactFlow, Yjs, and other external dependencies.
+   - Consider refactoring the CanvasPage component to make it more testable by extracting logic.
+
+2. **Remaining Frontend failing tests:**
    - `networkAdapter.test.ts`: Issues with mocking WebsocketProvider and awareness still need additional work.
    - `api.test.ts`: Problems with axios mocking in API utility tests still need to be addressed.
 
-2. **Yjs integration issues:**
+3. **Yjs integration issues:**
    - Need to improve test isolation to avoid state leakage between tests.
 
 ## Next Steps
-1. **Fix remaining frontend tests:**
+1. **Continue Canvas Component Testing:**
+   - Test more individual components used in the canvas (e.g., FloatingMenu, YjsNodeControls, CollaborationStatus)
+   - Break down the CanvasPage tests into smaller, more isolated tests for specific functionality
+   - Create a specialized test setup for ReactFlow components with proper mocks
+   - Consider using React Testing Library's `renderHook` for testing the hooks that power the canvas functionality
+
+2. **Fix remaining frontend tests:**
    - Fix `networkAdapter.test.ts` by improving the WebsocketProvider mock
    - Fix `api.test.ts` with proper axios mocking patterns
-
-2. **Complete Canvas Component Testing:**
-   - Test node rendering and interactions
-   - Test edge creation and management
-   - Test canvas navigation and interaction
-   - Test canvas layout and positioning
 
 3. **Proceed to Chat Components:**
    - Test message display and formatting
