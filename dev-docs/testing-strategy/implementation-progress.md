@@ -21,14 +21,16 @@
   Notes: Successfully created tests for ChatNode component with 100% pass rate. Tests cover rendering of node content, interactions (double-click to open settings), and various node states including minimal node data. Also implemented tests for user presence indicators and typing status.
 - [x] Phase 2: Week 3 - Step 1: Canvas Components (Collaboration Components)
   Notes: Created comprehensive tests for collaboration-related components including CollaborationStatus, YjsNodeControls, and UserCursors. Tests cover various connection states (connected, connecting, offline), user presence rendering, and interactive behavior. All tests pass successfully with proper YjsContext mocking.
+- [x] Phase 2: Week 3 - Step 2: Chat Components
+  Notes: Created ChatUI.test.tsx with tests covering empty state rendering, chat interface loading, owner controls display, and typing status indicators. Implemented proper testing patterns for asynchronous component rendering and handling React context dependencies. Resolved several testing challenges including scrollIntoView browser API mocking and React act() wrapper implementation.
 
 ## In Progress
-- Phase 2: Week 3 - Step 2: Chat Components
-  Progress: Starting implementation of tests for chat-related components:
-  - ChatUI component testing
-  - Message display and formatting
-  - Input handling and message submission
-  - Message history loading
+- Phase 2: Week 3 - Step 3: UI Components
+  Progress: Starting implementation of tests for UI components:
+  - Modals and dialogs
+  - Forms and input validation
+  - Navigation components
+  - Error state notifications
 
 ## Issues
 1. **Canvas Component Testing Challenges:**
@@ -37,25 +39,22 @@
    - Consider refactoring the CanvasPage component to make it more testable by extracting logic.
 
 2. **Remaining Frontend failing tests:**
-   - `networkAdapter.test.ts`: Issues with mocking WebsocketProvider and awareness still need additional work.
    - `api.test.ts`: Problems with axios mocking in API utility tests still need to be addressed.
 
 3. **Yjs integration issues:**
    - Need to improve test isolation to avoid state leakage between tests.
 
 ## Next Steps
-1. **Complete Chat Components Testing:**
-   - Test message display and formatting
-   - Test input handling and submission
-   - Test message history loading
-   - Test AI interaction components
-
-2. **Fix remaining frontend tests:**
-   - Fix `networkAdapter.test.ts` by improving the WebsocketProvider mock
+1. **Fix remaining API utility tests:**
    - Fix `api.test.ts` with proper axios mocking patterns
 
-3. **Proceed to UI Components:**
+2. **Proceed to UI Components (Phase 2: Week 3 - Step 3):**
    - Test modals and dialogs
    - Test forms and input validation
    - Test navigation and sidebar components
    - Test error states and notifications 
+
+3. **Plan for Backend Service Testing (Phase 2: Week 4):**
+   - Prepare test cases for User Service
+   - Develop testing strategy for Canvas Service
+   - Design tests for WebSocket Service 
