@@ -15,20 +15,13 @@ jest.mock('../config/supabase', () => ({
 }));
 
 // Type definitions - used for documentation purposes
-interface CanvasPermissionType {
+interface _CanvasPermissionType {
   id: string;
   canvas_id: string;
   user_id: string;
   permission_level: 'view' | 'edit' | 'admin';
   created_at: string;
 }
-
-// Permission levels - used for reference in tests
-const PERMISSION_LEVELS_ENUM = {
-  VIEW: 'view',   // Can only view the canvas
-  EDIT: 'edit',   // Can view and edit the canvas
-  ADMIN: 'admin', // Can view, edit and manage permissions
-};
 
 // Permission level type definition
 type PermissionLevel = 'view' | 'edit' | 'admin';

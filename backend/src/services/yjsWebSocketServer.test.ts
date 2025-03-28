@@ -1,12 +1,15 @@
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
 import * as Y from 'yjs';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import * as yjsService from './yjsService';
 import { startYjsWebSocketServer, stopYjsWebSocketServer } from './yjsWebSocketServer';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { supabase } from '../config/supabase';
 import { verifyUserToken } from '../utils/auth';
 
@@ -247,21 +250,23 @@ jest.mock('yjs', () => {
 // Reference to messageType constants
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MESSAGE_AUTH = 2;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MESSAGE_QUERY_AWARENESS = 3;
 const MESSAGE_POSITION_UPDATE = 4;
 
 // Mock HTTP server
 class MockHttpServer {
-  listeners = {};
-  on(event, callback) {
+  listeners: Record<string, (...args: unknown[]) => void> = {};
+  on(event: string, callback: (...args: unknown[]) => void): this {
     this.listeners[event] = callback;
     return this;
   }
-  close(callback) {
+  close(callback?: () => void): void {
     if (callback) callback();
   }
-  emit(event, ...args) {
+  emit(event: string, ...args: unknown[]): boolean {
     const callback = this.listeners[event];
     if (callback) callback(...args);
     return true;

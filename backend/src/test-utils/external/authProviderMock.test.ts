@@ -1,9 +1,6 @@
 import {
   createMockAuthProvider,
-  MockAuthProviderOptions,
-  MockAuthProviderResponse,
-  AuthTokenResponse,
-  UserProfile
+  MockAuthProviderOptions
 } from './authProviderMock';
 
 describe('Authentication Provider Mocks', () => {

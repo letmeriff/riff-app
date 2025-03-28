@@ -11,6 +11,8 @@ import {
   recoverDocumentFromUpdates
 } from './yjsService';
 import { supabase } from '../config/supabase';
+// Import zlib for use in the util mock
+import * as zlib from 'zlib';
 
 // Mock external dependencies
 jest.mock('../config/supabase', () => ({
@@ -40,8 +42,8 @@ jest.mock('zlib', () => ({
 }));
 jest.mock('util', () => ({
   promisify: jest.fn((fn) => {
-    if (fn === require('zlib').gzip) return mockGzip;
-    if (fn === require('zlib').gunzip) return mockGunzip;
+    if (fn === zlib.gzip) return mockGzip;
+    if (fn === zlib.gunzip) return mockGunzip;
     return jest.fn();
   })
 }));
@@ -295,8 +297,8 @@ describe('yjsService', () => {
 
       // Verify Supabase was called correctly
       expect(supabase.from).toHaveBeenCalledWith('yjs_documents');
-      expect(supabase.select).toHaveBeenCalledWith('version');
-      expect(supabase.eq).toHaveBeenCalledWith('document_id', documentId);
+      expect((supabase.from as jest.Mock)().select).toHaveBeenCalledWith('version');
+      expect((supabase.from as jest.Mock)().select().eq).toHaveBeenCalledWith('document_id', documentId);
 
       // Verify correct version returned
       expect(result).toBe(10);

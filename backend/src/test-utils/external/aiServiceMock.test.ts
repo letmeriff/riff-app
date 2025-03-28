@@ -1,10 +1,8 @@
 import {
   createMockAIService,
   MockAIServiceOptions,
-  MockAIServiceResponse,
   AICompletionRequest,
   AIEmbeddingRequest,
-  Model
 } from './aiServiceMock';
 
 describe('AI Service Mocks', () => {

@@ -1,4 +1,3 @@
-import * as Y from 'yjs';
 import {
   mockDoc,
   mockAwareness,
@@ -7,8 +6,7 @@ import {
   mockAwarenessEvent,
   createMockYjsProvider,
   mockSyncStep1,
-  mockSyncStep2,
-  MockYjsProvider
+  mockSyncStep2
 } from './yjsMocks';
 
 describe('Yjs Mocks', () => {

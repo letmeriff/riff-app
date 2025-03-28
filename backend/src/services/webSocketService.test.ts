@@ -1,6 +1,6 @@
-import { Server, Socket } from 'socket.io';
-import { createServer } from 'http';
-import { EventEmitter } from 'events';
+import { _Server, _Socket } from 'socket.io';
+import { _createServer } from 'http';
+import { _EventEmitter } from 'events';
 import { supabase } from '../config/supabase';
 
 // Define socket data type to fix type errors
@@ -13,7 +13,7 @@ interface SocketData {
 }
 
 // Define socket parameter type for event handlers
-interface SocketEventHandler<T = Record<string, unknown>> {
+interface _SocketEventHandler<T = Record<string, unknown>> {
   (data: T): Promise<void>;
 }
 
@@ -38,7 +38,7 @@ const authMiddleware = async (socket: { handshake: { auth: { token?: string } },
 };
 
 // Define connection handler that we're testing
-const handleConnection = (socket: any) => {
+const handleConnection = (socket: SocketWithViewedNodes) => {
   console.log(`User connected: ${socket.data.user.id}`);
 
   // Join a room based on the user ID
@@ -165,6 +165,17 @@ const handleConnection = (socket: any) => {
     // Handle disconnect
   });
 };
+
+// Define extended socket type with viewedNodes array
+interface SocketWithViewedNodes {
+  data: SocketData;
+  join: (room: string) => void;
+  leave: (room: string) => void;
+  on: (event: string, callback: (...args: unknown[]) => void) => void;
+  emit: (event: string, data: unknown) => void;
+  to: (room: string) => { emit: (event: string, data: unknown) => void };
+  viewedNodes: string[];
+}
 
 // Setup global mock instance
 declare global {
@@ -338,7 +349,7 @@ describe('WebSocket Service', () => {
       };
       
       // Call connection handler
-      handleConnection(socket);
+      handleConnection(socket as SocketWithViewedNodes);
       
       // Assertions
       expect(socket.join).toHaveBeenCalledWith('user:user-1');
@@ -379,7 +390,7 @@ describe('WebSocket Service', () => {
       };
       
       // Initialize socket
-      handleConnection(socket as any);
+      handleConnection(socket as SocketWithViewedNodes);
     });
     
     test('should handle join-node event and add user to node room', async () => {
@@ -494,7 +505,7 @@ describe('WebSocket Service', () => {
       };
       
       // Initialize socket
-      handleConnection(socket as any);
+      handleConnection(socket as SocketWithViewedNodes);
       
       // Join a node
       joinNodeHandler({ nodeId: 123 });
@@ -589,7 +600,7 @@ describe('WebSocket Service', () => {
       };
       
       // Initialize socket
-      handleConnection(socket as any);
+      handleConnection(socket as SocketWithViewedNodes);
     });
     
     test('should successfully transfer ownership to another user', async () => {
@@ -694,7 +705,7 @@ describe('WebSocket Service', () => {
       };
       
       // Initialize socket
-      handleConnection(socket as any);
+      handleConnection(socket as SocketWithViewedNodes);
     });
     
     test('should clean up user presence on disconnect', async () => {
@@ -756,7 +767,7 @@ describe('WebSocket Service', () => {
       };
       
       // Initialize socket
-      handleConnection(socket as any);
+      handleConnection(socket as SocketWithViewedNodes);
     });
     
     test('should handle errors in join-node event', async () => {
