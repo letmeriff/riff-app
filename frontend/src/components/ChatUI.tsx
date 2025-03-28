@@ -24,8 +24,7 @@ import {
   AttachmentDeletePayload,
   ChatMessage,
   ChatAttachment,
-  UserPresence,
-  NodeId
+  UserPresence
 } from '../types/messaging';
 import { 
   parseNodeId, 
@@ -235,13 +234,13 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   }, [nodeId, parsedNodeId]);
 
   // Register event subscriptions using custom hooks
-  const subscribeToMessageUpdates = useMessageUpdateEvent(handleMessageUpdate);
-  const subscribeToPresenceUpdates = usePresenceUpdateEvent(handlePresenceUpdate);
-  const subscribeToOwnershipUpdates = useOwnershipUpdateEvent(handleOwnershipUpdate);
-  const subscribeToTransferErrors = useTransferErrorEvent(handleTransferError);
-  const subscribeToNodeUpdates = useNodeUpdateEvent(handleNodeUpdate);
-  const subscribeToAttachmentUpdates = useAttachmentUpdateEvent(handleAttachmentUpdate);
-  const subscribeToAttachmentDeletes = useAttachmentDeleteEvent(handleAttachmentDelete);
+  const _subscribeToMessageUpdates = useMessageUpdateEvent(handleMessageUpdate);
+  const _subscribeToPresenceUpdates = usePresenceUpdateEvent(handlePresenceUpdate);
+  const _subscribeToOwnershipUpdates = useOwnershipUpdateEvent(handleOwnershipUpdate);
+  const _subscribeToTransferErrors = useTransferErrorEvent(handleTransferError);
+  const _subscribeToNodeUpdates = useNodeUpdateEvent(handleNodeUpdate);
+  const _subscribeToAttachmentUpdates = useAttachmentUpdateEvent(handleAttachmentUpdate);
+  const _subscribeToAttachmentDeletes = useAttachmentDeleteEvent(handleAttachmentDelete);
 
   // Fetch messages when the node changes and set up real-time updates
   useEffect(() => {

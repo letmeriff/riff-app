@@ -14,10 +14,8 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { CanvasNode } from '../../../../types/canvas';
 import { useNetwork } from '../../../../contexts/NetworkContext';
 import { 
-  NetworkPayload,
   NodeUpdatePayload,
-  OwnershipUpdatePayload,
-  NodeId 
+  OwnershipUpdatePayload
 } from '../../../../types/messaging';
 import { 
   parseNodeId, 
@@ -49,7 +47,7 @@ export const NodeControls: React.FC<NodeControlsProps> = ({
 }) => {
   // Local state for text editing and node data
   const [localContent, setLocalContent] = useState(content);
-  const [nodeOwner, setNodeOwner] = useState<string | null>(null);
+  const [_nodeOwner, setNodeOwner] = useState<string | null>(null);
   
   // Get network context
   const { networkAdapter } = useNetwork();

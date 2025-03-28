@@ -120,7 +120,16 @@ const EditIndicator: React.FC<EditIndicatorProps> = ({ nodeId }) => {
   useEffect(() => {
     if (!ydoc || !isFeatureEnabled) return;
     
-    const awareness = (window as any).yjsWebsocketProvider?.awareness;
+    interface YjsAwarenessProvider {
+      awareness: {
+        getStates(): Map<number, unknown>;
+        on(event: string, callback: () => void): void;
+        off(event: string, callback: () => void): void;
+      };
+    }
+    
+    const awareness = (window as Window & { yjsWebsocketProvider?: YjsAwarenessProvider })
+      .yjsWebsocketProvider?.awareness;
     if (!awareness) return;
     
     const updateEditingUsers = () => {

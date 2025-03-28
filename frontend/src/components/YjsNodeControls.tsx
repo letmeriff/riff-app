@@ -60,7 +60,7 @@ const YjsNodeControls: React.FC<YjsNodeControlsProps> = () => {
   const { networkAdapter, connectionStatus: networkConnectionStatus } = useNetwork();
   const [showConnectedUsers, setShowConnectedUsers] = useState(false);
   const [standardUsers, setStandardUsers] = useState<ConnectedUser[]>([]);
-  const [standardStatus, setStandardStatus] = useState<ConnectionStatus>('unknown');
+  const [_standardStatus, setStandardStatus] = useState<ConnectionStatus>('unknown');
   
   // Use YJS connection state if available, otherwise use standard connection
   const isConnected = yjsConnected || (!isOffline && networkConnectionStatus === 'connected');
