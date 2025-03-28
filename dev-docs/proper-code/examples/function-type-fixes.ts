@@ -12,14 +12,14 @@ import { YDoc, YEvent, YTransaction } from './common-types';
 // ==============================
 
 // ❌ Bad: Using 'Function' type
-interface BadEventEmitter {
-  on(event: string, callback: Function): void;
-  off(event: string, callback: Function): void;
-  emit(event: string, ...args: any[]): boolean;
+interface _BadEventEmitter {
+  on(event: string, callback: (...args: unknown[]) => void): void;
+  off(event: string, callback: (...args: unknown[]) => void): void;
+  emit(event: string, ...args: unknown[]): boolean;
 }
 
 // ❌ Bad: Using 'Function' in test utilities
-function createMockObserver(callback: Function) {
+function _createMockObserver(callback: () => void) {
   return {
     observe: () => callback(),
     disconnect: () => {},
@@ -27,10 +27,10 @@ function createMockObserver(callback: Function) {
 }
 
 // ❌ Bad: Function type in event handlers
-interface BadComponentProps {
-  onClick: Function;
-  onChange: Function;
-  onSubmit: Function;
+interface _BadComponentProps {
+  onClick: (event: unknown) => void;
+  onChange: (value: unknown) => void;
+  onSubmit: (data: unknown) => void;
 }
 
 // ==============================
@@ -38,7 +38,7 @@ interface BadComponentProps {
 // ==============================
 
 // ✅ Good: Using proper function signature for event emitter
-interface GoodEventEmitter {
+interface _GoodEventEmitter {
   on(event: string, callback: (...args: unknown[]) => void): void;
   off(event: string, callback: (...args: unknown[]) => void): void;
   emit(event: string, ...args: unknown[]): boolean;
@@ -52,16 +52,16 @@ interface TypedEventEmitter<Events extends Record<string, unknown[]>> {
 }
 
 // Example usage of typed event emitter
-interface DocumentEvents {
+interface DocumentEvents extends Record<string, unknown[]> {
   'change': [YEvent, YTransaction];
   'update': [string, unknown];
   'destroy': [];
 }
 
 const typedEmitter: TypedEventEmitter<DocumentEvents> = {
-  on(event, callback) { return this; },
-  off(event, callback) { return this; },
-  emit(event, ...args) { return true; }
+  on(_event, _callback) { return this; },
+  off(_event, _callback) { return this; },
+  emit(_event, ..._args) { return true; }
 };
 
 // Type-safe event subscription
@@ -71,7 +71,7 @@ typedEmitter.on('change', (event, transaction) => {
 });
 
 // ✅ Good: Using proper function signature for test utilities
-function createBetterMockObserver(callback: () => void) {
+function _createBetterMockObserver(callback: () => void) {
   return {
     observe: () => callback(),
     disconnect: () => {},
@@ -79,7 +79,7 @@ function createBetterMockObserver(callback: () => void) {
 }
 
 // ✅ Better: Using typed callback for test utilities with parameters
-function createTypedMockObserver<T>(callback: (data: T) => void) {
+function _createTypedMockObserver<T>(callback: (data: T) => void) {
   return {
     observe: (target: T) => callback(target),
     disconnect: () => {},
@@ -87,7 +87,7 @@ function createTypedMockObserver<T>(callback: (data: T) => void) {
 }
 
 // ✅ Good: Using proper function signatures in component props
-interface GoodComponentProps {
+interface _GoodComponentProps {
   onClick: (event: React.MouseEvent) => void;
   onChange: (value: string) => void;
   onSubmit: (data: unknown) => Promise<void>;
@@ -100,39 +100,39 @@ interface GoodComponentProps {
 // ✅ Good: Properly typed callback for specific events
 type YEventCallback = (event: YEvent, transaction: YTransaction) => void;
 
-interface YDocEvents {
+interface _YDocEvents {
   on(eventName: string, callback: YEventCallback): void;
   off(eventName: string, callback: YEventCallback): void;
 }
 
 // ✅ Good: Generic callback type for reuse
-type EventCallback<TEvent> = (event: TEvent) => void;
-type DataCallback<TData> = (data: TData) => void;
+type _EventCallback<TEvent> = (event: TEvent) => void;
+type _DataCallback<TData> = (data: TData) => void;
 
 // ✅ Good: Callbacks with optional parameters
-type OptionalCallback<T> = (data?: T) => void;
+type _OptionalCallback<T> = (data?: T) => void;
 
 // ==============================
 // Additional patterns for complex scenarios
 // ==============================
 
 // For callbacks that might receive different argument combinations
-type ComplexCallback = 
+type _ComplexCallback = 
   | (() => void)
   | ((id: string) => void)
   | ((id: string, data: unknown) => void);
 
 // For event handlers that need access to event and data
-interface EventHandler<TEvent, TData> {
+interface _EventHandler<TEvent, TData> {
   (event: TEvent, data?: TData): void;
 }
 
 // For callbacks with context
-type ContextCallback<TContext, TResult> = 
+type _ContextCallback<TContext, TResult> = 
   (this: TContext, ...args: unknown[]) => TResult;
 
 // For callbacks that can return different types
-type ReturnCallback<TData, TResult> = 
+type _ReturnCallback<TData, TResult> = 
   (data: TData) => TResult | Promise<TResult>;
 
 // ==============================
@@ -145,7 +145,7 @@ type ReturnCallback<TData, TResult> =
  * @param callback Function that will be called when document changes
  * @returns Observer instance
  */
-function createDocumentObserver(
+function _createDocumentObserver(
   callback: (doc: YDoc, event?: YEvent) => void
 ) {
   return {

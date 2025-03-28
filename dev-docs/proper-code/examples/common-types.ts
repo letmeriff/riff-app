@@ -18,8 +18,8 @@ export interface YDoc {
   clientID: number;
   gc: boolean;
   store: unknown;
-  getMap: (name: string) => YMap<any>;
-  getArray: <T = any>(name: string) => YArray<T>;
+  getMap: (name: string) => YMap<unknown>;
+  getArray: <T = unknown>(name: string) => YArray<T>;
   getText: (name: string) => YText;
   on: (eventName: string, callback: YEventCallback) => void;
   off: (eventName: string, callback: YEventCallback) => void;
@@ -45,18 +45,18 @@ export interface YMap<T> {
 /**
  * Represents a Yjs array data structure
  */
-export interface YArray<T> {
+export interface YArray<_T> {
   length: number;
-  insert: (index: number, content: T[]) => void;
-  push: (content: T[]) => void;
+  insert: (index: number, content: _T[]) => void;
+  push: (content: _T[]) => void;
   delete: (index: number, length: number) => void;
-  get: (index: number) => T;
-  toArray: () => T[];
-  toJSON: () => T[];
-  forEach: (callback: (value: T, index: number) => void) => void;
-  map: <M>(callback: (value: T, index: number) => M) => M[];
-  observe: (callback: YObserveCallback<T[]>) => void;
-  unobserve: (callback: YObserveCallback<T[]>) => void;
+  get: (index: number) => _T;
+  toArray: () => _T[];
+  toJSON: () => _T[];
+  forEach: (callback: (value: _T, index: number) => void) => void;
+  map: <M>(callback: (value: _T, index: number) => M) => M[];
+  observe: (callback: YObserveCallback<_T[]>) => void;
+  unobserve: (callback: YObserveCallback<_T[]>) => void;
 }
 
 /**
@@ -79,7 +79,7 @@ export type YEventCallback = (event: YEvent, transaction: YTransaction) => void;
 /**
  * Generic observe callback type for Yjs
  */
-export type YObserveCallback<T> = (event: YEvent, transaction: YTransaction) => void;
+export type YObserveCallback<_T> = (event: YEvent, transaction: YTransaction) => void;
 
 /**
  * Represents a Yjs event
@@ -243,7 +243,7 @@ export interface CustomEdge extends Edge {
 /**
  * Generic Mock Function with typed parameters and return
  */
-export type MockFn<TParams extends unknown[] = any[], TReturn = any> = 
+export type MockFn<TParams extends unknown[] = unknown[], TReturn = unknown> = 
   jest.Mock<TReturn, TParams>;
 
 /**
@@ -285,9 +285,7 @@ export type Factory<T, P = unknown> = (params?: P) => T;
 /**
  * Makes all properties of T optional and allows for unknown additional properties
  */
-export type ExtendedPartial<T> = {
-  [P in keyof T]?: T[P];
-} & Record<string, unknown>;
+export type ExtendedPartial<T> = Partial<T> & Record<string, unknown>;
 
 /**
  * Generic async result type
@@ -319,11 +317,9 @@ export interface TypedEventEmitter<Events extends Record<string, unknown[]>> {
   emit<E extends keyof Events>(event: E, ...args: Events[E]): boolean;
 }
 
-// Export a namespace with all types to make imports cleaner
-export namespace AppTypes {
-  export type Document = YDoc;
-  export type WebSocketProvider = YWebsocketProvider;
-  export type Awareness = YAwareness;
-  export type AppNode = CustomNode;
-  export type AppEdge = CustomEdge;
-} 
+// Export types individually to make imports cleaner
+export type { YDoc as Document };
+export type { YWebsocketProvider as WebSocketProvider };
+export type { YAwareness as Awareness };
+export type { CustomNode as AppNode };
+export type { CustomEdge as AppEdge }; 
