@@ -9,10 +9,13 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CanvasPage } from '../';
 import CanvasErrorBoundary from '../components/CanvasErrorBoundary';
+import { Node } from 'reactflow';
 
 // Import mocks
 import '../../../test-utils/mocks/reactflow.mock';
 import '../../../test-utils/mocks/yjs.mock';
+// Import hooks for type-safe access in tests
+import * as canvasHooks from '../../../hooks/canvas';
 
 // Import providers
 import { AuthProvider } from '../../../contexts/AuthContext';
@@ -60,14 +63,23 @@ jest.mock('../../../hooks/canvas', () => ({
   }))
 }));
 
+// Define an interface for ReactFlow props
+interface ReactFlowProps {
+  nodes: Node[];
+  onNodeClick?: (event: React.MouseEvent | null, node: Node) => void;
+  children?: React.ReactNode;
+}
+
 // Mock React Flow to return nodes with testids
 jest.mock('reactflow', () => {
+  // Import the mock instead of using require
   const reactFlowMock = jest.requireActual('../../../test-utils/mocks/reactflow.mock');
   return {
     ...reactFlowMock,
-    default: ({ nodes, ...props }: any) => (
+    // Use the interface to type the props
+    default: ({ nodes, ...props }: ReactFlowProps) => (
       <div data-testid="reactflow-container">
-        {nodes.map((node: any) => (
+        {nodes.map((node) => (
           <div key={node.id} data-testid={`rf__node-${node.id}`} onClick={() => props.onNodeClick?.(null, node)}>
             {node.data.label}
           </div>
@@ -142,16 +154,16 @@ describe('Canvas Final Integration Tests', () => {
   });
   
   it('handles node selection and passes it to parent', async () => {
-    // Get mocked hooks
-    const { useCanvasNodes, useCanvasUI } = require('../../../hooks/canvas');
+    // Use the imported hooks instead of require
+    const { useCanvasNodes, useCanvasUI } = canvasHooks;
     
     // Prepare mocks for testing node selection
     const nodes = [
       { id: '1', data: { label: 'Test Node 1', content: 'Test content 1' }, position: { x: 0, y: 0 } }
     ];
     
-    // Update mocks
-    useCanvasNodes.mockReturnValue({
+    // Update mocks with proper casting
+    (useCanvasNodes as jest.Mock).mockReturnValue({
       nodes,
       setNodes: jest.fn(),
       onNodesChange: jest.fn(),
@@ -163,7 +175,7 @@ describe('Canvas Final Integration Tests', () => {
     });
     
     const setSelectedNodeIdMock = jest.fn();
-    useCanvasUI.mockReturnValue({
+    (useCanvasUI as jest.Mock).mockReturnValue({
       selectedNodeId: null,
       setSelectedNodeId: setSelectedNodeIdMock,
       setSelectedNodeContent: jest.fn(),

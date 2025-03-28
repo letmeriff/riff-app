@@ -8,6 +8,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { CanvasPage } from '../';
+import * as canvasHooks from '../../../hooks/canvas';
 
 // Import mocks
 import '../../../test-utils/mocks/reactflow.mock';
@@ -145,8 +146,8 @@ describe('CanvasPage Integration Tests', () => {
 
   it('handles loading state correctly', () => {
     // Override the hook mock for this test to show loading
-    const originalUseCanvasNodes = require('../../../hooks/canvas').useCanvasNodes;
-    jest.spyOn(require('../../../hooks/canvas'), 'useCanvasNodes').mockReturnValue({
+    const originalUseCanvasNodes = canvasHooks.useCanvasNodes;
+    jest.spyOn(canvasHooks, 'useCanvasNodes').mockReturnValue({
       ...originalUseCanvasNodes(),
       loading: true
     });

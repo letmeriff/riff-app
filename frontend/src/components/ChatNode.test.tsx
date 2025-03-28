@@ -1,7 +1,7 @@
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ChatNode from './ChatNode';
-import { NodeProps } from 'reactflow';
+import { NodeProps, Position } from 'reactflow';
 
 // Mock the dependencies
 jest.mock('reactflow', () => ({
@@ -24,12 +24,16 @@ interface NodeSettingsProps {
   node: { id: string } | null;
 }
 
-jest.mock('./NodeSettingsModal', () => ({
-  __esModule: true,
-  default: ({ show, node }: NodeSettingsProps) => (
-    show ? <div data-testid="node-settings-modal">Settings Modal for {node?.id}</div> : null
-  ),
-}));
+const NodeSettingsModal: React.FC<NodeSettingsProps> = ({ show, onHide, node }) => {
+  if (!show || !node) return null;
+  
+  return (
+    <div data-testid="node-settings-modal">
+      <h2>Settings Modal for {node.id}</h2>
+      <button onClick={onHide}>Close</button>
+    </div>
+  );
+};
 
 jest.mock('./EditIndicator', () => ({
   __esModule: true,
@@ -55,7 +59,20 @@ interface ChatNodeData {
   attachments?: Array<{ attachment_id: number; file_url: string; file_type: string }>;
 }
 
-type TestNodeProps = NodeProps<ChatNodeData>;
+// Extend NodeProps for our test component
+interface TestNodeProps extends NodeProps<ChatNodeData> {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  selected: boolean;
+  dragging: boolean;
+  dragHandle?: string;
+  isConnectable: boolean;
+  zIndex: number;
+  xPos: number;
+  yPos: number;
+  data: ChatNodeData;
+}
 
 describe('ChatNode Component', () => {
   const mockNodeProps: TestNodeProps = {
@@ -129,11 +146,10 @@ describe('ChatNode Component', () => {
     // Settings modal should not be visible initially
     expect(screen.queryByTestId('node-settings-modal')).not.toBeInTheDocument();
     
-    // Double-click on the node
-    const nodeElement = screen.getByText('Test Node').parentElement;
-    if (nodeElement) {
-      fireEvent.doubleClick(nodeElement);
-    }
+    // Double-click on the node content div instead of using closest
+    // We'll use getByRole to find a clickable element that contains our node label
+    const nodeElement = screen.getByText('Test Node');
+    fireEvent.doubleClick(nodeElement);
     
     // Settings modal should now be visible
     expect(screen.getByTestId('node-settings-modal')).toBeInTheDocument();

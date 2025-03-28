@@ -57,23 +57,34 @@ jest.mock('../../../contexts/AuthContext', () => {
   };
 });
 
+// Define interface for ReactFlow mock props
+interface MockReactFlowProps {
+  nodes?: Node[];
+  edges?: Edge[];
+  _onNodesChange?: (changes: unknown) => void;
+  _onEdgesChange?: (changes: unknown) => void;
+  onConnect?: (connection: unknown) => void;
+  onNodeClick?: (event: React.MouseEvent, node: Node) => void;
+  children?: React.ReactNode;
+}
+
 // Mock ReactFlow with all required exports
 jest.mock('reactflow', () => {
   const MockReactFlow = ({
     nodes = [], 
     edges = [], 
-    onNodesChange,
-    onEdgesChange,
+    _onNodesChange,
+    _onEdgesChange,
     onConnect,
     onNodeClick,
     children
-  }: any) => (
+  }: MockReactFlowProps) => (
     <div data-testid="reactflow-mock">
       <div data-testid="nodes-count">{nodes.length}</div>
       <div data-testid="edges-count">{edges.length}</div>
       <button 
         data-testid="trigger-node-click" 
-        onClick={(e) => onNodeClick && onNodeClick(e, { id: 'test-node-1' } as any)}
+        onClick={(e) => onNodeClick && onNodeClick(e, { id: 'test-node-1' } as Node)}
       >
         Trigger Node Click
       </button>

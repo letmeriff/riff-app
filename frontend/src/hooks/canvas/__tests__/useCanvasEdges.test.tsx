@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { Connection, Edge } from 'reactflow';
 import { useCanvasEdges } from '../useCanvasEdges';
 import { useYjs } from '../../../contexts/YjsContext';
+import { syncEdgeChangesToYjs } from '../../../utils/reactFlowYjsBinding';
 
 // Import the mocks
 import '../../../test-utils/mocks/reactflow.mock';
@@ -85,12 +86,12 @@ describe('useCanvasEdges', () => {
       newEdge = result.current.createEdge('1', '2') as Edge;
     });
     
+    // Move expect outside of conditional block to avoid conditional expects
     expect(newEdge).not.toBeNull();
-    if (newEdge) {
-      expect(newEdge.id).toContain('edge');
-      expect(newEdge.source).toBe('1');
-      expect(newEdge.target).toBe('2');
-    }
+    // Use non-null assertion after we've checked it's not null
+    expect(newEdge!.id).toContain('edge');
+    expect(newEdge!.source).toBe('1');
+    expect(newEdge!.target).toBe('2');
   });
 
   it('should connect nodes via onConnect callback', async () => {
@@ -100,6 +101,13 @@ describe('useCanvasEdges', () => {
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
+    
+    // Verify initial state
+    expect(result.current.loading).toBe(false);
+    
+    // Get the mocked function to verify it's called
+    const mockedSyncEdges = syncEdgeChangesToYjs as jest.Mock;
+    const initialCallCount = mockedSyncEdges.mock.calls.length;
     
     act(() => {
       const connection: Connection = {
@@ -111,8 +119,8 @@ describe('useCanvasEdges', () => {
       result.current.onConnect(connection);
     });
 
-    // We can't directly test state changes with the mocked useEdgesState,
-    // but we can verify that the callback was executed without errors
+    // Verify the function was called, showing that our callback worked
+    expect(mockedSyncEdges.mock.calls.length).toBeGreaterThan(initialCallCount);
   });
 
   it('should delete an edge', async () => {

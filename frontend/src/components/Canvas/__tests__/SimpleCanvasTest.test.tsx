@@ -50,22 +50,32 @@ jest.mock('../../../hooks/canvas', () => ({
   })
 }));
 
+// Interface for ReactFlow mock component props
+interface ReactFlowMockProps {
+  nodes?: Node[];
+  edges?: Edge[];
+  onNodesChange?: (changes: unknown) => void;
+  _onEdgesChange?: (changes: unknown) => void;
+  _onConnect?: (connection: unknown) => void;
+  children?: React.ReactNode;
+}
+
 // Mock ReactFlow with all required exports
 jest.mock('reactflow', () => {
   const ReactFlowMock = ({
     nodes,
     edges,
     onNodesChange,
-    onEdgesChange,
-    onConnect,
+    _onEdgesChange,
+    _onConnect,
     children
-  }: any) => (
+  }: ReactFlowMockProps) => (
     <div data-testid="reactflow-mock">
       <div data-testid="nodes-count">{nodes?.length || 0}</div>
       <div data-testid="edges-count">{edges?.length || 0}</div>
       <button 
         data-testid="trigger-node-click" 
-        onClick={(e) => onNodesChange && onNodesChange([{ type: 'select', id: 'node-1' }])}
+        onClick={(_e) => onNodesChange && onNodesChange([{ type: 'select', id: 'node-1' }])}
       >
         Click Node
       </button>
