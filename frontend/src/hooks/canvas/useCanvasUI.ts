@@ -1,32 +1,67 @@
 /**
  * useCanvasUI Hook
  * 
- * This hook provides state management for the UI elements of the canvas.
- * It handles selection state, viewport, and other UI-related functionality.
+ * This hook provides UI state management for the Canvas component.
+ * It handles selection state, viewport management, and UI element positioning.
  */
 
-import { useState, useCallback } from 'react';
-import { UseCanvasUIResult, ViewportBounds } from '../../types/canvas';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { 
+  ViewportBounds,
+  UseCanvasUIResult 
+} from '../../types/canvas';
 
 /**
- * @TODO: Implement this hook as part of the refactoring process.
- * This is a placeholder that will be expanded during the refactoring.
+ * Custom hook for managing Canvas UI state
+ * Provides functionality for managing selected nodes, viewport, and UI elements
  */
 export function useCanvasUI(): UseCanvasUIResult {
-  // Basic state setup
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedNodeContent, setSelectedNodeContent] = useState<string | null>(null);
+  // Selection state
+  const [selectedNodeId, setSelectedNodeIdInternal] = useState<string | null>(null);
+  const [selectedNodeContent, setSelectedNodeContentInternal] = useState<string | null>(null);
+  
+  // Viewport state
   const [viewport, setViewport] = useState<ViewportBounds | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
-  // In the full implementation, this hook will:
-  // 1. Manage node selection state
-  // 2. Track viewport information for optimization
-  // 3. Handle UI state like menus, modals, etc.
+  // UI element states
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   
-  // Toggle menu state
+  // Handle selection - clearing content when node is deselected
+  const setSelectedNodeId = useCallback((nodeId: string | null) => {
+    setSelectedNodeIdInternal(nodeId);
+    if (nodeId === null) {
+      setSelectedNodeContentInternal(null);
+    }
+  }, []);
+  
+  // Memoized menu position based on viewport
+  const getMenuPosition = useCallback(() => {
+    // Default position (top right corner with padding)
+    const defaultPosition = { top: 20, right: 20 };
+    
+    if (!viewport) {
+      return defaultPosition;
+    }
+    
+    // Calculate position based on viewport
+    // This can be adjusted based on the specific UI requirements
+    const paddingX = 20;
+    const paddingY = 20;
+    
+    return {
+      top: paddingY,
+      right: paddingX
+    };
+  }, [viewport]);
+  
+  // Toggle menu open/closed state
   const toggleMenu = useCallback(() => {
-    setIsMenuOpen(prev => !prev);
+    setIsMenuOpen(prevState => !prevState);
+  }, []);
+  
+  // For consistency, define setter with the same name pattern
+  const setSelectedNodeContent = useCallback((content: string | null) => {
+    setSelectedNodeContentInternal(content);
   }, []);
   
   return {
@@ -37,6 +72,7 @@ export function useCanvasUI(): UseCanvasUIResult {
     viewport,
     setViewport,
     isMenuOpen,
-    toggleMenu
+    toggleMenu,
+    getMenuPosition
   };
 } 

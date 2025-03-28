@@ -2,53 +2,162 @@
  * useYjsIntegration Hook
  * 
  * This hook provides integration with Yjs for real-time collaboration features.
- * It handles document binding, awareness updates, and offline synchronization.
+ * It handles awareness, offline support, and synchronization with the server.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useYjs } from '../../contexts/YjsContext';
-import { UserPresence, UseYjsIntegrationResult } from '../../types/canvas';
+import { 
+  UseYjsIntegrationResult,
+  UserPresence 
+} from '../../types/canvas';
+import { SyncStatus } from '../../utils/yjsOfflineSupport';
+import { debounce } from 'lodash';
 
 /**
- * @TODO: Implement this hook as part of the refactoring process.
- * This is a placeholder that will be expanded during the refactoring.
+ * Hook for Yjs integration and collaboration features
+ * Provides functionality for real-time collaboration, offline support,
+ * and synchronization with the server
  */
 export function useYjsIntegration(): UseYjsIntegrationResult {
-  // Get access to the Yjs context
+  // Get Yjs context
   const yjs = useYjs();
   
-  // State for tracking local status
+  // States for collaboration features
+  const [isConnected, setIsConnected] = useState<boolean>(yjs?.isConnected || false);
+  const [isOffline, setIsOffline] = useState<boolean>(yjs?.isOffline || false);
+  const [offlineChangesCount, setOfflineChangesCount] = useState<number>(yjs?.offlineChangesCount || 0);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [connectedUsers, setConnectedUsers] = useState<UserPresence[]>([]);
   
-  // In the full implementation, this hook will:
-  // 1. Provide a clean interface to the Yjs functionality
-  // 2. Handle awareness updates for user presence
-  // 3. Manage offline mode and synchronization
-  // 4. Track connected users
+  // Update states based on Yjs context changes
+  useEffect(() => {
+    if (!yjs) return;
+    
+    setIsConnected(yjs.isConnected);
+    setIsOffline(yjs.isOffline);
+    setOfflineChangesCount(yjs.offlineChangesCount);
+    
+    // Derive sync status text from Yjs status
+    if (yjs.syncStatus) {
+      if (yjs.syncStatus.syncInProgress) {
+        setSyncStatus('Syncing');
+      } else if (yjs.syncStatus.pendingChanges) {
+        setSyncStatus('Pending changes');
+      } else if (yjs.syncStatus.lastSyncedAt) {
+        const lastSynced = new Date(yjs.syncStatus.lastSyncedAt);
+        setSyncStatus(`Synced at ${lastSynced.toLocaleTimeString()}`);
+      } else {
+        setSyncStatus(null);
+      }
+    } else {
+      setSyncStatus(null);
+    }
+    
+    // Transform connected users to UserPresence format
+    if (yjs.connectedUsers && yjs.connectedUsers.length > 0) {
+      const transformedUsers: UserPresence[] = yjs.connectedUsers.map(user => {
+        // Basic user presence information
+        return {
+          userId: user.userId,
+          email: user.userId, // Use userId as fallback for email
+          name: user.userId, // Use userId as fallback for name
+          isTyping: false,
+          lastActive: new Date().toISOString(),
+          color: getRandomColor(user.userId), // Generate a color based on userId
+        };
+      });
+      
+      setConnectedUsers(transformedUsers);
+    } else {
+      setConnectedUsers([]);
+    }
+  }, [
+    yjs, 
+    yjs?.isConnected, 
+    yjs?.isOffline, 
+    yjs?.offlineChangesCount, 
+    yjs?.syncStatus,
+    yjs?.connectedUsers
+  ]);
   
-  // Placeholder implementation - in the real implementation, most of these
-  // values would come from the Yjs context
-  const forceSync = async () => {
+  // Debounced awareness update to avoid excessive updates
+  const updateAwareness = useCallback(
+    debounce((data: any) => {
+      if (!yjs) return;
+      
+      try {
+        yjs.updateAwareness(data);
+      } catch (error) {
+        console.error('Error updating awareness:', error);
+      }
+    }, 50),
+    [yjs]
+  );
+  
+  // Force synchronization of changes with the server
+  const forceSync = useCallback(async (): Promise<boolean> => {
+    if (!yjs) return false;
+    
     try {
-      // Implement sync logic
-      return true;
+      // Update sync status
+      setSyncStatus('Syncing');
+      
+      // Attempt to force sync through Yjs context
+      const result = await yjs.forceSync();
+      
+      // Update sync status based on result
+      if (result) {
+        setSyncStatus('Synced');
+        setOfflineChangesCount(0);
+      } else {
+        setSyncStatus('Sync failed');
+      }
+      
+      return result;
     } catch (error) {
-      console.error('Sync failed:', error);
+      console.error('Error forcing sync:', error);
+      setSyncStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
-  };
+  }, [yjs]);
   
-  const updateAwareness = (data: any) => {
-    // Implement awareness update logic
-  };
+  // Update cursor position in awareness
+  const updateCursorPosition = useCallback((position: { x: number; y: number }) => {
+    updateAwareness({ cursor: position });
+  }, [updateAwareness]);
+  
+  // Update typing status in awareness
+  const setTypingStatus = useCallback((isTyping: boolean) => {
+    updateAwareness({ isTyping });
+  }, [updateAwareness]);
   
   return {
-    isConnected: yjs.isConnected,
-    isOffline: yjs.isOffline,
-    offlineChangesCount: yjs.offlineChangesCount,
+    isConnected,
+    isOffline,
+    offlineChangesCount,
     syncStatus,
-    connectedUsers: [], // Empty array as placeholder for the real implementation
+    connectedUsers,
+    updateAwareness,
     forceSync,
-    updateAwareness
+    updateCursorPosition,
+    setTypingStatus
   };
+}
+
+/**
+ * Helper function to generate a consistent color from a string
+ */
+function getRandomColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Generate HSL color with high saturation and medium lightness for good contrast
+  const h = Math.abs(hash % 360);
+  const s = 75;  // High saturation
+  const l = 60;  // Medium lightness
+  
+  return `hsl(${h}, ${s}%, ${l}%)`;
 } 

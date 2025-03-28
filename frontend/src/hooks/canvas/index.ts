@@ -5,10 +5,11 @@
  * It exports the custom hooks for use with the Canvas components.
  */
 
-// Placeholder for future hooks
+// Export implemented hooks
+export { useCanvasNodes } from './useCanvasNodes';
+export { useCanvasEdges } from './useCanvasEdges';
+export { useYjsIntegration } from './useYjsIntegration';
+export { useCanvasUI } from './useCanvasUI';
 
-// In the future, this file will export the refactored hooks:
-// export { useCanvasNodes } from './useCanvasNodes';
-// export { useCanvasEdges } from './useCanvasEdges';
-// export { useYjsIntegration } from './useYjsIntegration';
+// The following hooks will be implemented in future refactoring stages:
 // export { useCanvasUI } from './useCanvasUI'; 

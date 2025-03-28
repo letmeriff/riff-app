@@ -125,7 +125,12 @@ export interface ViewportBounds {
  */
 export interface CanvasPageProps {
   onNodeSelect: (nodeId: string | null, nodeTitle: string | null) => void;
-  onOpenSettings?: () => void;
+  onOpenSettings?: (nodeId: string) => void;
+  featureFlags?: {
+    enablePerformanceMonitoring?: boolean;
+    enableVirtualization?: boolean;
+    enableErrorReporting?: boolean;
+  };
 }
 
 /**
@@ -232,6 +237,8 @@ export interface UseYjsIntegrationResult {
   connectedUsers: UserPresence[];
   forceSync: () => Promise<boolean>;
   updateAwareness: (data: any) => void;
+  updateCursorPosition: (position: { x: number; y: number }) => void;
+  setTypingStatus: (isTyping: boolean) => void;
 }
 
 /**
@@ -246,6 +253,7 @@ export interface UseCanvasUIResult {
   setViewport: (viewport: ViewportBounds) => void;
   isMenuOpen: boolean;
   toggleMenu: () => void;
+  getMenuPosition: () => { top: number; right: number };
 }
 
 // ---------------------------------------------------------------------------
