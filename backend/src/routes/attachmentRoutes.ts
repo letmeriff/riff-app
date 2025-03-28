@@ -3,22 +3,30 @@ import { authMiddleware } from '../middleware/auth';
 import { supabase } from '../config/supabase';
 import { io } from '../index';
 import { extractTextFromPDF } from '../utils/pdfExtractor';
+import { 
+  NodeId, 
+  ChatAttachment, 
+  AttachmentUpdatePayload, 
+  AttachmentDeletePayload,
+  createAttachmentUpdatePayload,
+  createAttachmentDeletePayload
+} from '../types/messaging';
 
 const router = express.Router();
 
 // Get attachments for a specific node
 router.get('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { nodeId } = req.params;
+    const nodeId: NodeId = parseInt(req.params.nodeId);
 
-    if (!nodeId) {
-      return res.status(400).json({ error: 'Node ID is required' });
+    if (isNaN(nodeId)) {
+      return res.status(400).json({ error: 'Invalid Node ID' });
     }
 
     const { data, error } = await supabase
       .from('chat_attachments')
       .select('*')
-      .eq('node_id', parseInt(nodeId))
+      .eq('node_id', nodeId)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -56,10 +64,11 @@ router.get('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
 router.post('/upload', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { nodeId, fileData, fileName, fileType, fileSize } = req.body;
+    const { nodeId: nodeIdParam, fileData, fileName, fileType, fileSize } = req.body;
+    const nodeId: NodeId = parseInt(nodeIdParam);
 
-    if (!nodeId) {
-      return res.status(400).json({ error: 'nodeId is required' });
+    if (isNaN(nodeId)) {
+      return res.status(400).json({ error: 'Invalid nodeId' });
     }
 
     if (!fileData || !fileName || !fileType || !fileSize) {
@@ -163,12 +172,24 @@ router.post('/upload', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Convert attachment to proper ChatAttachment type
+    const typedAttachment: ChatAttachment = {
+      attachment_id: attachment.attachment_id,
+      node_id: nodeId,
+      file_url: attachment.file_url,
+      file_type: attachment.file_type,
+      file_name: attachment.file_name,
+      file_size: attachment.file_size,
+      created_at: attachment.created_at,
+      user_id: attachment.user_id
+    };
+
+    // Create a standardized attachment update payload
+    const attachmentPayload: AttachmentUpdatePayload = createAttachmentUpdatePayload(typedAttachment);
+
     // Broadcast the new attachment to all users in the node room
     const nodeRoom = `node:${nodeId}`;
-    io.to(nodeRoom).emit('attachment-update', { 
-      nodeId, 
-      attachment 
-    });
+    io.to(nodeRoom).emit('attachment-update', attachmentPayload);
 
     // Update the node state with attachment info
     const { data: nodeAttachments } = await supabase
@@ -244,7 +265,10 @@ router.post('/upload', authMiddleware, async (req: Request, res: Response) => {
       attachments,
     });
 
-    return res.json({ attachment });
+    return res.json({ 
+      success: true,
+      payload: attachmentPayload 
+    });
   } catch (error) {
     console.error('Error uploading file:', error);
     return res.status(500).json({
@@ -256,23 +280,25 @@ router.post('/upload', authMiddleware, async (req: Request, res: Response) => {
 // Delete an attachment
 router.delete('/:attachmentId', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { attachmentId } = req.params;
+    const attachmentId = parseInt(req.params.attachmentId);
     const userId = req.user?.id;
 
-    if (!attachmentId) {
-      return res.status(400).json({ error: 'Attachment ID is required' });
+    if (isNaN(attachmentId)) {
+      return res.status(400).json({ error: 'Invalid Attachment ID' });
     }
 
     // Get the attachment details
     const { data: attachment, error: fetchError } = await supabase
       .from('chat_attachments')
       .select('*, chat_nodes!inner(owner_id)')
-      .eq('attachment_id', parseInt(attachmentId))
+      .eq('attachment_id', attachmentId)
       .single();
 
     if (fetchError || !attachment) {
       return res.status(404).json({ error: 'Attachment not found' });
     }
+
+    const nodeId: NodeId = attachment.node_id;
 
     // Check if user is the owner of the node or the one who uploaded the attachment
     const isNodeOwner = attachment.chat_nodes.owner_id === userId;
@@ -296,20 +322,23 @@ router.delete('/:attachmentId', authMiddleware, async (req: Request, res: Respon
     const { error: deleteError } = await supabase
       .from('chat_attachments')
       .delete()
-      .eq('attachment_id', parseInt(attachmentId));
+      .eq('attachment_id', attachmentId);
 
     if (deleteError) {
       throw deleteError;
     }
 
-    // Notify clients about the deletion
-    const nodeRoom = `node:${attachment.node_id}`;
-    io.to(nodeRoom).emit('attachment-delete', { 
-      nodeId: attachment.node_id, 
-      attachmentId: parseInt(attachmentId) 
-    });
+    // Create standardized attachment delete payload using factory function
+    const deletePayload = createAttachmentDeletePayload(nodeId, attachmentId);
 
-    return res.json({ success: true });
+    // Notify clients about the deletion with standardized payload
+    const nodeRoom = `node:${nodeId}`;
+    io.to(nodeRoom).emit('attachment-delete', deletePayload);
+
+    return res.json({ 
+      success: true,
+      payload: deletePayload
+    });
   } catch (error) {
     console.error('Error deleting attachment:', error);
     return res.status(500).json({
