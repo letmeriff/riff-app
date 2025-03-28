@@ -8,15 +8,11 @@ import {
   isMessageUpdatePayload,
   isPresenceUpdatePayload,
   isOwnershipUpdatePayload,
-  isTransferErrorPayload,
-  isNodeUpdatePayload,
-  isAttachmentUpdatePayload,
-  isAttachmentDeletePayload,
   parseNodeId,
   compareNodeIds,
   ensureNumericId
 } from './typeGuards';
-import { NodeId, NetworkPayload } from '../types/messaging';
+import { NetworkPayload } from '../types/messaging';
 
 describe('Type Guards', () => {
   describe('isMessageUpdatePayload', () => {

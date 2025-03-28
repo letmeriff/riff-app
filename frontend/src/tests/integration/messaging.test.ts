@@ -11,7 +11,6 @@ import {
   isMessageUpdatePayload,
   isPresenceUpdatePayload,
   isOwnershipUpdatePayload,
-  isNodeUpdatePayload,
   parseNodeId,
   compareNodeIds
 } from '../../utils/typeGuards';
@@ -19,8 +18,7 @@ import {
   NetworkPayload,
   MessageUpdatePayload,
   PresenceUpdatePayload,
-  OwnershipUpdatePayload,
-  NodeId
+  OwnershipUpdatePayload
 } from '../../types/messaging';
 
 // Mock the socket.io client library
@@ -45,7 +43,7 @@ jest.mock('socket.io-client', () => {
 // Mock the network adapter
 const mockSubscribeToEvent = jest.fn();
 const mockSendMessage = jest.fn();
-const mockNetworkAdapter = {
+const _mockNetworkAdapter = {
   connect: jest.fn().mockResolvedValue(true),
   disconnect: jest.fn(),
   isConnected: jest.fn().mockReturnValue(true),
