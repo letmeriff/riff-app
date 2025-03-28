@@ -34,7 +34,13 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "prepare": "husky",
-    "pre-commit": "lint-staged"
+    "pre-commit": "lint-staged",
+    "lint:types": "npx eslint --ext .ts,.tsx . --rule '@typescript-eslint/no-explicit-any: error' --rule '@typescript-eslint/ban-types: error'",
+    "lint:unused": "npx eslint --ext .ts,.tsx . --rule '@typescript-eslint/no-unused-vars: error'",
+    "lint:test-files": "npx eslint \"**/*.test.{ts,tsx}\" \"**/test/**/*.{ts,tsx}\" \"**/__tests__/**/*.{ts,tsx}\"",
+    "lint:count": "npx eslint --ext .ts,.tsx . --format json | node scripts/count-eslint-issues.js",
+    "lint:fix": "npx eslint --ext .ts,.tsx . --fix",
+    "lint:check-staged": "npx eslint --ext .ts,.tsx $(git diff --staged --name-only | grep -E '\\.tsx?$')"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
