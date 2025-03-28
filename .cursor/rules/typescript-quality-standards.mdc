@@ -1,0 +1,205 @@
+---
+description: ALWAYS uses these rules to ensure consistent code quality and type safety across the TypeScript/JavaScript codebase
+globs: 
+alwaysApply: false
+---
+# 2000-typescript-quality-standards
+
+This file defines code quality standards for the Riff application. Cursor uses these rules to ensure consistent code quality and type safety across the TypeScript/JavaScript codebase.
+
+## Type Safety Rules
+
+type-safety: ALWAYS replace `any` with `unknown` or more specific types across the codebase
+**/*.{ts,tsx}
+
+function-types: ALWAYS use properly typed function signatures instead of the `Function` type
+**/*.{ts,tsx}
+
+record-types: PREFER `Record<string, unknown>` for objects with string keys over generic object types
+**/*.{ts,tsx}
+
+domain-interfaces: ALWAYS create domain-specific interfaces for complex data structures instead of using generic types
+**/*.{ts,tsx}
+
+## Unused Variables Rules
+
+unused-vars: ALWAYS prefix unused variables with underscore (e.g., `_variableName`)
+**/*.{ts,tsx}
+
+remove-unused: PREFER removing completely unused parameters when possible
+**/*.{ts,tsx}
+
+## External Library Integration Rules
+
+external-lib-types: ALWAYS create custom interfaces for external libraries with incomplete type definitions
+**/*.{ts,tsx}
+
+two-step-casting: ALWAYS use two-step type assertions (`as unknown as TargetType`) for external library compatibility
+**/*.{ts,tsx}
+
+## Mock Object Rules
+
+mock-interfaces: ALWAYS create dedicated interfaces for mock objects rather than extending actual interfaces
+**/*.test.{ts,tsx}
+
+mock-naming: ALWAYS use consistent naming patterns for mock implementations (e.g., mockWebSocketProvider)
+**/*.test.{ts,tsx}
+
+## Test Utility Rules
+
+typed-test-utils: ALWAYS prefer typed test utilities over any-based implementations
+**/*.test.{ts,tsx}, **/test/**/*.{ts,tsx}
+
+test-return-types: ALWAYS use explicit return types for test factory functions
+**/*.test.{ts,tsx}, **/test/**/*.{ts,tsx}
+
+## Best Practices
+
+prototype-methods: ALWAYS use `Object.prototype.hasOwnProperty.call(obj, 'key')` instead of `obj.hasOwnProperty('key')`
+**/*.{ts,tsx}
+
+es6-imports: ALWAYS use ES6 imports instead of requires
+**/*.{ts,tsx}
+
+jest-assertions: PREFER using dedicated Jest matchers like `toHaveLength()` over comparing properties directly
+**/*.test.{ts,tsx}
+
+utility-interfaces: ALWAYS create utility interfaces for common patterns (Position, Dimensions, etc.)
+**/*.{ts,tsx}
+
+## Browser API Handling
+
+browser-apis: ALWAYS create type-safe interfaces for browser-specific features
+**/*.{ts,tsx}
+
+api-comments: ALWAYS add explanatory comments for non-standard browser APIs
+**/*.{ts,tsx}
+
+## Collaborative Editing Patterns
+
+yjs-interfaces: ALWAYS create specific interfaces for Yjs collaborative data structures
+**/yjs*.{ts,tsx}, **/*yjs*.{ts,tsx}
+
+websocket-types: ALWAYS type event handlers properly for WebSocket communications
+**/*Socket*.{ts,tsx}, **/*Websocket*.{ts,tsx}
+
+## Reference Examples
+
+Below are examples of how to follow these rules:
+
+### Replace `any` with more specific types
+
+```ts
+// ❌ BAD: Using `any` type
+function processData(data: any): any {
+  return data.items.map(item => item.value);
+}
+
+// ✅ GOOD: Using specific interfaces and types
+interface DataItem {
+  value: number;
+  id: string;
+}
+
+interface DataContainer {
+  items: DataItem[];
+}
+
+function processData(data: DataContainer): number[] {
+  return data.items.map(item => item.value);
+}
+```
+
+### Use `unknown` instead of `any` for truly unknown values
+
+```ts
+// ❌ BAD: Using `any` for unknown data
+function handleExternalData(data: any) {
+  return data.value;  // No type safety, might cause runtime errors
+}
+
+// ✅ GOOD: Using unknown with type guards
+function handleExternalData(data: unknown) {
+  if (typeof data === 'object' && data !== null && 'value' in data) {
+    return (data as { value: unknown }).value;
+  }
+  throw new Error('Invalid data format');
+}
+```
+
+### Replace `Function` type with proper function signatures
+
+```ts
+// ❌ BAD: Using generic Function type
+function registerCallback(callback: Function) {
+  // No type safety for arguments or return value
+}
+
+// ✅ GOOD: Using specific function signature
+function registerCallback(callback: (data: EventData) => void) {
+  // Type-safe function parameters and return value
+}
+```
+
+### Prefix unused variables with underscore
+
+```ts
+// ❌ BAD: Unused variables without prefix
+function processItems(items, index, collection) {
+  // Only using items
+  return items.value;
+}
+
+// ✅ GOOD: Prefix unused parameters with underscore
+function processItems(items, _index, _collection) {
+  // Clearly indicates which parameters are intentionally unused
+  return items.value;
+}
+```
+
+### Use two-step type assertions for external library compatibility
+
+```ts
+// ❌ BAD: Direct type assertion
+const result = externalLibCall() as ExpectedType;
+
+// ✅ GOOD: Two-step type assertion for safer conversions
+const result = externalLibCall() as unknown as ExpectedType;
+```
+
+### Create dedicated interfaces for mock objects
+
+```ts
+// ❌ BAD: Extending actual interfaces for mocks when incompatible
+class MockService extends ActualService {
+  // May not match actual implementation
+}
+
+// ✅ GOOD: Creating dedicated mock interfaces
+interface MockService {
+  getData: jest.Mock<Promise<Data>>;
+  processItem: jest.Mock<void, [string]>;
+}
+
+// Implement mock with proper typing
+const mockService: MockService = {
+  getData: jest.fn().mockResolvedValue({ /* mock data */ }),
+  processItem: jest.fn()
+};
+```
+
+### Avoid direct access to Object.prototype methods
+
+```ts
+// ❌ BAD: Direct prototype method access
+if (obj.hasOwnProperty('key')) {
+  // Implementation
+}
+
+// ✅ GOOD: Use Object.prototype methods correctly
+if (Object.prototype.hasOwnProperty.call(obj, 'key')) {
+  // Implementation
+}
+```
+
+These rules reflect the established patterns in the Riff application codebase and should be followed to maintain consistent code quality and type safety. 
