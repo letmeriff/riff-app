@@ -48,7 +48,9 @@ export interface UseCanvasNodesReturn {
 export const useCanvasNodes = ({
   initialNodes = [],
   enableYjs = true,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   enableAutoSave = true,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   canvasId = 'default',
 }: UseCanvasNodesOptions = {}): UseCanvasNodesReturn => {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
@@ -58,6 +60,7 @@ export const useCanvasNodes = ({
   const yjs = useYjs();
 
   // Track chat node data separately for easy access
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [chatNodes, setChatNodes] = useState<Record<string, ChatNode>>({});
 
   /**

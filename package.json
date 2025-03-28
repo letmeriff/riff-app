@@ -43,7 +43,12 @@
     "lint:check-staged": "npx eslint --ext .ts,.tsx $(git diff --staged --name-only | grep -E '\\.tsx?$')"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
+    "*.{ts,tsx}": [
+      "eslint --cache --fix",
+      "prettier --write",
+      "node scripts/check-eslint-staged.js"
+    ],
+    "*.{js,jsx}": [
       "eslint --fix",
       "prettier --write"
     ],

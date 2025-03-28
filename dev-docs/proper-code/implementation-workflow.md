@@ -258,6 +258,76 @@ function processItem(item) {
 }
 ```
 
+## Pattern Library Reference Approach
+
+To ensure consistency and efficiency in fixing issues throughout the codebase, the example files in `dev-docs/proper-code/examples/` should be used as a reference pattern library:
+
+1. **Reference Example Files First**
+   - Before fixing similar issues in the codebase, consult the relevant example file
+   - Example files contain validated patterns that have successfully passed ESLint checks
+   - Use these patterns as templates for implementing fixes in actual code
+
+2. **Key Example Files**
+   - `function-type-fixes.ts`: Reference for replacing `Function` type with proper function signatures
+   - `common-types.ts`: Collection of reusable type definitions for external libraries and common patterns
+
+3. **Pattern Application**
+   - Apply consistent patterns across similar files to ensure codebase uniformity
+   - Prefer using established patterns over creating new solutions for similar problems
+   - Update the example files when discovering new patterns worth standardizing
+
+4. **Documentation Value**
+   - Example files serve as living documentation of best practices
+   - Reference these files in pull request descriptions to justify implementation choices
+   - Use as educational resources for team members
+
+This pattern library approach helps maintain consistency across the codebase while reducing the effort needed to solve recurring issues.
+
+## Modern TypeScript and ESLint Best Practices
+
+To enhance our type safety implementation, these best practices should be incorporated across the codebase:
+
+### TypeScript Configuration Enhancements
+
+1. **Embrace Strict Mode Fully**
+   - Always enable `strict: true` in `tsconfig.json` which activates all strict type-checking options
+   - Avoid disabling individual strict checks like `noImplicitAny` or `strictNullChecks`
+   - Add `noUncheckedIndexedAccess: true` for added safety with indexed access
+
+2. **Replace `any` with `unknown`**
+   - Use `unknown` instead of `any` when the type is truly not known
+   - Apply type narrowing with type guards before using `unknown` values
+   - Consider using `ts-reset` library to replace built-in `any` types with `unknown`
+
+3. **Function Type Patterns**
+   - Use explicit function type signatures with proper parameter and return types
+   - For "catch-all" function types, prefer `(...args: never) => unknown` over `Function`
+   - Create named callback types for consistent reuse across the codebase
+
+### ESLint Rule Enhancements
+
+1. **Type-Aware Linting Rules**
+   - Enable TypeScript's typed linting with `parserOptions.project` set to TSConfig path
+   - Use `tseslint.configs.recommendedTypeChecked` preset for comprehensive type checking
+   - Consider upgrading to `tseslint.configs.strictTypeChecked` for maximum safety
+
+2. **Critical Safety Rules**
+   - `@typescript-eslint/no-explicit-any`: Ban explicit use of the `any` type
+   - `@typescript-eslint/no-unsafe-function-type`: Disallow using the `Function` type
+   - `@typescript-eslint/no-unsafe-*` family of rules to prevent unsafe `any` usage:
+     - `no-unsafe-assignment`: Prevent assigning `any` values
+     - `no-unsafe-call`: Prevent calling `any` values as functions
+     - `no-unsafe-member-access`: Prevent accessing properties on `any` values
+     - `no-unsafe-return`: Prevent returning `any` values
+     - `no-unsafe-argument`: Prevent passing `any` values as arguments
+
+3. **Code Quality Rules**
+   - `@typescript-eslint/consistent-type-imports`: Use consistent import style for types
+   - `@typescript-eslint/use-unknown-in-catch-callback-variable`: Use `unknown` for catch variables
+   - `@typescript-eslint/prefer-function-type`: Prefer function type syntax over interfaces
+
+These best practices represent the state-of-the-art in TypeScript safety as of 2024-2025 and should be applied consistently throughout our pattern libraries and codebase.
+
 ## Troubleshooting and Fallback Strategies
 
 ### When Rules Conflict with Codebase Patterns

@@ -8,6 +8,32 @@
 import { Node, Edge, NodeChange, EdgeChange, Connection } from 'reactflow';
 import * as Y from 'yjs';
 
+// Define types for better type safety
+interface GenericRecord {
+  [key: string]: unknown;
+}
+
+interface YjsNodeData extends GenericRecord {
+  position?: {
+    x: number;
+    y: number;
+  };
+  data?: GenericRecord;
+  type?: string;
+}
+
+interface YjsEdgeData extends GenericRecord {
+  source?: string;
+  target?: string;
+  type?: string;
+}
+
+interface YjsEvent {
+  type: string;
+  target?: unknown;
+  [key: string]: unknown;
+}
+
 /**
  * ReactFlow Test Utilities
  */
@@ -106,28 +132,28 @@ export const createMockConnection = (source: string, target: string): Connection
  * Create a mock Y.Doc with maps for nodes and edges
  */
 export const createMockYDoc = () => {
-  const nodesMap = new Map<string, any>();
-  const edgesMap = new Map<string, any>();
-  const awarenessStates = new Map<number, any>();
+  const nodesMap = new Map<string, YjsNodeData>();
+  const edgesMap = new Map<string, YjsEdgeData>();
+  const awarenessStates = new Map<number, GenericRecord>();
 
   // Mock Y.Doc methods
   const mockYDoc = {
     getMap: jest.fn((name: string) => {
       if (name === 'nodes') {
         return {
-          set: jest.fn((key: string, value: any) => nodesMap.set(key, value)),
+          set: jest.fn((key: string, value: YjsNodeData) => nodesMap.set(key, value)),
           get: jest.fn((key: string) => nodesMap.get(key)),
           has: jest.fn((key: string) => nodesMap.has(key)),
           delete: jest.fn((key: string) => nodesMap.delete(key)),
-          forEach: jest.fn((callback: (value: any, key: string) => void) => {
+          forEach: jest.fn((callback: (value: YjsNodeData, key: string) => void) => {
             nodesMap.forEach((value, key) => callback(value, key));
           }),
-          observe: jest.fn((callback: (event: any) => void) => {
+          observe: jest.fn((_callback: (event: YjsEvent) => void) => {
             // Store callback for simulation
             return () => {}; // Return unobserve function
           }),
           toJSON: jest.fn(() => {
-            const obj: Record<string, any> = {};
+            const obj: Record<string, unknown> = {};
             nodesMap.forEach((value, key) => {
               obj[key] = value;
             });
@@ -136,19 +162,19 @@ export const createMockYDoc = () => {
         };
       } else if (name === 'edges') {
         return {
-          set: jest.fn((key: string, value: any) => edgesMap.set(key, value)),
+          set: jest.fn((key: string, value: YjsEdgeData) => edgesMap.set(key, value)),
           get: jest.fn((key: string) => edgesMap.get(key)),
           has: jest.fn((key: string) => edgesMap.has(key)),
           delete: jest.fn((key: string) => edgesMap.delete(key)),
-          forEach: jest.fn((callback: (value: any, key: string) => void) => {
+          forEach: jest.fn((callback: (value: YjsEdgeData, key: string) => void) => {
             edgesMap.forEach((value, key) => callback(value, key));
           }),
-          observe: jest.fn((callback: (event: any) => void) => {
+          observe: jest.fn((_callback: (event: YjsEvent) => void) => {
             // Store callback for simulation
             return () => {}; // Return unobserve function
           }),
           toJSON: jest.fn(() => {
-            const obj: Record<string, any> = {};
+            const obj: Record<string, unknown> = {};
             edgesMap.forEach((value, key) => {
               obj[key] = value;
             });
@@ -168,10 +194,10 @@ export const createMockYDoc = () => {
     transact: jest.fn((callback: () => void) => {
       callback();
     }),
-    on: jest.fn((eventName: string, callback: (event: any) => void) => {
+    on: jest.fn((_eventName: string, _callback: (event: YjsEvent) => void) => {
       // Store callback for simulation
     }),
-    off: jest.fn((eventName: string, callback: (event: any) => void) => {
+    off: jest.fn((_eventName: string, _callback: (event: YjsEvent) => void) => {
       // Remove callback
     }),
   };
@@ -179,38 +205,38 @@ export const createMockYDoc = () => {
   // Mock awareness states and methods
   const mockAwareness = {
     getStates: jest.fn(() => awarenessStates),
-    setLocalState: jest.fn((state: any) => {
+    setLocalState: jest.fn((state: GenericRecord) => {
       awarenessStates.set(1, state); // Use client ID 1 for local
     }),
     getLocalState: jest.fn(() => awarenessStates.get(1)),
-    on: jest.fn((eventName: string, callback: (event: any) => void) => {
+    on: jest.fn((_eventName: string, _callback: (event: YjsEvent) => void) => {
       // Store callback for simulation
     }),
-    off: jest.fn((eventName: string, callback: (event: any) => void) => {
+    off: jest.fn((_eventName: string, _callback: (event: YjsEvent) => void) => {
       // Remove callback
     }),
   };
 
   // Utility methods to help with testing
-  const simulateNodeChange = (id: string, data: any) => {
+  const simulateNodeChange = (id: string, data: GenericRecord) => {
     const nodeYMap = nodesMap.get(id);
     if (nodeYMap) {
       Object.entries(data).forEach(([key, value]) => {
-        nodeYMap.set(key, value);
+        nodeYMap[key] = value;
       });
     }
   };
 
-  const simulateEdgeChange = (id: string, data: any) => {
+  const simulateEdgeChange = (id: string, data: GenericRecord) => {
     const edgeYMap = edgesMap.get(id);
     if (edgeYMap) {
       Object.entries(data).forEach(([key, value]) => {
-        edgeYMap.set(key, value);
+        edgeYMap[key] = value;
       });
     }
   };
 
-  const simulateAwarenessChange = (clientId: number, state: any) => {
+  const simulateAwarenessChange = (clientId: number, state: GenericRecord) => {
     awarenessStates.set(clientId, state);
     // Trigger callbacks if needed
   };
@@ -241,7 +267,7 @@ export const createMockUseYjs = () => {
     offlineChangesCount: 0,
     syncStatus: null,
     connectedUsers: [{ userId: 'user-1', clientId: 1 }],
-    updateAwareness: jest.fn((state: any) => {
+    updateAwareness: jest.fn((state: GenericRecord) => {
       mockYDoc.simulateAwarenessChange(1, state);
     }),
     getNodesFromYjs: jest.fn(() => {
