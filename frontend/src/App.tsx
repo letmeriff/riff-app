@@ -248,7 +248,7 @@ const AppContent: React.FC = () => {
         <ErrorBoundary 
           FallbackComponent={CanvasErrorFallback}
           onReset={handleCanvasErrorReset}
-          onError={(error: Error, info: ErrorInfo) => {
+          onError={(error: Error, _info: ErrorInfo) => {
             handleCanvasError(error);
           }}
         >
@@ -308,7 +308,9 @@ const AppContent: React.FC = () => {
     <SocketProvider token={session?.access_token || null}>
       <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
         <NetworkProvider
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           wsProvider={(window as any).yjsWebsocketProvider || null}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           doc={(window as any).yjsDoc || null}
         >
           {content}

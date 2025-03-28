@@ -29,30 +29,32 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
 }) => {
   const [expanded, setExpanded] = useState<boolean>(false);
   const [stopMeasuring, setStopMeasuring] = useState<(() => void) | null>(null);
+  const [options, setOptions] = useState({ measureOnMount: false });
   
   // Start/stop performance measurement based on enabled prop
   useEffect(() => {
     if (enabled && !stopMeasuring) {
-      // Start measuring performance
-      const stopMeasuring = measureRenderPerformance((newMetrics) => {
-        // Update parent state via callback
-        onMetricsUpdate(newMetrics);
-      });
+      // Pass callback to measureRenderPerformance
+      const measurePerformance = measureRenderPerformance(onMetricsUpdate);
+      setStopMeasuring(() => measurePerformance.stop);
       
-      // Store stop function
-      setStopMeasuring(() => stopMeasuring);
-      
+      // Measure initially if needed
+      if (options.measureOnMount) {
+        onMetricsUpdate(measurePerformance.getMetrics());
+      }
+    } else if (enabled && stopMeasuring) {
       // Clean up when component unmounts or disabled changes
       return () => {
-        stopMeasuring();
-        setStopMeasuring(null);
+        if (stopMeasuring) {
+          stopMeasuring();
+          setStopMeasuring(null);
+        }
       };
     } else if (!enabled && stopMeasuring) {
-      // Stop measuring if disabled
       stopMeasuring();
       setStopMeasuring(null);
     }
-  }, [enabled, onMetricsUpdate]);
+  }, [enabled, onMetricsUpdate, options]);
   
   // Don't render anything if not enabled
   if (!enabled) return null;

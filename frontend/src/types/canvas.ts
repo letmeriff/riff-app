@@ -6,7 +6,7 @@
  * the Canvas components and hooks.
  */
 
-import { Node, Edge, XYPosition, NodeChange, EdgeChange, Connection, OnNodesChange, OnEdgesChange, NodeDragHandler, NodeMouseHandler } from 'reactflow';
+import { Node, Edge, XYPosition, Connection, OnNodesChange, OnEdgesChange, NodeDragHandler, NodeMouseHandler } from 'reactflow';
 
 // ---------------------------------------------------------------------------
 // Core Data Types
@@ -236,9 +236,16 @@ export interface UseYjsIntegrationResult {
   syncStatus: string | null;
   connectedUsers: UserPresence[];
   forceSync: () => Promise<boolean>;
-  updateAwareness: (data: any) => void;
+  updateAwareness: (data: AwarenessData) => void;
   updateCursorPosition: (position: { x: number; y: number }) => void;
   setTypingStatus: (isTyping: boolean) => void;
+}
+
+/**
+ * Data structure for awareness updates in Yjs
+ */
+export interface AwarenessData {
+  [key: string]: unknown;
 }
 
 /**
@@ -290,5 +297,5 @@ export interface DbEdge {
  * Type for payload sent to Supabase
  */
 export interface SupabasePayload {
-  [key: string]: any;
+  [key: string]: unknown;
 } 
