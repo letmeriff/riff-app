@@ -265,3 +265,81 @@ npm test
 
 - Staging: Automatically deployed on pull requests
 - Production: Automatically deployed on releases
+
+## Canvas System
+
+The Canvas is the core component of the application where users interact with nodes and create connections.
+
+### Refactored Implementation
+
+The Canvas system has been refactored to improve performance, maintainability, and error handling. Key improvements include:
+
+#### Architecture and Design
+
+- **Component Decomposition**: Split into smaller, focused components with clear responsibilities
+- **Custom Hooks**: Extracted logic into reusable, testable hooks
+- **Container/Presenter Pattern**: Separation of data management and rendering concerns
+- **Type Safety**: Comprehensive TypeScript interfaces for all components and hooks
+
+#### Performance Enhancements
+
+- **Memoization**: Extensive use of React.memo, useMemo, and useCallback to prevent unnecessary renders
+- **Virtualization**: Only render nodes visible in the current viewport
+- **Optimized Yjs Updates**: Batched updates and debounced/throttled position changes
+- **Performance Monitoring**: Real-time metrics tracking with PerformanceMonitor component
+
+#### Error Handling
+
+- **Error Boundaries**: Graceful degradation with CanvasErrorBoundary
+- **Detailed Error Reporting**: Configurable error reporting with feature flags
+- **Recovery Mechanisms**: Ability to reset and retry after errors
+- **Comprehensive Testing**: Integration and unit tests for error scenarios
+
+#### Feature Flags
+
+The refactored Canvas implementation can be enabled/disabled via feature flags in `.env.development`:
+
+```
+# Enable the refactored Canvas component
+REACT_APP_USE_REFACTORED_CANVAS=true
+
+# Enable detailed error reporting
+REACT_APP_ENABLE_ERROR_REPORTING=true
+
+# Enable performance monitoring
+REACT_APP_ENABLE_PERFORMANCE_MONITORING=true
+
+# Enable virtualization for large canvas
+REACT_APP_ENABLE_VIRTUALIZATION=true
+```
+
+### Development
+
+#### Canvas Component Hierarchy
+
+- `CanvasPage`: Container component orchestrating all hooks and subcomponents
+- `Canvas`: ReactFlow wrapper with standardized interface
+- `CanvasToolbar`: Controls for zoom, layout, and settings
+- `NodeControls`: Controls for node creation and deletion
+- `CollaborationOverlay`: Shows collaboration status and connected users
+- `PerformanceMonitor`: Displays real-time performance metrics
+- `CanvasErrorBoundary`: Provides graceful error handling
+
+#### Canvas Hooks
+
+- `useCanvasNodes`: Manages node state, creation, update, and deletion
+- `useCanvasEdges`: Manages edge state and connections
+- `useYjsIntegration`: Handles real-time collaboration with Yjs
+- `useCanvasUI`: Manages UI state like selection and viewport
+
+#### Testing
+
+The Canvas components have extensive unit and integration tests. To run the tests:
+
+```bash
+# Run all Canvas tests
+npm test -- Canvas
+
+# Run specific component tests
+npm test -- Canvas/components/CanvasErrorBoundary
+```
