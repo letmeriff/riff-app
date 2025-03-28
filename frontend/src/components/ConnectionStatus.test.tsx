@@ -1,6 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { act } from 'react-dom/test-utils';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ConnectionStatus from './ConnectionStatus';
 import { useSocket } from '../contexts/SocketContext';
@@ -29,7 +28,7 @@ describe('ConnectionStatus', () => {
     });
     
     // Avoid timers in tests
-    jest.spyOn(window, 'setInterval').mockImplementation(() => 999 as any);
+    jest.spyOn(window, 'setInterval').mockImplementation(() => 999 as unknown as NodeJS.Timeout);
     jest.spyOn(global, 'clearInterval').mockImplementation(() => {});
   });
   
@@ -37,88 +36,61 @@ describe('ConnectionStatus', () => {
     jest.restoreAllMocks();
   });
 
-  it('renders the online status when connected', async () => {
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
-    
+  it('renders the online status when connected', () => {
+    render(<ConnectionStatus />);
     expect(screen.getByText('Online')).toBeInTheDocument();
   });
   
-  it('renders connecting status when socket is connecting', async () => {
+  it('renders connecting status when socket is connecting', () => {
     mockUseSocket.mockReturnValue({
       connectionStatus: 'connecting'
     });
     
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
-    
+    render(<ConnectionStatus />);
     expect(screen.getByText('Connecting...')).toBeInTheDocument();
   });
   
-  it('renders offline status when disconnected', async () => {
+  it('renders offline status when disconnected', () => {
     mockUseSocket.mockReturnValue({
       connectionStatus: 'disconnected'
     });
     
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
-    
+    render(<ConnectionStatus />);
     expect(screen.getByText('Offline')).toBeInTheDocument();
   });
   
-  it('renders error status when there is a connection error', async () => {
+  it('renders error status when there is a connection error', () => {
     mockUseSocket.mockReturnValue({
       connectionStatus: 'error'
     });
     
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
-    
+    render(<ConnectionStatus />);
     expect(screen.getByText('Connection Error')).toBeInTheDocument();
   });
   
-  it('shows expanded details when clicked', async () => {
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
-    
-    await act(async () => {
-      fireEvent.click(screen.getByText('Online'));
-    });
+  it('shows expanded details when clicked', () => {
+    render(<ConnectionStatus />);
+    fireEvent.click(screen.getByText('Online'));
     
     expect(screen.getByText('Socket.IO: connected')).toBeInTheDocument();
     expect(screen.getByText(/Supabase:/)).toBeInTheDocument();
     expect(screen.getByText(/WebSocket Support:/)).toBeInTheDocument();
   });
   
-  it('hides expanded details when clicked again', async () => {
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
+  it('hides expanded details when clicked again', () => {
+    render(<ConnectionStatus />);
     
     // First click to expand
-    await act(async () => {
-      fireEvent.click(screen.getByText('Online'));
-    });
-    
+    fireEvent.click(screen.getByText('Online'));
     expect(screen.getByText('Socket.IO: connected')).toBeInTheDocument();
     
     // Second click to collapse
-    await act(async () => {
-      fireEvent.click(screen.getByText('Online'));
-    });
-    
+    fireEvent.click(screen.getByText('Online'));
     expect(screen.queryByText('Socket.IO: connected')).not.toBeInTheDocument();
   });
   
-  it('checks Supabase connection on mount', async () => {
-    await act(async () => {
-      render(<ConnectionStatus />);
-    });
+  it('checks Supabase connection on mount', () => {
+    render(<ConnectionStatus />);
     
     expect(fetch).toHaveBeenCalledWith(
       'https://wezijqqdnoezwaqtybzo.supabase.co/rest/v1/',

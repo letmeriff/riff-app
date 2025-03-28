@@ -1,10 +1,11 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { supabase } from '../config/supabase';
 
-interface ChatMessage {
+// Define a type for Supabase chat messages
+interface DbChatMessage {
   message_id: number;
   node_id: number;
   content: string;
@@ -45,7 +46,7 @@ export class SummarizationService {
     if (!messages || !messages.length) return 'No messages to summarize.';
 
     // Format the chat history as a string
-    const chatHistory = messages
+    const chatHistory = (messages as DbChatMessage[])
       .map((msg) => `${msg.is_user ? 'User' : 'AI'}: ${msg.content}`)
       .join('\n');
 

@@ -13,6 +13,7 @@ import {
   cleanupOfflineSupport,
   SyncStatus
 } from '../utils/yjsOfflineSupport';
+import { YjsAwareness, UserAwarenessState } from '../types/yjs';
 
 // Define document structure types for TypeScript
 // Commented out unused interfaces
@@ -39,19 +40,20 @@ interface YjsEdgeData {
 }
 */
 
-interface YjsAwarenessState {
-  clientID: number;
-  userId: string;
-  user: { id: string };
-  cursor?: { x: number; y: number };
-  isTyping?: boolean;
-  isOffline?: boolean;
-}
+// Use the imported interface instead of redefining it
+// interface YjsAwarenessState {
+//   clientID: number;
+//   userId: string;
+//   user: { id: string };
+//   cursor?: { x: number; y: number };
+//   isTyping?: boolean;
+//   isOffline?: boolean;
+// }
 
 let doc: Y.Doc | null = null;
 let wsProvider: WebsocketProvider | null = null;
 let dbProvider: IndexeddbPersistence | null = null;
-let awareness: any | null = null;
+let awareness: YjsAwareness | null = null;
 
 // Reference to the conflict resolver
 let conflictResolver: { updateSyncedState: () => void; detectConflict: (update: Uint8Array) => boolean } | null = null;
@@ -84,7 +86,7 @@ export const initYjsDocument = (
   doc = new Y.Doc();
 
   // Store the doc globally for debugging and for network adapter
-  (window as any).yjsDoc = doc;
+  (window as unknown as Record<string, unknown>).yjsDoc = doc;
   
   // Set up the WebSocket provider for real-time collaboration
   wsProvider = new WebsocketProvider(websocketUrl, canvasId, doc, {
@@ -93,10 +95,10 @@ export const initYjsDocument = (
   });
   
   // Store the provider globally for debugging
-  (window as any).yjsWebsocketProvider = wsProvider;
+  (window as unknown as Record<string, unknown>).yjsWebsocketProvider = wsProvider;
   
   // Get awareness instance for user presence features
-  awareness = wsProvider.awareness;
+  awareness = wsProvider.awareness as unknown as YjsAwareness;
   
   // Set initial awareness state
   updateAwareness({
@@ -115,7 +117,7 @@ export const initYjsDocument = (
       // Update awareness with online/offline status
       updateAwareness({ 
         isOffline: !isOnline 
-      } as Partial<YjsAwarenessState>);
+      } as Partial<UserAwarenessState>);
     });
     
     // Initialize enhanced offline support
@@ -147,7 +149,7 @@ export const initYjsDocument = (
             lastSyncedAt: status.lastSyncedAt,
             isReconnecting: status.isReconnecting
           }
-        } as any);
+        } as Partial<UserAwarenessState>);
       } else {
         clearInterval(syncStatusCheckInterval);
       }
@@ -185,7 +187,7 @@ export const getYjsSharedTypes = () => {
 /**
  * Set the user's awareness state (cursor position, etc.)
  */
-export const updateAwareness = (state: Partial<YjsAwarenessState>) => {
+export const updateAwareness = (state: Partial<UserAwarenessState>) => {
   if (!awareness) throw new Error('Yjs awareness not initialized');
   
   // Get current state
@@ -233,8 +235,8 @@ export const mapNodeToYjs = (reactFlowNode: Node, chatNode: ChatNode) => {
     nodes.set(nodeId, nodeY);
   } else {
     // Update existing node
-    const nodeY = nodes.get(nodeId) as Y.Map<any>;
-    const nodeYPosition = nodeY.get('position') as Y.Map<any>;
+    const nodeY = nodes.get(nodeId) as Y.Map<unknown>;
+    const nodeYPosition = nodeY.get('position') as Y.Map<unknown>;
     
     // Update position
     nodeYPosition.set('x', reactFlowNode.position.x);
@@ -253,26 +255,19 @@ export const mapEdgeToYjs = (reactFlowEdge: Edge) => {
   
   // Create edge in Yjs if it doesn't exist
   if (!edges.has(edgeId)) {
+    // Create the edge structure
     const edgeY = new Y.Map();
     edgeY.set('id', edgeId);
     edgeY.set('source', reactFlowEdge.source);
     edgeY.set('target', reactFlowEdge.target);
     
-    // Additional edge data if available
-    if (reactFlowEdge.data) {
-      const edgeYData = new Y.Map();
-      Object.entries(reactFlowEdge.data).forEach(([key, value]) => {
-        edgeYData.set(key, value);
-      });
-      edgeY.set('data', edgeYData);
-    }
-    
+    // Add to edges collection
     edges.set(edgeId, edgeY);
   }
 };
 
 /**
- * Convert Yjs nodes to React Flow nodes
+ * Get all nodes from the Yjs document, convert to React Flow format
  */
 export const getNodesFromYjs = (): Node[] => {
   if (!doc) throw new Error('Yjs document not initialized');
@@ -280,34 +275,42 @@ export const getNodesFromYjs = (): Node[] => {
   const { nodes } = getYjsSharedTypes();
   const reactFlowNodes: Node[] = [];
   
-  // Using a type assertion to handle type mismatch with forEach
-  (nodes as any).forEach((nodeY: Y.Map<any>, id: string) => {
-    const positionY = nodeY.get('position') as Y.Map<any>;
-    const dataY = nodeY.get('data') as Y.Map<any>;
+  // Convert each Yjs node to a React Flow node
+  nodes.forEach((nodeY, id) => {
+    const nodeYMap = nodeY as Y.Map<unknown>;
+    const positionYMap = nodeYMap.get('position') as Y.Map<unknown>;
+    const dataYMap = nodeYMap.get('data') as Y.Map<unknown>;
     
-    reactFlowNodes.push({
-      id,
-      position: {
-        x: positionY.get('x'),
-        y: positionY.get('y')
-      },
-      type: 'chatNode',
-      data: {
-        label: dataY.get('title'),
-        nodeId: parseInt(nodeY.get('node_id')),
-        model: dataY.get('model'),
-        flavor: dataY.get('flavor'),
-        description: dataY.get('description'),
-        // Additional data will be populated by the canvas component
-      }
-    });
+    // Only create node if all required data is present
+    if (nodeYMap && positionYMap && dataYMap) {
+      const node: Node = {
+        id,
+        position: {
+          x: positionYMap.get('x') as number,
+          y: positionYMap.get('y') as number
+        },
+        data: {
+          title: dataYMap.get('title') as string,
+          model: dataYMap.get('model') as string,
+          flavor: dataYMap.get('flavor') as string,
+          description: dataYMap.get('description') as string,
+          user_id: dataYMap.get('user_id') as string,
+          owner_id: dataYMap.get('owner_id') as string,
+          created_at: dataYMap.get('created_at') as string,
+          node_id: nodeYMap.get('node_id') as string,
+        },
+        type: 'chatNode',
+      };
+      
+      reactFlowNodes.push(node);
+    }
   });
   
   return reactFlowNodes;
 };
 
 /**
- * Convert Yjs edges to React Flow edges
+ * Get all edges from the Yjs document, convert to React Flow format
  */
 export const getEdgesFromYjs = (): Edge[] => {
   if (!doc) throw new Error('Yjs document not initialized');
@@ -315,214 +318,261 @@ export const getEdgesFromYjs = (): Edge[] => {
   const { edges } = getYjsSharedTypes();
   const reactFlowEdges: Edge[] = [];
   
-  // Using a type assertion to handle type mismatch with forEach
-  (edges as any).forEach((edgeY: Y.Map<any>, id: string) => {
-    reactFlowEdges.push({
-      id,
-      source: edgeY.get('source'),
-      target: edgeY.get('target'),
-      type: 'straight',
-      animated: true,
-      // Additional properties from Yjs edge if needed
-    });
+  // Convert each Yjs edge to a React Flow edge
+  edges.forEach((edgeY, id) => {
+    const edgeYMap = edgeY as Y.Map<unknown>;
+    
+    if (edgeYMap) {
+      const edge: Edge = {
+        id,
+        source: edgeYMap.get('source') as string,
+        target: edgeYMap.get('target') as string,
+        type: 'chatEdge',
+      };
+      
+      reactFlowEdges.push(edge);
+    }
   });
   
   return reactFlowEdges;
 };
 
 /**
- * Clean up and destroy Yjs document
+ * Clean up Yjs document and providers
  */
 export const destroyYjsDocument = () => {
+  if (offlineChangeHandler) {
+    offlineChangeHandler();
+    offlineChangeHandler = null;
+  }
+  
+  // Clean up offline support
+  if (doc && wsProvider && dbProvider) {
+    cleanupOfflineSupport(doc);
+  }
+  
+  // Disconnect WebSocket provider
   if (wsProvider) {
     wsProvider.disconnect();
     wsProvider.destroy();
     wsProvider = null;
   }
   
+  // Close IndexedDB connection
   if (dbProvider) {
     dbProvider.destroy();
     dbProvider = null;
   }
   
-  // Clean up offline support
+  // Clean up document
   if (doc) {
-    const docName = doc.guid;
-    cleanupOfflineSupport(docName);
+    doc.destroy();
+    doc = null;
   }
   
-  // Remove offline change handler if exists
-  if (offlineChangeHandler) {
-    offlineChangeHandler();
-    offlineChangeHandler = null;
-  }
-  
-  // Reset counters and flags
-  offlineChangesCount = 0;
-  // hasPendingSyncOperations = false;
-  
-  doc = null;
+  // Reset state
   awareness = null;
+  conflictResolver = null;
+  offlineChangesCount = 0;
+  
+  // Remove global references
+  delete (window as unknown as Record<string, unknown>).yjsDoc;
+  delete (window as unknown as Record<string, unknown>).yjsWebsocketProvider;
 };
 
 /**
- * Get all users currently connected to the document (awareness)
+ * Get list of connected users from awareness state
  */
 export const getConnectedUsers = () => {
   if (!awareness) return [];
   
   const states = awareness.getStates();
-  const users: any[] = [];
+  const users: Record<string, UserAwarenessState> = {};
   
-  states.forEach((state: any, clientId: number) => {
-    if (state.user && state.userId) {
-      users.push({
-        clientId,
-        userId: state.userId,
-        user: state.user,
-        // Include any other awareness state like cursor position, etc.
-        cursor: state.cursor,
-        isTyping: state.isTyping
-      });
+  // Collect unique users
+  Object.entries(states).forEach(([_, state]) => {
+    const userState = state as UserAwarenessState;
+    if (userState.userId && !userState.isOffline) {
+      users[userState.userId] = userState;
     }
   });
   
-  return users;
+  return Object.values(users);
 };
 
 /**
  * Subscribe to Yjs document changes
  */
 export const subscribeToYjsChanges = (
-  callback: (event: { changed: Map<string, any>; added: Map<string, any>; deleted: Map<string, any> }, source: string) => void
+  callback: (event: { 
+    changed: Map<string, unknown>; 
+    added: Map<string, unknown>; 
+    deleted: Map<string, unknown> 
+  }, source: string) => void
 ) => {
   if (!doc) throw new Error('Yjs document not initialized');
   
   const { nodes, edges } = getYjsSharedTypes();
   
-  // Observe nodes
-  nodes.observe((event: any) => {
-    callback(event, 'nodes');
-  });
+  // Subscribe to node changes
+  const nodeObserver = (event: Y.YMapEvent<unknown>) => {
+    // Creating a simpler event object structure for the callback
+    const changedMap = new Map<string, unknown>();
+    const addedMap = new Map<string, unknown>();
+    const deletedMap = new Map<string, unknown>();
+    
+    // Process changed keys
+    event.keysChanged.forEach((value, key) => {
+      changedMap.set(key as string, value);
+    });
+    
+    // Process added keys
+    event.keys.added.forEach(key => {
+      addedMap.set(key as string, nodes.get(key as string));
+    });
+    
+    // Process deleted keys
+    event.keys.deleted.forEach(key => {
+      deletedMap.set(key as string, null);
+    });
+    
+    callback({
+      changed: changedMap,
+      added: addedMap,
+      deleted: deletedMap
+    }, 'nodes');
+  };
   
-  // Observe edges
-  edges.observe((event: any) => {
-    callback(event, 'edges');
-  });
+  // Subscribe to edge changes
+  const edgeObserver = (event: Y.YMapEvent<unknown>) => {
+    // Creating a simpler event object structure for the callback
+    const changedMap = new Map<string, unknown>();
+    const addedMap = new Map<string, unknown>();
+    const deletedMap = new Map<string, unknown>();
+    
+    // Process changed keys
+    event.keysChanged.forEach((value, key) => {
+      changedMap.set(key as string, value);
+    });
+    
+    // Process added keys
+    event.keys.added.forEach(key => {
+      addedMap.set(key as string, edges.get(key as string));
+    });
+    
+    // Process deleted keys
+    event.keys.deleted.forEach(key => {
+      deletedMap.set(key as string, null);
+    });
+    
+    callback({
+      changed: changedMap,
+      added: addedMap,
+      deleted: deletedMap
+    }, 'edges');
+  };
   
+  // Start observing changes
+  nodes.observe(nodeObserver);
+  edges.observe(edgeObserver);
+  
+  // Return cleanup function
   return () => {
-    nodes.unobserve(callback as any);
-    edges.unobserve(callback as any);
+    nodes.unobserve(nodeObserver);
+    edges.unobserve(edgeObserver);
   };
 };
 
 /**
  * Update a node's position in the Yjs document
- * Replaced custom vector clock with Yjs's CRDT algorithm
  */
 export const updateNodePositionYjs = (nodeId: string, position: { x: number; y: number }) => {
   if (!doc) throw new Error('Yjs document not initialized');
   
   const { nodes } = getYjsSharedTypes();
-  const nodeY = nodes.get(nodeId) as Y.Map<any>;
+  const nodeY = nodes.get(nodeId) as Y.Map<unknown> | undefined;
   
   if (nodeY) {
-    try {
-      // Get the position map from the node
-      const positionY = nodeY.get('position') as Y.Map<any>;
-      if (positionY) {
-        // Update position coordinates
-        // Yjs automatically handles the conflict resolution
-        // No need for vector clocks anymore
-        doc.transact(() => {
-          positionY.set('x', position.x);
-          positionY.set('y', position.y);
-        }, doc.clientID); // Use clientID as origin to identify the source
-      }
-    } catch (error) {
-      console.error(`Error updating node position in Yjs: ${error}`);
+    const positionY = nodeY.get('position') as Y.Map<unknown>;
+    
+    if (positionY) {
+      positionY.set('x', position.x);
+      positionY.set('y', position.y);
     }
   }
 };
 
 /**
- * Force document synchronization
- * @returns Promise that resolves to true if sync was successful
+ * Force synchronization of the Yjs document with server
  */
 export const forceDocumentSync = async (): Promise<boolean> => {
   if (!doc || !wsProvider) {
-    console.error('Cannot sync: Yjs document or provider not initialized');
+    console.error('Cannot sync - document or provider not initialized');
     return false;
   }
-
+  
+  // Check if we're online
+  if (!wsProvider.wsconnected) {
+    console.warn('Cannot sync - not connected to WebSocket server');
+    return false;
+  }
+  
   try {
-    // Get document ID from websocket provider
-    const docName = wsProvider.roomname;
-    
-    // Use enhanced sync pending changes
-    const result = await syncPendingChanges(doc, wsProvider, docName);
+    // Try to sync pending changes with proper types
+    const result = await syncPendingChanges(doc);
     
     if (result) {
-      console.log('Document synchronized successfully');
+      console.log('Document synced successfully');
       offlineChangesCount = 0;
       
-      // Update sync state for conflict detection
-      if (conflictResolver) {
-        conflictResolver.updateSyncedState();
-      }
+      // Update awareness
+      updateAwareness({
+        isOffline: false,
+      } as Partial<UserAwarenessState>);
       
       return true;
     } else {
-      console.warn('Document synchronization failed');
+      console.warn('Document sync attempted but not confirmed');
       return false;
     }
   } catch (error) {
-    console.error('Error forcing document sync:', error);
+    console.error('Error during document sync:', error);
     return false;
   }
 };
 
 /**
- * Check if there are pending changes that need to be synchronized
- * @returns Boolean indicating if there are pending changes
+ * Check if there are pending changes to be synced
  */
 export const hasPendingChanges = (): boolean => {
-  if (!doc || !wsProvider) return false;
+  if (!doc) return false;
   
-  // Get document ID from websocket provider
-  const docName = wsProvider.roomname;
-  
-  // Get sync status from offline support
-  const status = getSyncStatus(docName);
+  const status = getSyncStatus(doc.guid);
   
   return status.pendingChanges;
 };
 
 /**
- * Get the current offline changes count
- * @returns Number of changes made while offline
+ * Get count of changes made while offline
  */
 export const getOfflineChangesCount = (): number => {
   return offlineChangesCount;
 };
 
 /**
- * Get detailed synchronization status
- * @returns Current sync status or null if not initialized
+ * Get current synchronization status
  */
 export const getSynchronizationStatus = (): SyncStatus | null => {
-  if (!doc || !wsProvider) return null;
+  if (!doc) return null;
   
-  const docName = wsProvider.roomname;
-  return getSyncStatus(docName);
+  return getSyncStatus(doc.guid);
 };
 
 /**
- * Detect if there are conflicts between local and remote changes
- * @param remoteUpdate Update from server to check against local changes
- * @returns Boolean indicating if there's a potential conflict
+ * Detect conflicts between local and remote updates
  */
 export const detectConflicts = (remoteUpdate: Uint8Array): boolean => {
   if (!conflictResolver) return false;
+  
   return conflictResolver.detectConflict(remoteUpdate);
 }; 

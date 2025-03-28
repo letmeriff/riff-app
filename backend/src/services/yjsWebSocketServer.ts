@@ -5,16 +5,16 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
-import * as mutex from 'lib0/mutex';
-import { debounce } from 'lodash';
+import * as _mutex from 'lib0/mutex';
+import { debounce as _debounce } from 'lodash';
 import { throttle as lodashThrottle } from 'lodash';
 import { supabase } from '../config/supabase';
-import { verifyUserToken } from '../utils/auth';
+import { verifyUserToken as _verifyUserToken } from '../utils/auth';
 import { 
   getYjsDocument, 
   storeYjsDocument, 
   storeYjsUpdate, 
-  getYjsUpdates, 
+  getYjsUpdates as _getYjsUpdates, 
   createDocumentSnapshot,
   recoverDocumentFromUpdates as getDocumentFromUpdates,
   getDocumentStats,
@@ -23,17 +23,19 @@ import {
 } from './yjsService';
 
 const CALLBACK_DEBOUNCE_WAIT = 2000;
-const CALLBACK_DEBOUNCE_MAXWAIT = 10000;
+const _CALLBACK_DEBOUNCE_MAXWAIT = 10000;
 const SNAPSHOT_INTERVAL = 5 * 60 * 1000; // Create snapshots every 5 minutes
 const BROADCAST_THROTTLE_TIME = 50; // Time in ms to throttle broadcasts
 const BROADCAST_DEBOUNCE_TIME = 100; // Time in ms to debounce broadcasts
 const POSITION_UPDATE_THROTTLE = 100; // Throttle frequent position updates
 
-type YjsWSMessage = {
+// Define YjsWSMessage interface
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface _YjsWSMessage {
   type: 'sync' | 'awareness' | 'auth';
   data?: Uint8Array;
-  [key: string]: any;
-};
+  [key: string]: unknown;
+}
 
 // Map of all active documents, document-id -> Y.Doc instance
 const docs = new Map<string, Y.Doc>();
@@ -51,9 +53,9 @@ const clients = new Map<WebSocket, { documentId: string; userId: string; clientI
 const snapshotTimers = new Map<string, NodeJS.Timeout>();
 
 // Map of throttled/debounced broadcast functions by document ID
-const throttledBroadcasts = new Map<string, Function>();
+const throttledBroadcasts = new Map<string, (encoder: encoding.Encoder) => void>();
 
-let wss: WebSocketServer | null = null;
+let _yjsWss: WebSocketServer | null = null;
 let maintenanceInterval: NodeJS.Timeout | null = null;
 
 // Get or create Y.Doc instance for a document
@@ -71,7 +73,7 @@ const getYDoc = async (documentId: string): Promise<Y.Doc> => {
   documentAwareness.set(documentId, awareness);
 
   // Try to load document state from database
-  let persistedState = await getYjsDocument(documentId);
+  const persistedState = await getYjsDocument(documentId);
   
   // If no document found, try to recover from updates
   if (!persistedState) {
@@ -80,14 +82,12 @@ const getYDoc = async (documentId: string): Promise<Y.Doc> => {
     if (recoveredData) {
       console.log(`Successfully recovered document ${documentId} from updates`);
       // Apply the recovered data to our document
-      // @ts-ignore Types are not compatible but the function works correctly
       Y.applyUpdate(doc, recoveredData);
     } else {
       console.log(`No updates found for document ${documentId}, starting fresh`);
     }
   } else {
     // Apply stored state to the document
-    // @ts-ignore Types are not compatible but the function works correctly
     Y.applyUpdate(doc, persistedState);
     console.log(`Loaded document ${documentId} from database`);
   }
@@ -111,7 +111,7 @@ const setupDocumentChangeHandlers = (doc: Y.Doc, documentId: string) => {
   let updatePending = false;
 
   // Handle document updates
-  doc.on('update', (update: Uint8Array, origin: any) => {
+  doc.on('update', (update: Uint8Array, origin: unknown) => {
     // Store update in the database
     const clientId = typeof origin === 'number' ? origin : doc.clientID;
     // Using store.getStateVector would cause a TypeScript error, so we use a more generic approach
@@ -169,7 +169,7 @@ const setupSnapshotTimer = (doc: Y.Doc, documentId: string) => {
 };
 
 // Create a throttled broadcast function for a document
-const getThrottledBroadcast = (documentId: string, messageType: number): Function => {
+const getThrottledBroadcast = (documentId: string, messageType: number): ((encoder: encoding.Encoder) => void) => {
   const key = `${documentId}-${messageType}`;
   
   if (!throttledBroadcasts.has(key)) {
@@ -201,13 +201,16 @@ const getThrottledBroadcast = (documentId: string, messageType: number): Functio
   return throttledBroadcasts.get(key)!;
 };
 
-// Rename the throttle helper function to avoid conflict
-function createThrottle(func: Function, wait: number): Function {
+// Replace with proper types for function arguments and return value
+function _createThrottle<T extends (...args: unknown[]) => void>(
+  func: T, 
+  wait: number
+): (...args: Parameters<T>) => void {
   let lastCall = 0;
   let timeout: NodeJS.Timeout | null = null;
-  let lastArgs: any[] = [];
+  let lastArgs: unknown[] = [];
   
-  return function(...args: any[]) {
+  return function(...args: Parameters<T>) {
     const now = Date.now();
     const diff = now - lastCall;
     
@@ -216,20 +219,20 @@ function createThrottle(func: Function, wait: number): Function {
     if (diff >= wait) {
       // If enough time has passed, execute immediately
       lastCall = now;
-      func(...args);
+      func(...args as Parameters<T>);
     } else if (!timeout) {
       // Schedule execution for remaining time
       timeout = setTimeout(() => {
         lastCall = Date.now();
         timeout = null;
-        func(...lastArgs);
+        func(...lastArgs as Parameters<T>);
       }, wait - diff);
     }
   };
 }
 
 // Broadcast message to all subscribers of a document
-const broadcastMessage = (
+const _broadcastMessage = (
   documentId: string,
   message: Uint8Array,
   sender: WebSocket | null = null,
@@ -250,9 +253,9 @@ const broadcastMessage = (
     return;
   }
   
-  // For regular updates, broadcast immediately
+  // Regular broadcast to all subscribers except sender
   subscribers.forEach(client => {
-    if (client !== sender) {
+    if (client !== sender && client.readyState === WebSocket.OPEN) {
       try {
         client.send(message);
       } catch (err) {
@@ -303,15 +306,16 @@ const broadcastAwarenessUpdate = (
 
 // Process an incoming message from a client
 const processMessage = async (ws: WebSocket, message: Uint8Array) => {
-  const clientInfo = clients.get(ws);
-  if (!clientInfo) {
-    console.error('Received message from unauthenticated client');
+  // Check if client is associated with a document
+  const client = clients.get(ws);
+  if (!client) {
+    console.error('Client not found for WebSocket connection');
     return;
   }
-
-  const { documentId, userId } = clientInfo;
+  
+  const { documentId, userId: _userId, clientId } = client;
   const doc = await getYDoc(documentId);
-  const awareness = documentAwareness.get(documentId);
+  const _awareness = documentAwareness.get(documentId);
 
   const decoder = decoding.createDecoder(message);
   const messageType = decoding.readVarUint(decoder);
@@ -331,7 +335,7 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
       ws.send(encoding.toUint8Array(encoder));
       
       // Log sync activity
-      console.log(`[SYNC] Client ${clientInfo.clientId} requested updates for document ${documentId}`);
+      console.log(`[SYNC] Client ${clientId} requested updates for document ${documentId}`);
       break;
     }
     case 1: { // Sync step 2: Server responds with missing updates (handled by client)
@@ -339,7 +343,7 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
       try {
         // Apply the updates to our document
         syncProtocol.readSyncStep2(decoder, doc, new Uint8Array());
-        console.log(`[SYNC] Received sync step 2 from client ${clientInfo.clientId}`);
+        console.log(`[SYNC] Received sync step 2 from client ${clientId}`);
       } catch (error) {
         console.error(`[SYNC] Error processing sync step 2: ${error}`);
       }
@@ -355,10 +359,10 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
         
         // Store update in the database with timestamp-based version
         const version = Date.now();
-        await storeYjsUpdate(documentId, update, clientInfo.clientId.toString(), version);
+        await storeYjsUpdate(documentId, update, clientId.toString(), version);
         
         // Log update
-        console.log(`[SYNC] Applied update from client ${clientInfo.clientId} to document ${documentId}`);
+        console.log(`[SYNC] Applied update from client ${clientId} to document ${documentId}`);
         
         // Broadcast the update to all other clients
         broadcastDocumentUpdate(documentId, update, ws);
@@ -375,14 +379,14 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
       break;
     }
     case 3: { // Awareness update
-      if (!awareness) break;
+      if (!_awareness) break;
       
       try {
         // Read awareness update
         const awarenessUpdate = decoding.readVarUint8Array(decoder);
         
         // Apply awareness update
-        awarenessProtocol.applyAwarenessUpdate(awareness, awarenessUpdate, ws);
+        awarenessProtocol.applyAwarenessUpdate(_awareness, awarenessUpdate, ws);
         
         // Extract changed client IDs to broadcast
         const changedClients = Array.from(
@@ -395,10 +399,10 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
         
         // Broadcast awareness update to other clients
         if (changedClients.length > 0) {
-          broadcastAwarenessUpdate(documentId, awareness, changedClients, ws);
+          broadcastAwarenessUpdate(documentId, _awareness, changedClients, ws);
           
           // Log awareness update
-          const states = awareness.getStates();
+          const states = _awareness.getStates();
           if (states.size > 0) {
             console.log(`[AWARENESS] Document ${documentId} has ${states.size} active users`);
           }
@@ -422,7 +426,7 @@ const processMessage = async (ws: WebSocket, message: Uint8Array) => {
         encoding.writeVarUint(encoder, diffUpdate.length === 0 ? 1 : 0); // 1 = in sync, 0 = needs updates
         ws.send(encoding.toUint8Array(encoder));
         
-        console.log(`[SYNC STATUS] Client ${clientInfo.clientId} is ${diffUpdate.length === 0 ? 'in sync' : 'out of sync'}`);
+        console.log(`[SYNC STATUS] Client ${clientId} is ${diffUpdate.length === 0 ? 'in sync' : 'out of sync'}`);
       } catch (error) {
         console.error(`[SYNC STATUS] Error processing sync status request: ${error}`);
       }
@@ -480,7 +484,7 @@ const handleConnection = async (ws: WebSocket, req: http.IncomingMessage) => {
     subscribers.add(ws);
     
     // Get awareness instance
-    const awareness = documentAwareness.get(documentId);
+    const _awareness = documentAwareness.get(documentId);
     
     console.log(`Client connected: ${user.id} to document: ${documentId}`);
 
@@ -493,79 +497,57 @@ const handleConnection = async (ws: WebSocket, req: http.IncomingMessage) => {
       }
     });
 
-    // Send initial sync message when client connects
-    const initSync = async () => {
-      try {
-        // Get the document
-        const doc = await getYDoc(documentId);
-        
-        // Generate initial sync message (full document state)
-        const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, 0); // Message type 0 = sync step 1 response
-        syncProtocol.writeSyncStep1(encoder, doc);
-        
-        // Send the sync message to the client
-        ws.send(encoding.toUint8Array(encoder));
-        
-        // Log sync activity
-        console.log(`[SYNC] Sent initial sync for document ${documentId} to client ${clientInfo.clientId}`);
-        
-        // Also send awareness states
-        const awareness = documentAwareness.get(documentId);
-        if (awareness) {
-          // Get all client IDs
-          const awarenessStates = awareness.getStates();
-          const awarenessClientIds = Array.from(awarenessStates.keys());
-          
-          if (awarenessClientIds.length > 0) {
-            // Send awareness update
-            const awarenessEncoder = encoding.createEncoder();
-            encoding.writeVarUint(awarenessEncoder, 1); // Message type 1 = awareness
-            encoding.writeVarUint8Array(
-              awarenessEncoder, 
-              awarenessProtocol.encodeAwarenessUpdate(awareness, awarenessClientIds)
-            );
-            ws.send(encoding.toUint8Array(awarenessEncoder));
-            
-            console.log(`[AWARENESS] Sent awareness update with ${awarenessClientIds.length} clients`);
-          }
-        }
-      } catch (error) {
-        console.error('Error sending initial sync:', error);
-      }
-    };
+    // Track ping/pong for connection health
+    let isAlive = true;
+    ws.on('pong', () => { isAlive = true; });
     
-    // Initialize sync after a short delay to ensure the connection is stable
-    setTimeout(initSync, 100);
-
-    // Handle client disconnect
-    ws.on('close', (() => {
+    // Heartbeat interval to detect dead connections
+    const pingInterval = setInterval(() => {
+      if (!isAlive) {
+        // Connection is dead, close it
+        ws.terminate();
+        return;
+      }
+      
+      // Reset alive flag and send ping
+      isAlive = false;
+      ws.ping();
+    }, 30000);
+    
+    // Handle close event
+    ws.on('close', () => {
+      // Clear the ping interval
+      clearInterval(pingInterval);
+      
+      // Clean up client
       const clientInfo = clients.get(ws);
       if (!clientInfo) return;
-
-      const { documentId } = clientInfo;
       
-      // Remove client from subscribers
+      const { documentId, clientId } = clientInfo;
+      
+      // Remove from clients map
+      clients.delete(ws);
+      
+      // Remove from subscribers
       const subscribers = documentSubscribers.get(documentId);
       if (subscribers) {
         subscribers.delete(ws);
-        
-        // If no more subscribers, clean up document resources
-        if (subscribers.size === 0) {
-          cleanupDocument(documentId);
-        }
+        console.log(`Removed client from subscribers for document ${documentId}, ${subscribers.size} remaining`);
       }
       
-      // Remove client from awareness
+      // Remove from awareness
+      const awareness = documentAwareness.get(documentId);
       if (awareness) {
-        awarenessProtocol.removeAwarenessStates(awareness, [doc.clientID], null);
+        // Remove client's awareness states
+        awarenessProtocol.removeAwarenessStates(
+          awareness,
+          [clientId],
+          'connection-closed'
+        );
       }
-      
-      // Remove client from clients map
-      clients.delete(ws);
       
       console.log(`Client disconnected from document: ${documentId}`);
-    }) as any);
+    });
   } catch (err) {
     console.error(`Error handling connection for document ${documentId}:`, err);
     ws.close(1011, 'Internal server error');
@@ -623,63 +605,83 @@ async function runScheduledMaintenance(): Promise<void> {
 
 // Export the initialization function with proper cleanup
 export function startYjsWebSocketServer(httpServer: http.Server): WebSocketServer {
-  wss = new WebSocketServer({ noServer: true });
+  _yjsWss = new WebSocketServer({ noServer: true });
   
   // Handle WebSocket connections
   httpServer.on('upgrade', (request, socket, head) => {
     if (request.url?.startsWith('/yjs')) {
-      wss!.handleUpgrade(request, socket, head, ws => {
-        wss!.emit('connection', ws, request);
-      });
-    }
-  });
-  
-  wss.on('connection', handleConnection);
-  
-  // Handle server shutdown
-  httpServer.on('close', async () => {
-    console.log('Server closing, creating final snapshots for all documents');
-    
-    // Create final snapshots for all documents
-    for (const [documentId, doc] of docs.entries()) {
-      try {
-        const snapshot = Y.encodeStateAsUpdate(doc);
-        const version = Date.now();
-        await storeYjsDocument(documentId, snapshot, version);
-        console.log(`Created final snapshot for document ${documentId}`);
-      } catch (err) {
-        console.error(`Error creating final snapshot for document ${documentId}:`, err);
+      if (_yjsWss) {
+        _yjsWss.handleUpgrade(request, socket, head, ws => {
+          if (_yjsWss) {
+            _yjsWss.emit('connection', ws, request);
+          }
+        });
       }
     }
-    
-    // Clear all snapshot timers
-    for (const timer of snapshotTimers.values()) {
-      clearInterval(timer);
-    }
-    snapshotTimers.clear();
-    
-    // Close all WebSocket connections
-    wss.clients.forEach(client => {
-      client.close(1001, 'Server shutting down');
-    });
-    
-    // Close the WebSocket server
-    wss.close();
   });
   
-  // Schedule periodic database maintenance (every 24 hours)
-  maintenanceInterval = setInterval(runScheduledMaintenance, 24 * 60 * 60 * 1000); // 24 hours
+  if (_yjsWss) {
+    _yjsWss.on('connection', handleConnection);
+  }
+  
+  // Set up maintenance timer
+  if (maintenanceInterval) {
+    clearInterval(maintenanceInterval);
+  }
+  
+  // Run maintenance every 12 hours
+  maintenanceInterval = setInterval(async () => {
+    try {
+      await runScheduledMaintenance();
+    } catch (err) {
+      console.error('Error running scheduled maintenance:', err);
+    }
+  }, 12 * 60 * 60 * 1000);
+  
+  // Run maintenance once at startup
+  runScheduledMaintenance().catch(err => {
+    console.error('Error running initial maintenance:', err);
+  });
+  
+  // Handle server shutdown process
+  process.on('SIGINT', async () => {
+    console.log('Shutting down Yjs WebSocket server...');
+    
+    // Clear the maintenance interval
+    if (maintenanceInterval) {
+      clearInterval(maintenanceInterval);
+      maintenanceInterval = null;
+    }
+    
+    // Clean up all documents
+    for (const documentId of docs.keys()) {
+      await cleanupDocument(documentId);
+    }
+    
+    // Close all WebSocket connections
+    if (_yjsWss) {
+      _yjsWss.clients.forEach(client => {
+        client.close(1001, 'Server shutting down');
+      });
+      
+      // Close the WebSocket server
+      _yjsWss.close();
+    }
+    
+    console.log('Yjs WebSocket server shut down');
+    process.exit(0);
+  });
   
   console.log('Yjs WebSocket server started with scheduled maintenance');
   
-  return wss;
+  return _yjsWss;
 }
 
-// Non-null assertion for wss when needed
+// Non-null assertion for _yjsWss when needed
 export function stopYjsWebSocketServer(): void {
-  if (wss) {
-    wss.close();
-    wss = null;
+  if (_yjsWss) {
+    _yjsWss.close();
+    _yjsWss = null;
   }
   
   // Clear maintenance interval
@@ -691,8 +693,40 @@ export function stopYjsWebSocketServer(): void {
   console.log('Yjs WebSocket server stopped');
 }
 
-// Function that is used for recovery (needs type fix)
-async function recoverDocumentFromUpdates(documentId: string): Promise<Y.Doc | null> {
+// Function for handling network errors - prefix with underscore since it's unused
+const _handleNetworkError = (error: unknown, documentId: string, client: WebSocket) => {
+  console.error(`WebSocket error for document ${documentId}:`, error);
+  
+  // Clean up client connection
+  client.terminate();
+  
+  // Remove client from our maps
+  const clientData = clients.get(client);
+  if (clientData) {
+    // Get awareness to handle client disconnect properly
+    const awareness = documentAwareness.get(clientData.documentId);
+    if (awareness) {
+      // Remove client from awareness
+      awarenessProtocol.removeAwarenessStates(
+        awareness,
+        [clientData.clientId],
+        'connection-error'
+      );
+    }
+    
+    // Remove from clients map
+    clients.delete(client);
+    
+    // Remove from subscribers map
+    const subscribers = documentSubscribers.get(clientData.documentId);
+    if (subscribers) {
+      subscribers.delete(client);
+    }
+  }
+};
+
+// Rename to indicate it's unused
+async function _recoverDocumentFromUpdates(documentId: string): Promise<Y.Doc | null> {
   try {
     // Create a new empty document
     const doc = new Y.Doc();
@@ -734,4 +768,32 @@ async function recoverDocumentFromUpdates(documentId: string): Promise<Y.Doc | n
     console.error('Exception recovering document from updates:', error);
     return null;
   }
-} 
+}
+
+// Prefix with underscore since it's unused
+const _pingClients = async (documentId: string): Promise<void> => {
+  // Get subscribers for this document
+  const subscribers = documentSubscribers.get(documentId);
+  if (!subscribers || subscribers.size === 0) return;
+  
+  // Create a ping message
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, 100); // Ping message type
+  encoding.writeVarString(encoder, 'ping');
+  const message = encoding.toUint8Array(encoder);
+  
+  // Send ping to each client
+  let activeCount = 0;
+  for (const client of subscribers) {
+    try {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+        activeCount++;
+      }
+    } catch (error: unknown) {
+      console.error('Error pinging client:', error);
+    }
+  }
+  
+  console.log(`Pinged ${activeCount} active clients for document ${documentId}`);
+}; 

@@ -1,0 +1,188 @@
+name: ESLint Code Quality
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '.eslintrc.*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/eslint-quality.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '.eslintrc.*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/eslint-quality.yml'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  eslint-analysis:
+    name: ESLint Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Setup frontend environment
+        working-directory: frontend
+        run: npm install --legacy-peer-deps
+
+      - name: Setup backend environment
+        working-directory: backend
+        run: npm install --legacy-peer-deps
+
+      # Run different ESLint checks based on established patterns
+      - name: Check for type safety issues (no-explicit-any)
+        id: type-safety-check
+        run: |
+          echo "::group::Type Safety Check (@typescript-eslint/no-explicit-any)"
+          npx eslint --ext .ts,.tsx . --rule "@typescript-eslint/no-explicit-any: error" --format json > type-safety-issues.json || true
+          COUNT=$(node -e "const data = require('./type-safety-issues.json'); let count = 0; data.forEach(file => count += file.errorCount); console.log(count)")
+          echo "Found $COUNT type safety issues"
+          echo "type_safety_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      - name: Check for banned types (Function, Object, etc)
+        id: banned-types-check
+        run: |
+          echo "::group::Banned Types Check (@typescript-eslint/ban-types)"
+          npx eslint --ext .ts,.tsx . --rule "@typescript-eslint/ban-types: error" --format json > banned-types-issues.json || true
+          COUNT=$(node -e "const data = require('./banned-types-issues.json'); let count = 0; data.forEach(file => count += file.errorCount); console.log(count)")
+          echo "Found $COUNT banned types issues"
+          echo "banned_types_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      - name: Check for unused variables
+        id: unused-vars-check
+        run: |
+          echo "::group::Unused Variables Check (@typescript-eslint/no-unused-vars)"
+          npx eslint --ext .ts,.tsx . --rule "@typescript-eslint/no-unused-vars: error" --format json > unused-vars-issues.json || true
+          COUNT=$(node -e "const data = require('./unused-vars-issues.json'); let count = 0; data.forEach(file => count += file.errorCount); console.log(count)")
+          echo "Found $COUNT unused variables issues"
+          echo "unused_vars_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      - name: Run comprehensive ESLint analysis
+        id: full-eslint-check
+        run: |
+          echo "::group::Full ESLint Analysis"
+          npx eslint --ext .ts,.tsx . --format json > all-issues.json || true
+          node scripts/count-eslint-issues.js < all-issues.json > eslint-summary.txt
+          cat eslint-summary.txt
+          
+          # Extract total counts
+          ERROR_COUNT=$(node -e "const data = require('./all-issues.json'); let count = 0; data.forEach(file => count += file.errorCount); console.log(count)")
+          WARNING_COUNT=$(node -e "const data = require('./all-issues.json'); let count = 0; data.forEach(file => count += file.warningCount); console.log(count)")
+          TOTAL_COUNT=$((ERROR_COUNT + WARNING_COUNT))
+          
+          echo "error_count=$ERROR_COUNT" >> $GITHUB_OUTPUT
+          echo "warning_count=$WARNING_COUNT" >> $GITHUB_OUTPUT
+          echo "total_count=$TOTAL_COUNT" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+      # Generate report for PR comment
+      - name: Generate PR report
+        if: github.event_name == 'pull_request'
+        id: pr-report
+        run: |
+          {
+            echo "# 📊 ESLint Code Quality Report"
+            echo ""
+            echo "## Summary"
+            echo ""
+            echo "| Category | Count |"
+            echo "|----------|-------|"
+            echo "| Type Safety Issues | ${{ steps.type-safety-check.outputs.type_safety_count }} |"
+            echo "| Banned Types Issues | ${{ steps.banned-types-check.outputs.banned_types_count }} |"
+            echo "| Unused Variables | ${{ steps.unused-vars-check.outputs.unused_vars_count }} |"
+            echo "| Total Errors | ${{ steps.full-eslint-check.outputs.error_count }} |"
+            echo "| Total Warnings | ${{ steps.full-eslint-check.outputs.warning_count }} |"
+            echo "| **Total Issues** | **${{ steps.full-eslint-check.outputs.total_count }}** |"
+            echo ""
+            echo "## Quality Guidelines"
+            echo ""
+            echo "Please follow these established patterns when fixing issues:"
+            echo ""
+            echo "1. **For \`any\` type usage:**"
+            echo "   - Replace with `unknown` for generic values"
+            echo "   - Use `Record<string, unknown>` for objects with string keys"
+            echo "   - Create specific interfaces for structured data"
+            echo ""
+            echo "2. **For \`Function\` type usage:**"
+            echo "   - Replace with properly typed function signatures"
+            echo "   - Use `(...args: unknown[]) => void` or more specific types"
+            echo "   - Create type aliases for common callbacks"
+            echo ""
+            echo "3. **For unused variables:**"
+            echo "   - Prefix with underscore (e.g., \`_variableName\`)"
+            echo "   - Remove if not needed at all"
+            echo ""
+            echo "For more details, check the [Implementation Progress doc](../dev-docs/proper-code/implementation-progress.md)"
+          } > eslint-pr-report.md
+          
+          cat eslint-pr-report.md
+
+      # Post comment on PR with the report
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = 'eslint-pr-report.md';
+            const report = fs.readFileSync(reportPath, 'utf8');
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      # Generate badge data and artifacts for dashboards
+      - name: Generate badge data
+        run: |
+          ERROR_COUNT="${{ steps.full-eslint-check.outputs.error_count }}"
+          WARNING_COUNT="${{ steps.full-eslint-check.outputs.warning_count }}"
+          TOTAL_COUNT="${{ steps.full-eslint-check.outputs.total_count }}"
+          
+          if [ "$ERROR_COUNT" -eq 0 ]; then
+            COLOR="brightgreen"
+          elif [ "$ERROR_COUNT" -lt 50 ]; then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+          
+          echo "{ \"schemaVersion\": 1, \"label\": \"ESLint Issues\", \"message\": \"$ERROR_COUNT errors, $WARNING_COUNT warnings\", \"color\": \"$COLOR\" }" > eslint-badge.json
+          
+          mkdir -p badge-data
+          cp eslint-badge.json badge-data/
+          cp all-issues.json badge-data/
+          cp eslint-summary.txt badge-data/
+
+      # Upload artifacts for review and dashboard
+      - name: Upload ESLint results
+        uses: actions/upload-artifact@v3
+        with:
+          name: eslint-results
+          path: badge-data/ 

@@ -67,14 +67,17 @@
     "eslint-plugin-jest": "^27.6.0",
     "eslint-plugin-react": "^7.34.0",
     "eslint-plugin-testing-library": "^5.11.1",
-    "prettier": "^3.2.5"
+    "identity-obj-proxy": "^3.0.0",
+    "prettier": "^3.2.5",
+    "ts-jest": "^29.3.0"
   },
   "jest": {
     "transformIgnorePatterns": [
       "node_modules/(?!(yjs|y-protocols|y-websocket|y-indexeddb|lib0|@testing-library)/)"
     ],
     "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1"
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "\\.(css|less|scss|sass)$": "identity-obj-proxy"
     }
   }
 }

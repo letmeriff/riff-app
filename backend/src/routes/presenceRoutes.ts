@@ -1,6 +1,7 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { getUserPresence } from '../services/presenceService';
+import { NodeId } from '../types/messaging';
 
 const router = express.Router();
 
@@ -10,13 +11,17 @@ const router = express.Router();
  */
 router.get('/:nodeId', authMiddleware, async (req, res) => {
   try {
-    const nodeId = parseInt(req.params.nodeId);
+    const nodeId = parseInt(req.params.nodeId) as NodeId;
     if (isNaN(nodeId)) {
       return res.status(400).json({ error: 'Invalid node ID' });
     }
 
-    const presence = await getUserPresence(nodeId);
-    res.json(presence);
+    const presencePayload = await getUserPresence(nodeId);
+    if (!presencePayload) {
+      return res.status(500).json({ error: 'Failed to retrieve presence information' });
+    }
+    
+    res.json(presencePayload);
   } catch (error) {
     console.error('Error getting presence:', error);
     res.status(500).json({ 

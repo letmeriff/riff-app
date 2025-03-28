@@ -21,29 +21,14 @@ export interface PositionAdapter {
 
 // Feature flag detection
 export const isYjsEnabled = (): boolean => {
-  // Check for explicit environment variable
-  if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_USE_YJS === 'true') {
-    return true;
-  }
-  
-  // Check for window-based configuration (useful for runtime toggling)
-  if (typeof window !== 'undefined' && (window as any).__USE_YJS === true) {
-    return true;
-  }
-  
-  // Default value - in production, this would be false until fully tested
-  return true; // Currently defaulting to true for development
+  // Yjs has been fully implemented and the legacy CRDT code has been removed
+  // This function now always returns true
+  return true;
 };
 
 // Factory function to get the appropriate adapter based on configuration
 export const getPositionAdapter = (): PositionAdapter => {
-  if (isYjsEnabled()) {
-    // This will be lazily imported to avoid loading Yjs code when not needed
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('./yjsPositionAdapter').default;
-  } else {
-    // Legacy CRDT implementation
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('./crdtPositionAdapter').default;
-  }
+  // Yjs is now the only implementation
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require('./yjsPositionAdapter').default;
 }; 

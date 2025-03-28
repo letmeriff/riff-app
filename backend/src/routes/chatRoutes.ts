@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { supabase } from '../config/supabase';
 import { ChatService } from '../services/chatService';
 import { getUserModels } from '../services/modelService';
+import { NodeId } from '../types/messaging';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -23,7 +24,7 @@ const router = express.Router();
 router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
   try {
     // Parse the nodeId from URL parameters
-    const nodeId = parseInt(req.params.nodeId);
+    const nodeId: NodeId = parseInt(req.params.nodeId);
     if (isNaN(nodeId)) {
       return res.status(400).json({ error: 'Invalid node ID' });
     }
@@ -82,20 +83,8 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
       });
     }
     
-    // Save the message to the database 
-    const { error: messageError } = await supabase
-      .from('chat_messages')
-      .insert({
-        node_id: nodeId,
-        content: message,
-        is_user: true,
-        timestamp: new Date().toISOString(),
-      });
-
-    if (messageError) {
-      return res.status(500).json({ error: 'Failed to save user message' });
-    }
-
+    // No need to manually save the message - this is now handled by ChatService
+    
     // If attachments were sent with the message, verify they belong to this node
     let validatedAttachments: AttachmentReference[] = [];
     
@@ -124,13 +113,18 @@ router.post('/:nodeId', authMiddleware, async (req: Request, res: Response) => {
       validatedAttachments // Pass the validated attachments to focus on
     );
     
-    // Process the user message and get AI response
-    const aiResponse = await chatService.processMessage(message);
+    // Process the user message and get AI response with typed payload
+    const messagePayload = await chatService.processMessage(message);
+    
+    if (!messagePayload) {
+      return res.status(500).json({ error: 'Failed to process message' });
+    }
 
-    // Send successful response
+    // Send successful response with properly typed payload
     res.json({
       success: true,
-      response: aiResponse,
+      response: messagePayload.new?.content || '',
+      payload: messagePayload
     });
   } catch (error) {
     console.error('Error in chat API:', error);
