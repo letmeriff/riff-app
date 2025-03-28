@@ -1,38 +1,66 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { useSocket } from '../contexts/SocketContext';
-import { useNetwork } from '../contexts/NetworkContext';
+import { 
+  useNetwork, 
+  useMessageUpdateEvent,
+  usePresenceUpdateEvent,
+  useOwnershipUpdateEvent,
+  useTransferErrorEvent,
+  useNodeUpdateEvent,
+  useAttachmentUpdateEvent,
+  useAttachmentDeleteEvent
+} from '../contexts/NetworkContext';
 import { useAuth } from '../contexts/AuthContext';
 import { ChatNode, updateNodeTitle, updateNodeDescription } from '../services/nodeService';
 import { Prompt } from '../services/promptService';
+import { 
+  MessageUpdatePayload,
+  PresenceUpdatePayload,
+  NodeUpdatePayload,
+  OwnershipUpdatePayload,
+  TransferErrorPayload,
+  AttachmentUpdatePayload,
+  AttachmentDeletePayload,
+  ChatMessage,
+  ChatAttachment,
+  UserPresence,
+  NodeId
+} from '../types/messaging';
+import { 
+  parseNodeId, 
+  compareNodeIds,
+  isMessageUpdatePayload,
+  isPresenceUpdatePayload, 
+  isOwnershipUpdatePayload,
+  isTransferErrorPayload,
+  isNodeUpdatePayload,
+  isAttachmentUpdatePayload,
+  isAttachmentDeletePayload
+} from '../utils/typeGuards';
+import { validatePayload } from '../services/networkService';
 
-interface ChatMessage {
-  message_id: number;
-  node_id: number;
-  content: string;
-  is_user: boolean;
-  timestamp: string;
-}
-
-interface ChatAttachment {
-  attachment_id: number;
-  node_id: number;
-  user_id: string;
-  file_path: string;
-  file_name: string;
-  file_type: string;
-  file_size: number;
-  created_at: string;
-  file_url?: string;
-}
-
-interface UserPresence {
-  userId: string;
-  email: string;
-  isTyping: boolean;
-  lastActive: string;
-}
-
+/**
+ * ChatUI Component
+ * 
+ * This component implements type-safe network event handling for the chat interface.
+ * It directly subscribes to network events and performs validation to ensure type safety.
+ * 
+ * Implementation Notes:
+ * - Uses validatePayload to verify incoming payloads match expected types
+ * - Type guards ensure runtime type safety for network messages
+ * - Direct subscription to networkAdapter instead of React hooks in useEffect
+ * 
+ * Known Issues:
+ * - Some TypeScript compatibility warnings remain related to date handling
+ * - Property access type errors for ChatMessage and ChatAttachment
+ * - Type assertions (as) used in some places for compatibility during migration
+ * 
+ * TODO:
+ * - Refine type definitions to eliminate remaining type errors
+ * - Update associated components to use the same type-safe patterns
+ * - Add tests to verify type guards and validation utilities
+ */
 interface ChatUIProps {
   nodeId: string | null; // Selected node's ID
   nodeTitle: string | null; // Selected node's title
@@ -62,7 +90,6 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     networkAdapter, 
     connectionStatus: _connectionStatus, 
     sendMessage, 
-    subscribeToEvent, 
     updateUserPresence 
   } = useNetwork();
   const { user: _user } = useAuth();
@@ -94,6 +121,237 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const [_avatarMenuOpen, _setAvatarMenuOpen] = useState<number | null>(null);
+
+  // Create callback handlers for each event type
+  const parsedNodeId = parseNodeId(nodeId);
+
+  // Message update handler
+  const handleMessageUpdate = useCallback((payload: MessageUpdatePayload) => {
+    console.log('Message update received:', payload);
+    console.log('Current nodeId:', nodeId, 'Payload node_id:', payload.new?.node_id);
+    
+    if (payload.new && parsedNodeId && payload.new.node_id === parsedNodeId) {
+      setMessages((prev) => {
+        // Check if this message is already in the list to avoid duplicates
+        if (!payload.new) {
+          console.log('No new message data, not adding anything');
+          return prev;
+        }
+        
+        if (prev.some((msg) => msg.message_id === payload.new!.message_id)) {
+          console.log('Message already exists in state, not adding again');
+          return prev;
+        }
+        
+        console.log('Adding new message to state');
+        // Convert the network payload to a ChatMessage with compatible properties
+        const newMessage: ChatMessage = {
+          message_id: payload.new.message_id,
+          content: payload.new.content,
+          is_user: payload.new.is_user,
+          timestamp: payload.new.timestamp,
+          user_id: payload.new.user_id as string | undefined,
+          email: payload.new.email as string | undefined
+        };
+        return [...prev, newMessage];
+      });
+    } else {
+      console.log('Message is for a different node, ignoring');
+    }
+  }, [nodeId, parsedNodeId]);
+
+  // Presence update handler
+  const handlePresenceUpdate = useCallback((payload: PresenceUpdatePayload) => {
+    console.log('Presence update received in ChatUI:', payload);
+    
+    if (parsedNodeId && compareNodeIds(payload.nodeId, nodeId)) {
+      // Extract emails of users who are typing (excluding the current user)
+      const typing = payload.presence
+        .filter((p: UserPresence) => p.isTyping && p.userId !== userId)
+        .map((p: UserPresence) => p.email);
+      
+      setTypingUsers(typing);
+      setPresentUsers(payload.presence);
+    }
+  }, [nodeId, parsedNodeId, userId]);
+
+  // Ownership update handler
+  const handleOwnershipUpdate = useCallback((payload: OwnershipUpdatePayload) => {
+    console.log('Ownership update received:', payload);
+    
+    if (parsedNodeId && compareNodeIds(payload.nodeId, nodeId)) {
+      setIsOwner(payload.ownerId === userId);
+      
+      // Refresh node details
+      fetchNodeDetails();
+    }
+  }, [nodeId, parsedNodeId, userId]);
+
+  // Transfer error handler
+  const handleTransferError = useCallback((payload: TransferErrorPayload) => {
+    if (parsedNodeId && compareNodeIds(payload.nodeId, nodeId)) {
+      console.error('Ownership transfer error:', payload.error);
+      alert(`Failed to transfer ownership: ${payload.error}`);
+      setIsTransferring(false);
+    }
+  }, [nodeId, parsedNodeId]);
+
+  // Node update handler
+  const handleNodeUpdate = useCallback((payload: NodeUpdatePayload) => {
+    if (payload.new && parsedNodeId && payload.new.node_id === parsedNodeId) {
+      console.log('Node update detected, refreshing node details');
+      fetchNodeDetails();
+    }
+  }, [nodeId, parsedNodeId]);
+
+  // Attachment update handler
+  const handleAttachmentUpdate = useCallback((payload: AttachmentUpdatePayload) => {
+    console.log('Attachment update received:', payload);
+    
+    if (parsedNodeId && compareNodeIds(payload.nodeId, nodeId)) {
+      setAttachments((prev) => {
+        // Check if this attachment is already in the list to avoid duplicates
+        if (prev.some((att) => att.attachment_id === payload.attachment.attachment_id)) {
+          // Update the existing attachment
+          return prev.map((att) => 
+            att.attachment_id === payload.attachment.attachment_id ? payload.attachment : att
+          );
+        }
+        // Add the new attachment
+        return [...prev, payload.attachment];
+      });
+    }
+  }, [nodeId, parsedNodeId]);
+
+  // Attachment delete handler
+  const handleAttachmentDelete = useCallback((payload: AttachmentDeletePayload) => {
+    console.log('Attachment delete received:', payload);
+    
+    if (parsedNodeId && compareNodeIds(payload.nodeId, nodeId)) {
+      setAttachments((prev) => 
+        prev.filter((att) => att.attachment_id !== payload.attachmentId)
+      );
+    }
+  }, [nodeId, parsedNodeId]);
+
+  // Register event subscriptions using custom hooks
+  const subscribeToMessageUpdates = useMessageUpdateEvent(handleMessageUpdate);
+  const subscribeToPresenceUpdates = usePresenceUpdateEvent(handlePresenceUpdate);
+  const subscribeToOwnershipUpdates = useOwnershipUpdateEvent(handleOwnershipUpdate);
+  const subscribeToTransferErrors = useTransferErrorEvent(handleTransferError);
+  const subscribeToNodeUpdates = useNodeUpdateEvent(handleNodeUpdate);
+  const subscribeToAttachmentUpdates = useAttachmentUpdateEvent(handleAttachmentUpdate);
+  const subscribeToAttachmentDeletes = useAttachmentDeleteEvent(handleAttachmentDelete);
+
+  // Fetch messages when the node changes and set up real-time updates
+  useEffect(() => {
+    if (!nodeId) {
+      setMessages([]);
+      setTypingUsers([]);
+      setIsOwner(false);
+      setPresentUsers([]);
+      setAttachments([]);
+      setCurrentNode(null);
+      return;
+    }
+
+    const fetchMessages = async () => {
+      try {
+        console.log(`Fetching messages for node ${nodeId}`);
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('node_id', parseInt(nodeId))
+          .order('timestamp', { ascending: true });
+        
+        if (error) {
+          console.error('Error fetching messages:', error);
+          throw error;
+        }
+        console.log(`Fetched ${data?.length || 0} messages for node ${nodeId}`);
+        setMessages(data || []);
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+      }
+    };
+
+    fetchMessages();
+    fetchNodeDetails();
+
+    // Set up real-time updates for messages
+    if (networkAdapter) {
+      // Directly use the network adapter to subscribe to events
+      const unsubscribeMessage = networkAdapter.subscribeToEvent('message-update', (payload) => {
+        const validPayload = validatePayload(payload, isMessageUpdatePayload);
+        if (validPayload) {
+          handleMessageUpdate(validPayload);
+        }
+      });
+      
+      const unsubscribePresence = networkAdapter.subscribeToEvent('presence-update', (payload) => {
+        const validPayload = validatePayload(payload, isPresenceUpdatePayload);
+        if (validPayload) {
+          handlePresenceUpdate(validPayload);
+        }
+      });
+      
+      const unsubscribeOwnership = networkAdapter.subscribeToEvent('ownership-update', (payload) => {
+        const validPayload = validatePayload(payload, isOwnershipUpdatePayload);
+        if (validPayload) {
+          handleOwnershipUpdate(validPayload);
+        }
+      });
+      
+      const unsubscribeTransferError = networkAdapter.subscribeToEvent('transfer-ownership-error', (payload) => {
+        const validPayload = validatePayload(payload, isTransferErrorPayload);
+        if (validPayload) {
+          handleTransferError(validPayload);
+        }
+      });
+      
+      const unsubscribeNodeUpdate = networkAdapter.subscribeToEvent('node-update', (payload) => {
+        const validPayload = validatePayload(payload, isNodeUpdatePayload);
+        if (validPayload) {
+          handleNodeUpdate(validPayload);
+        }
+      });
+      
+      const unsubscribeAttachmentUpdate = networkAdapter.subscribeToEvent('attachment-update', (payload) => {
+        const validPayload = validatePayload(payload, isAttachmentUpdatePayload);
+        if (validPayload) {
+          handleAttachmentUpdate(validPayload);
+        }
+      });
+      
+      const unsubscribeAttachmentDelete = networkAdapter.subscribeToEvent('attachment-delete', (payload) => {
+        const validPayload = validatePayload(payload, isAttachmentDeletePayload);
+        if (validPayload) {
+          handleAttachmentDelete(validPayload);
+        }
+      });
+      
+      // Return cleanup function that calls all unsubscribe functions
+      return () => {
+        unsubscribeMessage();
+        unsubscribePresence();
+        unsubscribeOwnership();
+        unsubscribeTransferError();
+        unsubscribeNodeUpdate();
+        unsubscribeAttachmentUpdate();
+        unsubscribeAttachmentDelete();
+      };
+    }
+  }, [
+    nodeId, 
+    networkAdapter, 
+    handleMessageUpdate,
+    handlePresenceUpdate,
+    handleOwnershipUpdate,
+    handleTransferError,
+    handleNodeUpdate,
+    handleAttachmentUpdate,
+    handleAttachmentDelete
+  ]);
 
   // Fetch available nodes for the Pull dropdown
   useEffect(() => {
@@ -154,163 +412,6 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, attachments]);
-
-  // Fetch messages when the node changes and set up real-time updates
-  useEffect(() => {
-    if (!nodeId) {
-      setMessages([]);
-      setTypingUsers([]);
-      setIsOwner(false);
-      setPresentUsers([]);
-      setAttachments([]);
-      setCurrentNode(null);
-      return;
-    }
-
-    const fetchMessages = async () => {
-      try {
-        console.log(`Fetching messages for node ${nodeId}`);
-        const { data, error } = await supabase
-          .from('chat_messages')
-          .select('*')
-          .eq('node_id', parseInt(nodeId))
-          .order('timestamp', { ascending: true });
-        
-        if (error) {
-          console.error('Error fetching messages:', error);
-          throw error;
-        }
-        console.log(`Fetched ${data?.length || 0} messages for node ${nodeId}`);
-        setMessages(data || []);
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-      }
-    };
-
-    fetchMessages();
-    fetchNodeDetails();
-
-    // Set up real-time updates for messages
-    if (networkAdapter) {
-      // Use NetworkAdapter for real-time updates
-      const unsubscribeMessage = subscribeToEvent('message-update', (payload) => {
-        console.log('Message update received:', payload);
-        console.log('Current nodeId:', nodeId, 'Payload node_id:', payload.new?.node_id);
-        if (payload.new && payload.new.node_id === parseInt(nodeId)) {
-          setMessages((prev) => {
-            // Check if this message is already in the list to avoid duplicates
-            if (!payload.new || prev.some((msg) => msg.message_id === payload.new.message_id)) {
-              console.log('Message already exists in state, not adding again');
-              return prev;
-            }
-            console.log('Adding new message to state');
-            return [...prev, payload.new as ChatMessage];
-          });
-        } else {
-          console.log('Message is for a different node, ignoring');
-        }
-      });
-
-      const unsubscribePresence = subscribeToEvent('presence-update', (payload) => {
-        console.log('Presence update received in ChatUI:', payload);
-        if (payload.nodeId.toString() === nodeId) {
-          // Extract emails of users who are typing (excluding the current user)
-          const typing = payload.presence
-            .filter((p: UserPresence) => p.isTyping && p.userId !== userId)
-            .map((p: UserPresence) => p.email);
-          
-          setTypingUsers(typing);
-          setPresentUsers(payload.presence);
-        }
-      });
-
-      // Listen for ownership updates
-      const unsubscribeOwnership = subscribeToEvent('ownership-update', (payload) => {
-        console.log('Ownership update received:', payload);
-        if (payload.nodeId.toString() === nodeId) {
-          setIsOwner(payload.ownerId === userId);
-          
-          // Refresh node details
-          fetchNodeDetails();
-        }
-      });
-
-      const unsubscribeTransferError = subscribeToEvent('transfer-ownership-error', (payload) => {
-        if (payload.nodeId.toString() === nodeId) {
-          console.error('Ownership transfer error:', payload.error);
-          alert(`Failed to transfer ownership: ${payload.error}`);
-          setIsTransferring(false);
-        }
-      });
-
-      // Listen for node updates
-      const unsubscribeNodeUpdate = subscribeToEvent('node-update', (payload) => {
-        if (payload.new && payload.new.node_id.toString() === nodeId) {
-          console.log('Node update detected, refreshing node details');
-          fetchNodeDetails();
-        }
-      });
-
-      // Listen for attachment updates
-      const unsubscribeAttachmentUpdate = subscribeToEvent('attachment-update', (payload) => {
-        console.log('Attachment update received:', payload);
-        if (payload.nodeId.toString() === nodeId) {
-          setAttachments((prev) => {
-            // Check if this attachment is already in the list to avoid duplicates
-            if (prev.some((att) => att.attachment_id === payload.attachment.attachment_id)) {
-              // Update the existing attachment
-              return prev.map((att) => 
-                att.attachment_id === payload.attachment.attachment_id ? payload.attachment : att
-              );
-            }
-            // Add the new attachment
-            return [...prev, payload.attachment];
-          });
-        }
-      });
-
-      // Listen for attachment deletions
-      const unsubscribeAttachmentDelete = subscribeToEvent('attachment-delete', (payload) => {
-        console.log('Attachment delete received:', payload);
-        if (payload.nodeId.toString() === nodeId) {
-          setAttachments((prev) => 
-            prev.filter((att) => att.attachment_id !== payload.attachmentId)
-          );
-        }
-      });
-
-      return () => {
-        unsubscribeMessage();
-        unsubscribePresence();
-        unsubscribeOwnership();
-        unsubscribeTransferError();
-        unsubscribeNodeUpdate();
-        unsubscribeAttachmentUpdate();
-        unsubscribeAttachmentDelete();
-      };
-    } else {
-      // Fallback to Supabase real-time if network adapter is not available
-      const subscription = supabase
-        .channel(`chat_messages:node_${nodeId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'chat_messages',
-            filter: `node_id=eq.${nodeId}`,
-          },
-          (payload) => {
-            setMessages((prev) => [...prev, payload.new as ChatMessage]);
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(subscription);
-      };
-    }
-  }, [nodeId, networkAdapter, subscribeToEvent, userId]);
 
   // Update editedTitle and editedDescription when nodeTitle or currentNode changes
   useEffect(() => {
@@ -447,17 +548,19 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       
       setLoading(true);
       
-      // Only get recent attachments (uploaded in the last minute)
-      // which haven't been sent with a message yet
+      // Filter for recent attachments
       const recentAttachments = attachments
         .filter(att => {
+          // Safely handle potentially undefined created_at
+          if (!att.created_at) return false;
+          
           const uploadTime = new Date(att.created_at).getTime();
           const now = new Date().getTime();
           const timeDiff = now - uploadTime;
           // Check if it was uploaded in the last minute and is after the last message
           return timeDiff < 60000 && 
             (messages.length === 0 || 
-             uploadTime > new Date(messages[messages.length - 1].timestamp).getTime());
+              uploadTime > new Date(messages[messages.length - 1].timestamp).getTime());
         })
         .map(att => ({
           attachment_id: att.attachment_id,
@@ -712,7 +815,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     }
   };
 
-  const handleDeleteAttachment = async (attachmentId: number) => {
+  const handleDeleteAttachment = async (attachmentId: number | string) => {
     if (!nodeId) return;
 
     try {
@@ -724,7 +827,12 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
         throw new Error('Authentication token not found. Please log in again.');
       }
       
-      const response = await fetch(`http://localhost:3001/api/attachments/${attachmentId}`, {
+      // Convert string ID to number if needed
+      const numericAttachmentId = typeof attachmentId === 'string' 
+        ? parseInt(attachmentId, 10) 
+        : attachmentId;
+      
+      const response = await fetch(`http://localhost:3001/api/attachments/${numericAttachmentId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -827,11 +935,15 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
     ...attachments.map(attachment => ({
       isAttachment: true,
       attachment,
-      timestamp: attachment.created_at
+      timestamp: attachment.created_at || new Date().toISOString()
     } as AttachmentItem))
   ].sort((a, b) => {
-    const timeA = 'isAttachment' in a ? new Date(a.timestamp).getTime() : new Date(a.timestamp).getTime();
-    const timeB = 'isAttachment' in b ? new Date(b.timestamp).getTime() : new Date(b.timestamp).getTime();
+    const timeA = 'isAttachment' in a ? 
+      new Date(a.timestamp || new Date().toISOString()).getTime() : 
+      new Date(a.timestamp).getTime();
+    const timeB = 'isAttachment' in b ? 
+      new Date(b.timestamp || new Date().toISOString()).getTime() : 
+      new Date(b.timestamp).getTime();
     return timeA - timeB;
   });
 
@@ -882,6 +994,22 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
       }
     };
   }, [nodeId, networkAdapter, socket, sendMessage]);
+
+  // Render attachment item
+  const formatFileSize = (fileSizeBytes: number | string | undefined): string => {
+    if (fileSizeBytes === undefined) return 'Unknown size';
+    
+    // Convert string to number if needed
+    const bytes = typeof fileSizeBytes === 'string' ? parseInt(fileSizeBytes, 10) : fileSizeBytes;
+    
+    // Handle cases where conversion fails
+    if (isNaN(bytes)) return 'Unknown size';
+    
+    if (bytes < 1024) return bytes + ' B';
+    else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    else if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    else return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  };
 
   return (
     <div 
@@ -1155,7 +1283,7 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
                     rel="noopener noreferrer"
                     style={{ color: '#0066cc', textDecoration: 'none' }}
                   >
-                    {attachment.file_name} ({(attachment.file_size / 1024).toFixed(2)} KB)
+                    {attachment.file_name} ({formatFileSize(attachment.file_size)})
                   </a>
                   {(isOwner || attachment.user_id === userId) && (
                     <button
@@ -1174,7 +1302,9 @@ const ChatUI: React.FC<ChatUIProps> = ({ nodeId, nodeTitle, userId }) => {
                   )}
                 </div>
                 <div style={{ fontSize: '10px', opacity: 0.7 }}>
-                  {new Date(attachment.created_at).toLocaleTimeString()}
+                  {attachment.created_at 
+                    ? new Date(attachment.created_at).toLocaleTimeString()
+                    : new Date().toLocaleTimeString()}
                 </div>
                 {attachment.file_type.startsWith('image/') && (
                   <img 

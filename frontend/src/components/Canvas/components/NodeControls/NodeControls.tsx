@@ -3,10 +3,29 @@
  * 
  * Component for managing node operations like creation and deletion.
  * Provides UI controls for common node actions.
+ * 
+ * Implementation Notes:
+ * - Uses type-safe network event handling
+ * - Validates incoming payloads with type guards
+ * - Performs safe type conversions for node IDs
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { CanvasNode } from '../../../../types/canvas';
+import { useNetwork } from '../../../../contexts/NetworkContext';
+import { 
+  NetworkPayload,
+  NodeUpdatePayload,
+  OwnershipUpdatePayload,
+  NodeId 
+} from '../../../../types/messaging';
+import { 
+  parseNodeId, 
+  compareNodeIds,
+  isNodeUpdatePayload,
+  isOwnershipUpdatePayload
+} from '../../../../utils/typeGuards';
+import { validatePayload } from '../../../../services/networkService';
 import styles from './NodeControls.module.css';
 
 export interface NodeControlsProps {
@@ -28,8 +47,15 @@ export const NodeControls: React.FC<NodeControlsProps> = ({
   isReadOnly = false,
   position,
 }) => {
-  // Local state for text editing
+  // Local state for text editing and node data
   const [localContent, setLocalContent] = useState(content);
+  const [nodeOwner, setNodeOwner] = useState<string | null>(null);
+  
+  // Get network context
+  const { networkAdapter } = useNetwork();
+  
+  // Parse node ID from string to number for type safety
+  const parsedNodeId = node ? parseNodeId(node.id) : null;
   
   // Calculate position styles based on props
   const positionStyle = {
@@ -38,6 +64,77 @@ export const NodeControls: React.FC<NodeControlsProps> = ({
     right: position?.right !== undefined ? `${position.right}px` : undefined,
     bottom: position?.bottom !== undefined ? `${position.bottom}px` : undefined,
   };
+  
+  // Type-safe handlers for network events
+  const handleNodeUpdate = useCallback((payload: NodeUpdatePayload) => {
+    if (payload.new && parsedNodeId && compareNodeIds(payload.new.node_id, node?.id || null)) {
+      // Update local node data if needed
+      if (payload.new.content && payload.new.content !== localContent) {
+        setLocalContent(payload.new.content as string);
+      }
+    }
+  }, [node?.id, parsedNodeId, localContent]);
+  
+  const handleOwnershipUpdate = useCallback((payload: OwnershipUpdatePayload) => {
+    if (parsedNodeId && compareNodeIds(payload.nodeId, node?.id || null)) {
+      setNodeOwner(payload.ownerId);
+    }
+  }, [node?.id, parsedNodeId]);
+  
+  // Set up event subscriptions using type-safe hooks
+  useEffect(() => {
+    // Skip setup if no networkAdapter or no node selected
+    if (!networkAdapter || !node || !parsedNodeId) return;
+    
+    // Get ownership information
+    const getNodeOwnership = async () => {
+      try {
+        // Implementation would depend on your API
+        // This is a placeholder for actual implementation
+        console.log('Fetching ownership for node:', parsedNodeId);
+      } catch (error) {
+        console.error('Error fetching node ownership:', error);
+      }
+    };
+    
+    getNodeOwnership();
+  }, [networkAdapter, node, parsedNodeId]);
+  
+  // Subscribe to network events
+  useEffect(() => {
+    if (!networkAdapter || !node) return;
+    
+    // Subscribe to events using network adapter directly
+    const unsubscribeNodeUpdate = networkAdapter.subscribeToEvent('node-update', (payload) => {
+      const validPayload = validatePayload(payload, isNodeUpdatePayload);
+      if (validPayload) {
+        handleNodeUpdate(validPayload);
+      }
+    });
+    
+    const unsubscribeOwnershipUpdate = networkAdapter.subscribeToEvent('ownership-update', (payload) => {
+      const validPayload = validatePayload(payload, isOwnershipUpdatePayload);
+      if (validPayload) {
+        handleOwnershipUpdate(validPayload);
+      }
+    });
+    
+    // Cleanup subscriptions
+    return () => {
+      unsubscribeNodeUpdate();
+      unsubscribeOwnershipUpdate();
+    };
+  }, [
+    networkAdapter, 
+    node, 
+    handleNodeUpdate,
+    handleOwnershipUpdate
+  ]);
+  
+  // Update local content when prop changes
+  useEffect(() => {
+    setLocalContent(content);
+  }, [content]);
   
   // Handle content change
   const handleContentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
