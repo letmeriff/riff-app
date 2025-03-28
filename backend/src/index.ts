@@ -3,7 +3,6 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from './config/supabase';
 import { authMiddleware } from './middleware/auth';
 import modelRoutes from './routes/modelRoutes';
@@ -15,10 +14,14 @@ import summarizationRoutes from './routes/summarizationRoutes';
 import branchRoutes from './routes/branchRoutes';
 import presenceRoutes from './routes/presenceRoutes';
 import attachmentRoutes from './routes/attachmentRoutes';
+import ownershipRoutes from './routes/ownershipRoutes';
+import nodeRoutes from './routes/nodeRoutes';
 import { processPendingSummaries } from './services/summarizationJob';
 import { updateUserPresence, removeUserPresence, getUserPresence } from './services/presenceService';
 import { startYjsWebSocketServer } from './services/yjsWebSocketServer';
 import { updateNodePositionYjs, getYjsNodeId, getNodePositionYjs } from './services/yjsNodeService';
+import { transferNodeOwnership, getOwnershipInfo } from './services/ownershipService';
+import { NodeId } from './types/messaging';
 // These route modules don't exist but were referenced
 // import authRoutes from './routes/authRoutes';
 // import userRoutes from './routes/userRoutes';
@@ -32,9 +35,13 @@ interface ChatNode {
   user_id: string;
   owner_id: string;
   title: string;
-  model: string;
-  flavor: string;
+  description?: string;
+  model?: string;
+  flavor?: string;
+  position_x?: number;
+  position_y?: number;
   created_at: string;
+  updated_at?: string;
 }
 
 interface ChatMessage {
@@ -46,15 +53,22 @@ interface ChatMessage {
 }
 
 // Add interfaces for the payload types
-interface ChatNodePayload {
+interface _ChatNodePayload {
   new: ChatNode | null;
   old: Partial<ChatNode> | null;
   eventType: 'INSERT' | 'UPDATE' | 'DELETE';
 }
 
-interface ChatMessagePayload {
+interface _ChatMessagePayload {
   new: ChatMessage | null;
   old: Partial<ChatMessage> | null;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+}
+
+// Define interface for Supabase real-time changes
+interface SupabaseChangePayload {
+  new: Record<string, unknown> | null;
+  old: Record<string, unknown> | null;
   eventType: 'INSERT' | 'UPDATE' | 'DELETE';
 }
 
@@ -138,7 +152,7 @@ app.get('/api/test-supabase', authMiddleware, async (req: Request, res: Response
 // app.use('/api/auth', authRoutes);
 // app.use('/api/users', userRoutes);
 app.use('/api/chat', chatRoutes);
-// app.use('/api/nodes', nodeRoutes);
+app.use('/api/nodes', nodeRoutes);
 // app.use('/api/upload', uploadRoutes);
 app.use('/api/models', modelRoutes);
 app.use('/api/flavors', flavorRoutes);
@@ -148,6 +162,7 @@ app.use('/api/summarize', summarizationRoutes);
 app.use('/api/branch', branchRoutes);
 app.use('/api/presence', presenceRoutes);
 app.use('/api/attachments', attachmentRoutes);
+app.use('/api/ownership', ownershipRoutes);
 // app.use('/api/context-pull', contextPullRoutes);
 
 // API endpoint for saving node position during page unload
@@ -314,9 +329,8 @@ io.on('connection', (socket: Socket) => {
       }
       
       // Emit ownership info to the client
-      socket.emit('ownership-update', { 
-        nodeId, 
-        isOwner: node.owner_id === userId,
+      socket.emit('ownership-update', await getOwnershipInfo(nodeId) || {
+        nodeId,
         ownerId: node.owner_id
       });
     } catch (error) {
@@ -408,54 +422,30 @@ io.on('connection', (socket: Socket) => {
   socket.on('transfer-ownership', async ({ nodeId, newOwnerId }) => {
     try {
       const userId = socket.data.user.id;
+      const typedNodeId: NodeId = parseInt(nodeId);
       
-      // Verify the current user is the owner
-      const { data: node, error } = await supabase
-        .from('chat_nodes')
-        .select('owner_id')
-        .eq('node_id', nodeId)
-        .single();
-      
-      if (error) {
-        console.error('Error fetching node owner:', error);
+      if (isNaN(typedNodeId)) {
         socket.emit('transfer-ownership-error', { 
           nodeId, 
-          error: 'Failed to fetch node information'
+          error: 'Invalid node ID'
         });
         return;
       }
       
-      if (node.owner_id !== userId) {
-        socket.emit('transfer-ownership-error', { 
-          nodeId, 
-          error: 'Only the current owner can transfer ownership'
-        });
-        return;
-      }
+      // Use the ownership service to handle the transfer
+      const result = await transferNodeOwnership(typedNodeId, userId, newOwnerId);
       
-      // Transfer ownership
-      const { error: updateError } = await supabase
-        .from('chat_nodes')
-        .update({ owner_id: newOwnerId })
-        .eq('node_id', nodeId);
-      
-      if (updateError) {
-        console.error('Error updating node owner:', updateError);
-        socket.emit('transfer-ownership-error', { 
-          nodeId, 
-          error: 'Failed to transfer ownership'
-        });
+      if (!result.success) {
+        // If the transfer failed, emit the error payload
+        socket.emit('transfer-ownership-error', result.payload);
         return;
       }
       
       // Broadcast ownership change to all users in the node
-      const nodeRoom = `node:${nodeId}`;
-      io.to(nodeRoom).emit('ownership-update', { 
-        nodeId, 
-        ownerId: newOwnerId
-      });
+      const nodeRoom = `node:${typedNodeId}`;
+      io.to(nodeRoom).emit('ownership-update', result.payload);
       
-      console.log(`Ownership of node ${nodeId} transferred from ${userId} to ${newOwnerId}`);
+      console.log(`Ownership of node ${typedNodeId} transferred from ${userId} to ${newOwnerId}`);
     } catch (error) {
       console.error('Error handling ownership transfer:', error);
       socket.emit('transfer-ownership-error', { 
@@ -579,15 +569,57 @@ supabase
   .on(
     'postgres_changes',
     { event: '*', schema: 'public', table: 'chat_nodes' },
-    (payload: any) => {
-      const newNode = payload.new as ChatNode | null;
-      const oldNode = payload.old as Partial<ChatNode> | null;
-      const nodeId = newNode?.node_id || oldNode?.node_id;
-      if (nodeId) {
+    (payload: SupabaseChangePayload) => {
+      try {
+        const newNode = payload.new as ChatNode | null;
+        const oldNode = payload.old as Partial<ChatNode> | null;
+        const nodeId = newNode?.node_id || oldNode?.node_id;
+        
+        if (!nodeId) {
+          console.error('No node ID found in payload:', payload);
+          return;
+        }
+        
+        // Create standardized payload
+        let nodeUpdatePayload = null;
+        
+        if (newNode) {
+          nodeUpdatePayload = {
+            nodeId,
+            new: {
+              node_id: nodeId,
+              title: newNode.title || '',
+              ...(newNode.description && { description: newNode.description }),
+              user_id: newNode.user_id,
+              owner_id: newNode.owner_id,
+              model: newNode.model,
+              flavor: newNode.flavor,
+              position_x: newNode.position_x,
+              position_y: newNode.position_y,
+              created_at: newNode.created_at,
+              updated_at: newNode.updated_at
+            }
+          };
+        }
+        
+        // Emit to specific node room if it exists
         const nodeRoom = `node:${nodeId}`;
-        io.to(nodeRoom).emit('node-update', payload);
+        
+        if (nodeUpdatePayload) {
+          io.to(nodeRoom).emit('node-update', nodeUpdatePayload);
+        } else {
+          // For deletion events, create a minimal payload
+          io.to(nodeRoom).emit('node-update', { 
+            nodeId, 
+            new: null 
+          });
+        }
+        
+        // Also emit to general channel for node listings
+        io.emit('node-list-update', payload);
+      } catch (error) {
+        console.error('Error handling node change:', error);
       }
-      io.emit('node-update', payload);
     }
   )
   .subscribe();
@@ -597,12 +629,28 @@ supabase
   .on(
     'postgres_changes',
     { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-    async (payload: any) => {
+    async (payload: SupabaseChangePayload) => {
       try {
         if (payload.new && typeof payload.new.node_id === 'number') {
-          const nodeId = payload.new.node_id;
+          const nodeId: NodeId = payload.new.node_id;
           const nodeRoom = `node:${nodeId}`;
-          io.to(nodeRoom).emit('message-update', payload);
+          
+          // Create a standardized message update payload
+          const messagePayload = {
+            nodeId,
+            messageId: payload.new.message_id,
+            new: {
+              node_id: nodeId,
+              message_id: payload.new.message_id,
+              content: payload.new.content,
+              is_user: payload.new.is_user,
+              timestamp: payload.new.timestamp,
+              user_id: payload.new.user_id,
+              email: payload.new.email
+            }
+          };
+          
+          io.to(nodeRoom).emit('message-update', messagePayload);
         }
       } catch (error) {
         console.error('Error handling message change:', error);
@@ -617,11 +665,14 @@ supabase
   .on(
     'postgres_changes',
     { event: '*', schema: 'public', table: 'chat_attachments' },
-    async (payload: any) => {
+    async (payload: SupabaseChangePayload) => {
       try {
         const nodeId = payload.new?.node_id || payload.old?.node_id;
         if (nodeId) {
-          const nodeRoom = `node:${nodeId}`;
+          const typedNodeId: NodeId = nodeId as NodeId;
+          const nodeRoom = `node:${typedNodeId}`;
+          
+          // Emit the raw change for backward compatibility
           io.to(nodeRoom).emit('attachment-change', payload);
           
           // If it's a new attachment, fetch the complete data and broadcast it
@@ -633,7 +684,7 @@ supabase
               .single();
               
             if (attachment) {
-              let enhancedAttachment = { ...attachment };
+              const enhancedAttachment = { ...attachment };
               
               // Add signed URL if needed
               if (!attachment.file_url) {
@@ -644,11 +695,32 @@ supabase
                 enhancedAttachment.file_url = urlData?.signedUrl || null;
               }
               
-              io.to(nodeRoom).emit('attachment-update', { 
-                nodeId, 
-                attachment: enhancedAttachment 
-              });
+              // Create standardized attachment update payload
+              const attachmentPayload = {
+                nodeId: typedNodeId,
+                attachmentId: attachment.attachment_id,
+                attachment: {
+                  attachment_id: attachment.attachment_id,
+                  node_id: typedNodeId,
+                  file_url: enhancedAttachment.file_url,
+                  file_type: attachment.file_type,
+                  file_name: attachment.file_name,
+                  file_size: attachment.file_size,
+                  created_at: attachment.created_at,
+                  user_id: attachment.user_id
+                }
+              };
+              
+              io.to(nodeRoom).emit('attachment-update', attachmentPayload);
             }
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            // Create standardized attachment delete payload
+            const deletePayload = {
+              nodeId: typedNodeId,
+              attachmentId: payload.old.attachment_id
+            };
+            
+            io.to(nodeRoom).emit('attachment-delete', deletePayload);
           }
         }
       } catch (error) {
@@ -715,7 +787,7 @@ httpServer.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   
   // Initialize Yjs WebSocket server
-  const yjsWss = startYjsWebSocketServer(httpServer);
+  const _yjsWss = startYjsWebSocketServer(httpServer);
   console.log('Yjs WebSocket server is listening for connections');
   
   // Start the summarization job scheduler
