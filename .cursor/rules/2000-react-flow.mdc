@@ -1,0 +1,788 @@
+---
+description: ALWAYS use when implementing React Flow applications to ensure best practices for node-based UIs
+globs: 
+alwaysApply: false
+---
+# React Flow Framework Best Practices
+
+<version>2.0.0</version>
+
+## Context
+- When building node-based UIs, diagrams, flowcharts, or graph-based applications with React Flow
+- When implementing canvas, nodes, edges, layouts, interactions, or styling for React Flow applications
+- When setting up a new React Flow project or extending an existing one
+
+## Requirements
+
+### Installation and Setup
+- Use the latest stable React Flow version (currently v12.4.x)
+- Install React Flow with `npm install @xyflow/react` or equivalent for your package manager
+- Import components as named imports: `import { ReactFlow, Controls, Background } from '@xyflow/react'`
+- Always import the required CSS styles: `import '@xyflow/react/dist/style.css'`
+- For custom styling without React Flow defaults, import only base styles: `import '@xyflow/react/dist/base.css'`
+- Wrap your application with `ReactFlowProvider` when using React Flow hooks outside the `ReactFlow` component
+- Initialize React Flow with proper viewport settings and dimensions (typically 100% width/height of container)
+
+### General rule
+- When implementing a feature with React Flow, always do some upfront research on how the feature might be implemented with the latest, standard React Flow, be creative, but adhere to the rules. In case you have to resort to implementing custom solutions, try to incorporate and build on React Flow.
+
+### Canvas Implementation
+- Use the `ReactFlow` component as the main container for your flow
+- Include essential props: `nodes`, `edges`, `onNodesChange`, `onEdgesChange`, and `onConnect`
+- Add viewport controls with the `Controls` component for better user experience
+- Include a `Background` component for visual clarity
+- Use `fitView` prop to automatically fit the viewport to the graph content
+- Set appropriate `defaultViewport` or use `fitView` with custom options when needed
+- Consider using the `colorMode` prop ("light", "dark", or "system") for built-in theme support
+
+<example>
+```tsx
+import { ReactFlow, Controls, Background, Panel } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+function Flow() {
+  // State management code here...
+  
+  return (
+    <div style={{ width: '100%', height: '500px' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        fitView
+        colorMode="light" // or "dark" or "system"
+      >
+        <Controls />
+        <Background variant="dots" gap={12} size={1} />
+        <Panel position="top-left">My Flow</Panel>
+      </ReactFlow>
+    </div>
+  );
+}
+```
+</example>
+
+### Node Implementation
+- Define nodes with unique `id`, `position`, and `data` properties
+- Use the `type` property to specify custom node types
+- Register custom node types with the `nodeTypes` prop on `ReactFlow`
+- Implement custom nodes as React components that receive `data` and other node props
+- Use `Handle` components with proper `type` (source/target) and `position` for connections
+- Implement node resizing with `NodeResizer` when appropriate
+- Use `NodeToolbar` for contextual actions on nodes
+- For server-side rendering, explicitly define `width` and `height` properties
+- Understand the difference between explicitly set dimensions (`width`/`height`) and measured dimensions (`measured.width`/`measured.height`)
+- Use `parentId` (not `parentNode`) to specify parent-child relationships for nested nodes
+
+<example>
+```tsx
+// Node definition
+const nodes = [
+  {
+    id: 'node-1',
+    type: 'custom',
+    position: { x: 100, y: 100 },
+    // Optional explicit dimensions (useful for SSR)
+    width: 150,
+    height: 50,
+    data: { label: 'Custom Node' },
+    // For nested nodes
+    parentId: 'parent-node-id', // Note: parentNode is now parentId in v12
+  }
+];
+
+// Custom node component
+function CustomNode({ data, id }) {
+  // Access measured dimensions if needed
+  // const { width, height } = useInternalNode(id).measured;
+  
+  return (
+    <div className="custom-node">
+      <div>{data.label}</div>
+      <Handle type="target" position={Position.Top} />
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+// Register node type
+const nodeTypes = {
+  custom: CustomNode,
+};
+```
+</example>
+
+### Edge Implementation
+- Define edges with unique `id`, `source`, and `target` properties
+- Use the `type` property to specify custom edge types
+- Register custom edge types with the `edgeTypes` prop on `ReactFlow`
+- Implement custom edges as React components that receive edge props
+- Use appropriate marker types for edge ends (e.g., `MarkerType.Arrow`)
+- Use `getBezierPath` or other path utilities for custom edge paths
+- Implement edge labels with `EdgeLabelRenderer` for better performance
+- Use `reconnectEdge` utility (renamed from `updateEdge` in v12) for edge reconnection
+
+<example>
+```tsx
+// Edge definition
+const edges = [
+  {
+    id: 'edge-1',
+    type: 'custom',
+    source: 'node-1',
+    target: 'node-2',
+    markerEnd: { type: MarkerType.ArrowClosed },
+  }
+];
+
+// Custom edge component
+function CustomEdge({ id, source, target, markerEnd, style }) {
+  const [edgePath] = getBezierPath({
+    sourceX, sourceY, targetX, targetY,
+  });
+  
+  return (
+    <>
+      <path id={id} className="react-flow__edge-path" d={edgePath} style={style} />
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            pointerEvents: 'all',
+          }}
+          className="nodrag nopan"
+        >
+          Edge Label
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+// Register edge type
+const edgeTypes = {
+  custom: CustomEdge,
+};
+```
+</example>
+
+### Layout Implementation
+- Use external libraries for automatic layouts (dagre, elkjs, d3-force)
+- Implement layout functions that modify node positions without changing other properties
+- Apply layouts on initial render or when graph structure changes
+- Use `ReactFlowProvider` and `useReactFlow` hook to access the `fitView` function after layout
+- Consider performance implications for large graphs and use memoization
+- Implement sub-flows or nested graphs for complex hierarchical structures
+- Use the new `getNodesBounds` utility from `useReactFlow` hook for determining node bounds
+
+<example>
+```tsx
+// Using dagre for automatic layout
+import dagre from 'dagre';
+import { useCallback } from 'react';
+import { useNodesState, useEdgesState, useReactFlow } from '@xyflow/react';
+
+function LayoutFlow() {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const { fitView, getNodesBounds } = useReactFlow();
+  
+  const getLayoutedElements = useCallback((nodes, edges, direction = 'TB') => {
+    const dagreGraph = new dagre.graphlib.Graph();
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
+    dagreGraph.setGraph({ rankdir: direction });
+    
+    // Add nodes to dagre
+    nodes.forEach((node) => {
+      // Use measured dimensions if available, otherwise use explicit or default dimensions
+      const width = node.width || node.measured?.width || 150;
+      const height = node.height || node.measured?.height || 50;
+      dagreGraph.setNode(node.id, { width, height });
+    });
+    
+    // Add edges to dagre
+    edges.forEach((edge) => {
+      dagreGraph.setEdge(edge.source, edge.target);
+    });
+    
+    // Calculate layout
+    dagre.layout(dagreGraph);
+    
+    // Apply layout to nodes
+    return {
+      nodes: nodes.map((node) => {
+        const nodeWithPosition = dagreGraph.node(node.id);
+        return {
+          ...node,
+          position: {
+            x: nodeWithPosition.x - (node.width || node.measured?.width || 150) / 2,
+            y: nodeWithPosition.y - (node.height || node.measured?.height || 50) / 2,
+          },
+        };
+      }),
+      edges,
+    };
+  }, []);
+  
+  const onLayout = useCallback((direction) => {
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+      nodes,
+      edges,
+      direction
+    );
+    
+    setNodes([...layoutedNodes]);
+    setEdges([...layoutedEdges]);
+    
+    window.requestAnimationFrame(() => {
+      fitView({ padding: 0.2 });
+    });
+  }, [nodes, edges, setNodes, setEdges, fitView, getLayoutedElements]);
+  
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      fitView
+    >
+      <Panel position="top-right">
+        <button onClick={() => onLayout('TB')}>Vertical Layout</button>
+        <button onClick={() => onLayout('LR')}>Horizontal Layout</button>
+      </Panel>
+    </ReactFlow>
+  );
+}
+```
+</example>
+
+### Interaction Implementation
+- Use `onConnect` handler to process new connections
+- Implement `onNodesChange` and `onEdgesChange` handlers for node/edge modifications
+- Use `ConnectionMode.Loose` for more flexible connections or `ConnectionMode.Strict` for validation
+- Set appropriate interaction flags: `nodesDraggable`, `nodesConnectable`, `elementsSelectable`
+- Implement custom connection validation with `isValidConnection` prop
+- Use `onConnectStart` and `onConnectEnd` for custom connection behavior
+- Use `onReconnect` (renamed from `onEdgeUpdate` in v12) for edge reconnection
+- Implement undo/redo functionality for user actions
+
+<example>
+```tsx
+const Flow = () => {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  
+  const onConnect = useCallback(
+    (params) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+  
+  const onReconnect = useCallback(
+    (oldEdge, newConnection) => {
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [setEdges]
+  );
+  
+  const isValidConnection = useCallback(
+    (connection) => {
+      // Custom validation logic
+      return connection.source !== connection.target;
+    },
+    []
+  );
+  
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onConnect={onConnect}
+      onReconnect={onReconnect}
+      isValidConnection={isValidConnection}
+      connectionMode={ConnectionMode.Loose}
+      nodesDraggable={true}
+      nodesConnectable={true}
+      elementsSelectable={true}
+    />
+  );
+};
+```
+</example>
+
+### State Management Best Practices
+- Use the built-in `useNodesState` and `useEdgesState` hooks for efficient state management
+- Leverage the `addEdge` utility function for consistent edge creation
+- Ensure all callbacks are wrapped with `useCallback` to prevent unnecessary re-renders
+- Use the `applyNodeChanges` and `applyEdgeChanges` utilities when manually handling changes
+- Keep node and edge state outside of the ReactFlow component for better control
+- Use the `ReactFlowProvider` at the top level when accessing React Flow hooks outside the main component
+- Avoid direct DOM manipulation for node creation; always update the state instead
+- Use the `defaultEdgeOptions` prop for consistent edge styling instead of adding styles to each edge
+- For reactive flows, use `useNodeConnections` (successor to `useHandleConnections`) and `useNodesData` hooks
+
+<example>
+```tsx
+// Recommended state management pattern
+import { 
+  ReactFlow, 
+  useNodesState, 
+  useEdgesState, 
+  addEdge,
+  ReactFlowProvider,
+  useNodeConnections,
+  useNodesData
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+const initialNodes = [/* ... */];
+const initialEdges = [/* ... */];
+
+function Flow() {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  
+  const onConnect = useCallback(
+    (params) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+  
+  const addNewNode = useCallback(
+    (type, position) => {
+      const newNode = {
+        id: `node-${Date.now()}`,
+        type,
+        position,
+        data: { /* ... */ },
+      };
+      setNodes((nds) => [...nds, newNode]);
+    },
+    [setNodes]
+  );
+  
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onConnect={onConnect}
+      defaultEdgeOptions={{
+        type: 'smoothstep',
+        animated: true,
+      }}
+    >
+      {/* ... */}
+    </ReactFlow>
+  );
+}
+
+// Example of a reactive node using useNodeConnections
+function ReactiveNode({ id, data }) {
+  // Get all connections to this node
+  const connections = useNodeConnections(id);
+  
+  // Or filter by handle type
+  const targetConnections = useNodeConnections(id, { handleType: 'target' });
+  
+  // Access data from connected nodes
+  const connectedNodesData = useNodesData(
+    connections.map((connection) => connection.nodeId)
+  );
+  
+  // Process data from connected nodes
+  const processedData = useMemo(() => {
+    // Process data from connected nodes
+    return connectedNodesData.reduce((acc, nodeData) => {
+      // Your data processing logic
+      return acc + (nodeData?.value || 0);
+    }, 0);
+  }, [connectedNodesData]);
+  
+  return (
+    <div>
+      <div>Value: {processedData}</div>
+      <Handle type="target" position={Position.Top} />
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+// Wrap with provider when needed
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <Flow />
+    </ReactFlowProvider>
+  );
+}
+```
+</example>
+
+### Server-Side Rendering
+- For SSR/SSG support, explicitly define `width` and `height` for nodes
+- Define handle positions explicitly for accurate connections in SSR
+- Use the `nodeOrigin` prop to control the origin point of nodes
+- Understand that measured dimensions will be available after hydration
+- Consider using the `nodesDraggable={false}` prop for static SSR flows
+
+<example>
+```tsx
+// SSR-compatible node definition
+const nodes = [
+  {
+    id: 'node-1',
+    type: 'custom',
+    position: { x: 100, y: 100 },
+    // Explicit dimensions for SSR
+    width: 150,
+    height: 50,
+    data: { label: 'SSR Node' },
+  }
+];
+
+// SSR-compatible React Flow component
+function SSRFlow() {
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onConnect={onConnect}
+      // Optional: set node origin for positioning
+      nodeOrigin={[0.5, 0.5]} // Center of the node
+    />
+  );
+}
+```
+</example>
+
+### Computing Flows (Reactive Data)
+- Use `useNodeConnections` hook to track connections to a node (replaces `useHandleConnections`)
+- Use `useNodesData` hook to access data from connected nodes
+- Implement reactive data flows between connected nodes
+- Consider performance implications for large graphs and use memoization
+- Use the `updateNode` and `updateNodeData` functions for updating node data
+
+<example>
+```tsx
+// Reactive node implementation
+function ComputingNode({ id, data }) {
+  const { getNode, setNodes } = useReactFlow();
+  
+  // Get all incoming connections
+  const incomingConnections = useNodeConnections(id, { handleType: 'target' });
+  
+  // Get data from connected source nodes
+  const sourceNodesData = useNodesData(
+    incomingConnections.map((connection) => connection.nodeId)
+  );
+  
+  // Compute result based on incoming data
+  const result = useMemo(() => {
+    return sourceNodesData.reduce((sum, nodeData) => {
+      return sum + (nodeData?.value || 0);
+    }, 0);
+  }, [sourceNodesData]);
+  
+  // Update this node's data when result changes
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              computedValue: result,
+            },
+          };
+        }
+        return node;
+      })
+    );
+  }, [id, result, setNodes]);
+  
+  return (
+    <div>
+      <div>Input Sum: {result}</div>
+      <div>Computed: {data.computedValue}</div>
+      <Handle type="target" position={Position.Top} />
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+```
+</example>
+
+### Theming and Dark Mode
+- Use the `colorMode` prop ("light", "dark", or "system") for built-in theme support
+- Override default styles with CSS variables for consistent theming
+- Use Tailwind CSS or Styled Components for custom styling
+- Implement responsive designs for different screen sizes
+- Use the new CSS variables for customizing colors and styles
+
+<example>
+```tsx
+// Using colorMode prop for dark mode
+<ReactFlow
+  nodes={nodes}
+  edges={edges}
+  colorMode="dark" // or "light" or "system"
+>
+  {/* ... */}
+</ReactFlow>
+
+// CSS variables for custom theming
+:root {
+  --rf-background-color: #f8f8f8;
+  --rf-node-color: #fff;
+  --rf-node-border-color: #1a192b;
+  --rf-connection-color: #1a192b;
+  --rf-handle-color: #1a192b;
+  --rf-edge-color: #1a192b;
+}
+
+.dark {
+  --rf-background-color: #1a192b;
+  --rf-node-color: #2d2d3a;
+  --rf-node-border-color: #555;
+  --rf-connection-color: #fff;
+  --rf-handle-color: #fff;
+  --rf-edge-color: #fff;
+}
+
+// Using Tailwind CSS for styling with dark mode
+function CustomNode({ data }) {
+  return (
+    <div className="px-4 py-2 shadow-md rounded-md bg-white dark:bg-gray-800 border-2 border-stone-400 dark:border-stone-600">
+      <div className="flex">
+        <div className="rounded-full w-12 h-12 flex justify-center items-center bg-gray-100 dark:bg-gray-700">
+          {data.emoji}
+        </div>
+        <div className="ml-2">
+          <div className="text-lg font-bold dark:text-white">{data.name}</div>
+          <div className="text-gray-500 dark:text-gray-300">{data.job}</div>
+        </div>
+      </div>
+      
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="w-16 !bg-teal-500"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-16 !bg-teal-500"
+      />
+    </div>
+  );
+}
+```
+</example>
+
+### Common Pitfalls to Avoid
+- **Not using ReactFlowProvider**: Always wrap your component with ReactFlowProvider when using React Flow hooks outside the ReactFlow component
+- **Manual state updates**: Avoid manually updating node/edge state; use the provided hooks and utilities instead
+- **Missing Handle components**: Always include Handle components in custom nodes for proper connections
+- **Incorrect CSS**: Set `overflow: visible` on node containers to ensure handles are clickable
+- **Unstable callbacks**: Always wrap event handlers with useCallback to prevent unnecessary re-renders
+- **Direct DOM manipulation**: Never directly manipulate the DOM to create or position nodes
+- **Missing key props**: Always provide unique keys when rendering lists of nodes or edges
+- **Incorrect type definitions**: Ensure your type definitions match the actual React Flow API
+- **Nested ReactFlow instances**: Avoid nesting ReactFlow components without proper isolation
+- **Using old property names**: Use `parentId` instead of `parentNode`, `onReconnect` instead of `onEdgeUpdate`
+- **Not understanding dimensions**: Understand the difference between explicitly set dimensions (`width`/`height`) and measured dimensions (`measured.width`/`measured.height`)
+- **Incorrect imports**: Use named imports from `@xyflow/react` instead of default imports from `reactflow`
+
+<example type="invalid">
+```tsx
+// Poor implementation with common pitfalls
+import ReactFlow from '@xyflow/react'; // Incorrect: should use named import
+
+function BadFlow() {
+  // Missing useNodesState and useEdgesState
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  
+  // Missing useCallback
+  function onConnect(params) {
+    // Direct state mutation without addEdge utility
+    setEdges([...edges, { 
+      id: `e${edges.length}`, 
+      source: params.source, 
+      target: params.target 
+    }]);
+  }
+  
+  // Missing useCallback
+  function handleAddNode() {
+    // Direct state mutation
+    setNodes([...nodes, {
+      id: `node-${nodes.length}`,
+      position: { x: 100, y: 100 },
+      data: { label: 'New Node' }
+    }]);
+  }
+  
+  // Using old property name
+  function addChildNode() {
+    setNodes([...nodes, {
+      id: 'child-1',
+      parentNode: 'parent-1', // Incorrect: should be parentId
+      position: { x: 10, y: 10 },
+      data: { label: 'Child Node' }
+    }]);
+  }
+  
+  return (
+    <div>
+      <button onClick={handleAddNode}>Add Node</button>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        // Missing onNodesChange and onEdgesChange
+        onConnect={onConnect}
+        // Using old event name
+        onEdgeUpdate={(oldEdge, newConnection) => {
+          // Should be onReconnect
+        }}
+      />
+    </div>
+  );
+}
+```
+</example>
+
+### Performance Optimization
+- Use memoization for expensive calculations and component rendering
+- Implement virtualization for large graphs
+- Use `useCallback` for event handlers to prevent unnecessary re-renders
+- Optimize custom node and edge components
+- Use `useNodesState` and `useEdgesState` hooks for efficient state management
+- Consider using uncontrolled flow for very large graphs
+- Use the `nodeExtent` prop to limit the draggable area for better performance
+
+<example>
+```tsx
+// Optimized component with memoization
+const MemoizedCustomNode = React.memo(({ data }) => {
+  // Node implementation
+});
+
+// Optimized event handlers
+const onConnect = useCallback(
+  (params) => setEdges((eds) => addEdge(params, eds)),
+  [setEdges]
+);
+
+// Using nodeExtent to limit draggable area
+<ReactFlow
+  nodes={nodes}
+  edges={edges}
+  nodeExtent={[
+    [0, 0],
+    [1000, 1000]
+  ]}
+/>
+```
+</example>
+
+## Examples
+
+<example>
+```tsx
+// Basic React Flow setup with v12 features
+import { useCallback } from 'react';
+import {
+  ReactFlow,
+  MiniMap,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Panel,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+const initialNodes = [
+  { id: '1', position: { x: 0, y: 0 }, data: { label: 'Node 1' } },
+  { id: '2', position: { x: 0, y: 100 }, data: { label: 'Node 2' } },
+];
+
+const initialEdges = [{ id: 'e1-2', source: '1', target: '2' }];
+
+function Flow() {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  const onConnect = useCallback(
+    (params) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+
+  return (
+    <div style={{ width: '100%', height: '500px' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        fitView
+        colorMode="light" // New in v12: supports "light", "dark", or "system"
+      >
+        <Controls />
+        <MiniMap />
+        <Background variant="dots" gap={12} size={1} />
+        <Panel position="top-right">
+          <button>Action</button>
+        </Panel>
+      </ReactFlow>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <Flow />
+    </ReactFlowProvider>
+  );
+}
+```
+</example>
+
+<example type="invalid">
+```tsx
+// Poor implementation without proper state management
+import { ReactFlow } from '@xyflow/react';
+// Missing CSS import
+
+function BadFlow() {
+  // Missing state management
+  const nodes = [
+    { id: '1', position: { x: 0, y: 0 }, data: { label: 'Node 1' } },
+  ];
+  
+  const edges = [
+    { id: 'e1-2', source: '1', target: '2' }, // Target node doesn't exist
+  ];
+  
+  // Missing event handlers
+  return (
+    <div>
+      <ReactFlow nodes={nodes} edges={edges} />
+    </div>
+  );
+}
+```
+</example>

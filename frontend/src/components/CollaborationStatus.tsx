@@ -1,27 +1,139 @@
-import React, { useState } from 'react';
+/**
+ * CollaborationStatus Component
+ * 
+ * Displays real-time collaboration status information and connected users.
+ * 
+ * Implementation Notes:
+ * - Uses type-safe state handling
+ * - Implements proper type validation for user data
+ * - Handles both YJS and standard network interfaces
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { useYjs } from '../contexts/YjsContext';
+import { useNetwork } from '../contexts/NetworkContext';
+import { NetworkPayload } from '../types/messaging';
 import ConnectionStatus from './ConnectionStatus';
 
-const CollaborationStatus: React.FC = () => {
-  const { isConnected, isOffline, connectedUsers, isFeatureEnabled } = useYjs();
-  const [isExpanded, setIsExpanded] = useState(false);
+/**
+ * Type-safe interface for connected user data
+ */
+interface ConnectedUser {
+  userId: string;
+  clientId: number;
+  email?: string;
+  color?: string;
+  isActive?: boolean;
+  lastActive?: string;
+}
 
-  if (!isFeatureEnabled) {
-    // If Yjs is not enabled, fall back to the standard connection status
+/**
+ * Type guard for connection status payload
+ */
+function isConnectionStatusPayload(payload: NetworkPayload): payload is NetworkPayload & {
+  status: 'connected' | 'disconnected';
+  userCount: number;
+} {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'status' in payload &&
+    (payload.status === 'connected' || payload.status === 'disconnected') &&
+    'userCount' in payload &&
+    typeof payload.userCount === 'number'
+  );
+}
+
+/**
+ * Type guard for user list payload
+ */
+function isUserListPayload(payload: NetworkPayload): payload is NetworkPayload & {
+  users: Array<{ userId: string; clientId?: number; [key: string]: unknown }>;
+} {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'users' in payload &&
+    Array.isArray(payload.users) &&
+    payload.users.every(user => 
+      typeof user === 'object' && 
+      user !== null && 
+      'userId' in user && 
+      typeof user.userId === 'string'
+    )
+  );
+}
+
+const CollaborationStatus: React.FC = () => {
+  const { isConnected: yjsConnected, isOffline, connectedUsers: yjsUsers, isFeatureEnabled } = useYjs();
+  const { networkAdapter, connectionStatus } = useNetwork();
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Use standard network connection status when YJS is not enabled
+  const [standardConnectedUsers, setStandardConnectedUsers] = useState<ConnectedUser[]>([]);
+  const [standardConnectionStatus, setStandardConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
+  
+  // Combined state that works with both YJS and standard connections
+  const isConnected = isFeatureEnabled ? yjsConnected : (connectionStatus === 'connected' || standardConnectionStatus === 'connected');
+  const connectedUsers = isFeatureEnabled ? yjsUsers : standardConnectedUsers;
+
+  // Subscribe to standard network events if YJS is not enabled
+  useEffect(() => {
+    if (isFeatureEnabled || !networkAdapter) return;
+    
+    // Handle connection status updates with type validation
+    const handleConnectionStatus = (payload: NetworkPayload) => {
+      if (isConnectionStatusPayload(payload)) {
+        setStandardConnectionStatus(payload.status);
+      }
+    };
+    
+    // Handle user list updates with type validation
+    const handleUserList = (payload: NetworkPayload) => {
+      if (isUserListPayload(payload)) {
+        // Convert to our standard format with proper type safety
+        const users: ConnectedUser[] = payload.users.map(user => ({
+          userId: user.userId,
+          clientId: user.clientId ?? Date.now(), // Fallback if no clientId
+          email: typeof user.email === 'string' ? user.email : undefined,
+          isActive: user.isActive === true
+        }));
+        
+        setStandardConnectedUsers(users);
+      }
+    };
+    
+    // Subscribe to relevant events
+    const unsubscribeStatus = networkAdapter.subscribeToEvent('connection-status', handleConnectionStatus);
+    const unsubscribeUsers = networkAdapter.subscribeToEvent('user-list', handleUserList);
+    
+    // Initial state based on connection context
+    setStandardConnectionStatus(connectionStatus === 'connected' ? 'connected' : 'disconnected');
+    
+    return () => {
+      unsubscribeStatus();
+      unsubscribeUsers();
+    };
+  }, [networkAdapter, isFeatureEnabled, connectionStatus]);
+
+  if (!isFeatureEnabled && !networkAdapter) {
+    // If neither YJS nor standard networking is available, fall back to basic status
     return <ConnectionStatus />;
   }
 
-  const getStatusColor = () => {
+  // Status indicator color based on state
+  const getStatusColor = useCallback(() => {
     if (isOffline) return '#F44336'; // Red
     return isConnected ? '#4CAF50' : '#FFC107'; // Green or Yellow
-  };
+  }, [isOffline, isConnected]);
 
-  const getStatusText = () => {
+  // Status text based on state
+  const getStatusText = useCallback(() => {
     if (isOffline) return 'Offline (changes saved locally)';
     return isConnected 
       ? `Collaborating (${connectedUsers.length} user${connectedUsers.length !== 1 ? 's' : ''})` 
       : 'Connecting to collaboration server...';
-  };
+  }, [isOffline, isConnected, connectedUsers.length]);
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);

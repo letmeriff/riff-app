@@ -16,6 +16,11 @@
     "test:backend:coverage": "npm run test:coverage --workspace=backend",
     "test:integration": "npm run test:integration --workspace=backend",
     "test:e2e": "npx playwright test",
+    "test:performance": "scripts/run-performance-tests.sh",
+    "test:performance:full": "scripts/run-performance-tests.sh full",
+    "test:performance:lighthouse": "npx lighthouse https://app.riff.example.com --config-path=./test/performance/lighthouse.config.js --view",
+    "test:performance:api": "npx k6 run test/performance/k6/api-load-test.js",
+    "test:performance:canvas": "npx playwright test e2e/performance/canvas-rendering.test.ts --reporter=html",
     "generate-coverage-report": "node scripts/generate-coverage-report.js",
     "start:frontend": "npm run start --workspace=frontend",
     "start:backend": "npm run start --workspace=backend",
@@ -29,10 +34,21 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "prepare": "husky",
-    "pre-commit": "lint-staged"
+    "pre-commit": "lint-staged",
+    "lint:types": "npx eslint --ext .ts,.tsx . --rule '@typescript-eslint/no-explicit-any: error' --rule '@typescript-eslint/ban-types: error'",
+    "lint:unused": "npx eslint --ext .ts,.tsx . --rule '@typescript-eslint/no-unused-vars: error'",
+    "lint:test-files": "npx eslint \"**/*.test.{ts,tsx}\" \"**/test/**/*.{ts,tsx}\" \"**/__tests__/**/*.{ts,tsx}\"",
+    "lint:count": "npx eslint --ext .ts,.tsx . --format json | node scripts/count-eslint-issues.js",
+    "lint:fix": "npx eslint --ext .ts,.tsx . --fix",
+    "lint:check-staged": "npx eslint --ext .ts,.tsx $(git diff --staged --name-only | grep -E '\\.tsx?$')"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
+    "*.{ts,tsx}": [
+      "eslint --cache --fix",
+      "prettier --write",
+      "node scripts/check-eslint-staged.js"
+    ],
+    "*.{js,jsx}": [
       "eslint --fix",
       "prettier --write"
     ],
@@ -41,6 +57,7 @@
     ]
   },
   "devDependencies": {
+    "@lighthouse/viewer": "^0.1.0",
     "@playwright/test": "^1.51.1",
     "@types/lodash": "^4.17.16",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
@@ -57,8 +74,13 @@
     "istanbul-lib-report": "^3.0.1",
     "istanbul-merge": "^2.0.0",
     "istanbul-reports": "^3.1.6",
+    "k6": "^0.0.0",
+    "lighthouse": "^11.5.0",
     "lint-staged": "^15.2.2",
     "nyc": "^15.1.0",
     "prettier": "^3.2.5"
+  },
+  "dependencies": {
+    "react-error-boundary": "^5.0.0"
   }
 }

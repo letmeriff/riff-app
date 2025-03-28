@@ -1,0 +1,123 @@
+.controlsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  width: 280px;
+  position: absolute;
+  z-index: 10;
+  right: 20px;
+  top: 70px;
+}
+
+.nodeContent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contentEditor {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.buttonContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border: none;
+  outline: none;
+  flex: 1;
+  min-width: 100px;
+}
+
+.saveButton {
+  composes: button;
+  background-color: #2196f3;
+  color: white;
+}
+
+.saveButton:hover {
+  background-color: #1e88e5;
+}
+
+.saveButton:disabled {
+  background-color: #90caf9;
+  cursor: not-allowed;
+}
+
+.deleteButton {
+  composes: button;
+  background-color: #f44336;
+  color: white;
+}
+
+.deleteButton:hover {
+  background-color: #e53935;
+}
+
+.deleteButton:disabled {
+  background-color: #ef9a9a;
+  cursor: not-allowed;
+}
+
+.settingsButton {
+  composes: button;
+  background-color: #757575;
+  color: white;
+}
+
+.settingsButton:hover {
+  background-color: #616161;
+}
+
+.settingsButton:disabled {
+  background-color: #bdbdbd;
+  cursor: not-allowed;
+}
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  color: #757575;
+  font-style: italic;
+}
+
+.errorMessage {
+  color: #f44336;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.loadingIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+}
+
+.loadingText {
+  margin-left: 8px;
+} 

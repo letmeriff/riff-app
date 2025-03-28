@@ -1,6 +1,4 @@
 import { supabase } from './supabase';
-import { VectorClock } from '../legacy/crdt';
-import { incrementVectorClock, generateLamportTimestamp } from '../legacy/vectorClock';
 
 export interface ChatNode {
   node_id: number;
@@ -13,7 +11,6 @@ export interface ChatNode {
   position_y?: number;
   created_at: string;
   description?: string;
-  vector_clock?: VectorClock;
   position_updated_at?: string;
 }
 
@@ -66,14 +63,10 @@ export const deleteNode = async (nodeId: number): Promise<void> => {
 
 export const updateNodePosition = async (
   nodeId: number, 
-  position: { x: number; y: number }, 
-  userId?: string,
-  existingVectorClock?: VectorClock
+  position: { x: number; y: number }
 ): Promise<{ 
   success: boolean; 
-  data?: any; 
-  vectorClock?: VectorClock;
-  lamportTimestamp?: number;
+  data?: any;
 }> => {
   // Ensure we have valid numbers for positions
   const validX = isNaN(position.x) ? 0 : position.x;
@@ -82,60 +75,24 @@ export const updateNodePosition = async (
   try {
     console.log(`Saving position to database for node ${nodeId}: x=${validX}, y=${validY}`);
     
-    // If using CRDT-inspired approach with vector clock
-    if (userId) {
-      // Get current vector clock or initialize new one
-      const vectorClock = existingVectorClock || {};
-      
-      // Increment vector clock for this user
-      const updatedVectorClock = incrementVectorClock(vectorClock, userId);
-      
-      // Generate Lamport timestamp
-      const lamportTimestamp = generateLamportTimestamp();
-      
-      // Call the CRDT update function
-      const { data, error } = await supabase.rpc('update_node_position_crdt', {
-        node_id: nodeId,
-        pos_x: validX,
-        pos_y: validY,
-        vector_clock: updatedVectorClock,
-        lamport_timestamp: lamportTimestamp,
-        user_id: userId
-      });
-      
-      if (error) {
-        console.error(`Error updating node position with CRDT:`, error);
-        throw error;
-      }
-      
-      console.log(`Position update with CRDT successful for node ${nodeId}. DB returned:`, data);
-      
-      return { 
-        success: true, 
-        data, 
-        vectorClock: updatedVectorClock,
-        lamportTimestamp
-      };
-    } else {
-      // Legacy direct update (fallback)
-      const { data, error } = await supabase
-        .from('chat_nodes')
-        .update({ 
-          position_x: validX, 
-          position_y: validY 
-        })
-        .eq('node_id', nodeId)
-        .select();
-      
-      if (error) {
-        console.error(`Error updating node position in database:`, error);
-        throw error;
-      }
-      
-      console.log(`Position update successful for node ${nodeId}. DB returned:`, data);
-      
-      return { success: true, data };
+    // Simple direct update - Yjs handles all conflict resolution
+    const { data, error } = await supabase
+      .from('chat_nodes')
+      .update({ 
+        position_x: validX, 
+        position_y: validY 
+      })
+      .eq('node_id', nodeId)
+      .select();
+    
+    if (error) {
+      console.error(`Error updating node position in database:`, error);
+      throw error;
     }
+    
+    console.log(`Position update successful for node ${nodeId}. DB returned:`, data);
+    
+    return { success: true, data };
   } catch (error) {
     console.error(`Failed to update node position:`, error);
     return { success: false };

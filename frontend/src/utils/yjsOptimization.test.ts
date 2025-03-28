@@ -41,7 +41,7 @@ describe('yjsOptimization', () => {
       // Assert
       expect(chunks.length).toBeGreaterThan(0);
       // With 1000px chunk size, 2000x2000 area should have 4 chunks
-      expect(chunks.length).toBe(4);
+      expect(chunks).toHaveLength(4);
       
       // Verify first chunk
       expect(chunks[0].bounds).toEqual({
@@ -74,7 +74,7 @@ describe('yjsOptimization', () => {
       
       // Assert
       // Should round up to 2x2 = 4 chunks
-      expect(chunks.length).toBe(4);
+      expect(chunks).toHaveLength(4);
     });
   });
   
@@ -158,7 +158,7 @@ describe('yjsOptimization', () => {
       // With a viewport of 1000-2000 (both x and y), and padding of 200,
       // we should have chunks that contain the area 800-2200 (both x and y)
       // With chunk size 1000, that means chunks 0-0, 0-1, 0-2, 1-0, 1-1, 1-2, 2-0, 2-1, 2-2
-      expect(visibleChunks.length).toBe(9);
+      expect(visibleChunks).toHaveLength(9);
     });
     
     it('should mark chunks as loaded when updating viewport', () => {
@@ -166,7 +166,7 @@ describe('yjsOptimization', () => {
       // and it's not returning chunks to load as expected, we'll test it differently
       
       // Create a fresh set of chunks
-      const chunks = createCanvasChunks({
+      const _chunks = createCanvasChunks({
         minX: 0,
         maxX: 4000,
         minY: 0,

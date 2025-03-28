@@ -1,11 +1,10 @@
 import { supabase } from '../config/supabase';
-
-interface UserPresence {
-  userId: string;
-  email: string;
-  isTyping: boolean;
-  lastActive: string; // ISO timestamp
-}
+import { 
+  UserPresence, 
+  NodeId, 
+  PresenceUpdatePayload, 
+  createPresenceUpdatePayload 
+} from '../types/messaging';
 
 /**
  * Updates a user's presence in a node
@@ -14,13 +13,14 @@ interface UserPresence {
  * @param userId The ID of the user
  * @param email The email of the user
  * @param isTyping Whether the user is currently typing
+ * @returns The updated presence information or null if an error occurred
  */
 export const updateUserPresence = async (
-  nodeId: number,
+  nodeId: NodeId,
   userId: string,
   email: string,
   isTyping: boolean
-): Promise<void> => {
+): Promise<PresenceUpdatePayload | null> => {
   const key = `presence:node_${nodeId}`;
   
   try {
@@ -72,9 +72,12 @@ export const updateUserPresence = async (
     if (upsertError) {
       throw upsertError;
     }
+    
+    // Return the standardized presence update payload
+    return createPresenceUpdatePayload(nodeId, presence);
   } catch (error) {
     console.error('Error updating user presence:', error);
-    throw error;
+    return null;
   }
 };
 
@@ -83,11 +86,12 @@ export const updateUserPresence = async (
  * 
  * @param nodeId The ID of the node
  * @param userId The ID of the user
+ * @returns The updated presence information or null if an error occurred
  */
 export const removeUserPresence = async (
-  nodeId: number,
+  nodeId: NodeId,
   userId: string
-): Promise<void> => {
+): Promise<PresenceUpdatePayload | null> => {
   const key = `presence:node_${nodeId}`;
   
   try {
@@ -103,9 +107,9 @@ export const removeUserPresence = async (
       throw fetchError;
     }
 
-    // If there's no existing presence data, nothing to do
+    // If there's no existing presence data, return empty array
     if (!existingPresence) {
-      return;
+      return createPresenceUpdatePayload(nodeId, []);
     }
 
     // Parse existing presence data
@@ -134,9 +138,12 @@ export const removeUserPresence = async (
         throw upsertError;
       }
     }
+    
+    // Return the standardized presence update payload
+    return createPresenceUpdatePayload(nodeId, presence);
   } catch (error) {
     console.error('Error removing user presence:', error);
-    throw error;
+    return null;
   }
 };
 
@@ -144,9 +151,9 @@ export const removeUserPresence = async (
  * Gets the list of users present in a node
  * 
  * @param nodeId The ID of the node
- * @returns List of user presence information
+ * @returns The presence update payload or null if an error occurred
  */
-export const getUserPresence = async (nodeId: number): Promise<UserPresence[]> => {
+export const getUserPresence = async (nodeId: NodeId): Promise<PresenceUpdatePayload | null> => {
   const key = `presence:node_${nodeId}`;
   
   try {
@@ -162,10 +169,13 @@ export const getUserPresence = async (nodeId: number): Promise<UserPresence[]> =
       throw error;
     }
 
-    // Return the presence data or an empty array
-    return data ? (data.value as UserPresence[]) : [];
+    // Get presence data or empty array
+    const presence = data ? (data.value as UserPresence[]) : [];
+    
+    // Return the standardized presence update payload
+    return createPresenceUpdatePayload(nodeId, presence);
   } catch (error) {
     console.error('Error getting user presence:', error);
-    throw error;
+    return null;
   }
 }; 

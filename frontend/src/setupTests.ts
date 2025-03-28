@@ -1,8 +1,75 @@
+/**
+ * Setup Test Environment
+ *
+ * This file is executed by Jest before running tests.
+ * It sets up the testing environment and imports required mocks.
+ */
+
 // jest-dom adds custom jest matchers for asserting on DOM nodes.
 // allows you to do things like:
 // expect(element).toHaveTextContent(/react/i)
 // learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
+
+// Mock CSS modules
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
+
+// Mock localStorage
+class LocalStorageMock {
+  store: Record<string, string>;
+
+  constructor() {
+    this.store = {};
+  }
+
+  clear() {
+    this.store = {};
+  }
+
+  getItem(key: string) {
+    return this.store[key] || null;
+  }
+
+  setItem(key: string, value: string) {
+    this.store[key] = String(value);
+  }
+
+  removeItem(key: string) {
+    delete this.store[key];
+  }
+}
+
+// Set up localStorage mock
+Object.defineProperty(window, 'localStorage', {
+  value: new LocalStorageMock(),
+  writable: true,
+});
+
+// Suppress React 18 act warnings (when you can't wrap in act)
+// This is needed when testing components that trigger async updates
+const originalError = console.error;
+console.error = (...args) => {
+  if (/Warning.*not wrapped in act/.test(args[0])) {
+    return;
+  }
+  originalError(...args);
+};
+
+// Import modern testing mocks for ReactFlow and Yjs
+import './test-utils/mocks/reactflow.mock';
+import './test-utils/mocks/yjs.mock';
 
 // Mock global fetch if needed
 global.fetch = jest.fn(() =>
@@ -29,56 +96,3 @@ console.error = (...args) => {
   }
   originalConsoleError(...args);
 };
-
-// Mock Yjs and related ES modules
-jest.mock('yjs', () => {
-  const mockDoc = {
-    on: jest.fn(),
-    off: jest.fn(),
-    clientID: 1,
-    getMap: jest.fn(() => ({
-      set: jest.fn(),
-      get: jest.fn(),
-      observe: jest.fn(),
-    })),
-    getText: jest.fn(),
-    transact: jest.fn((fn) => fn()),
-    destroy: jest.fn(),
-    encodeStateAsUpdate: jest.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
-  };
-  
-  return {
-    Doc: jest.fn(() => mockDoc),
-    applyUpdate: jest.fn(),
-    encodeStateAsUpdate: jest.fn(() => new Uint8Array([1, 2, 3])),
-  };
-});
-
-jest.mock('y-websocket', () => {
-  const mockAwareness = {
-    setLocalState: jest.fn(),
-    getLocalState: jest.fn(() => ({})),
-    on: jest.fn(),
-    off: jest.fn(),
-    getStates: jest.fn(() => new Map()),
-  };
-  
-  return {
-    WebsocketProvider: jest.fn(() => ({
-      awareness: mockAwareness,
-      on: jest.fn(),
-      off: jest.fn(),
-      wsconnected: true,
-      connect: jest.fn(),
-      disconnect: jest.fn(),
-    })),
-  };
-});
-
-jest.mock('y-indexeddb', () => ({
-  IndexeddbPersistence: jest.fn(() => ({
-    on: jest.fn(),
-    off: jest.fn(),
-    destroy: jest.fn(),
-  })),
-}));

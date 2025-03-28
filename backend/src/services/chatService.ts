@@ -3,37 +3,18 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { supabase } from '../config/supabase';
-
-interface ChatMessage {
-  message_id: number;
-  node_id: number;
-  content: string;
-  is_user: boolean;
-  timestamp: string;
-}
-
-interface ChatAttachment {
-  attachment_id: number;
-  node_id: number;
-  file_path: string;
-  file_name: string;
-  file_type: string;
-  file_size: number;
-  extracted_content: string | null;
-  created_at: string;
-  file_url?: string;
-}
+import { ChatMessage, ChatAttachment, NodeId, createMessageUpdatePayload, MessageUpdatePayload } from '../types/messaging';
 
 export class ChatService {
   private model: BaseChatModel | null = null;
-  private nodeId: number;
+  private nodeId: NodeId;
   private userId: string;
   private systemPrompt: string | null = null;
   private modelName: string;
   private messageAttachments: { attachment_id: number; file_type: string; file_name: string }[] | null = null;
 
   constructor(
-    nodeId: number, 
+    nodeId: NodeId, 
     userId: string, 
     modelName: string, 
     apiKey: string, 
@@ -289,44 +270,70 @@ export class ChatService {
     return messages;
   }
 
-  // Save a message to the database
-  private async saveMessage(content: string, isUser: boolean): Promise<void> {
-    const { error } = await supabase
-      .from('chat_messages')
-      .insert({
-        node_id: this.nodeId,
-        content,
-        is_user: isUser,
-        timestamp: new Date().toISOString(),
-      });
-    if (error) throw error;
+  // Updated saveMessage method to return the created message
+  private async saveMessage(content: string, isUser: boolean): Promise<ChatMessage | null> {
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .insert({
+          node_id: this.nodeId,
+          content: content,
+          is_user: isUser,
+          user_id: isUser ? this.userId : null,
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error saving message:', error);
+        return null;
+      }
+      
+      return data as ChatMessage;
+    } catch (error) {
+      console.error('Error in saveMessage:', error);
+      return null;
+    }
   }
 
-  // Process a user message and get an AI response
-  public async processMessage(userMessage: string): Promise<string> {
-    if (!this.model) throw new Error('Model not initialized');
+  // Update processMessage to use the typed payload
+  public async processMessage(userMessage: string): Promise<MessageUpdatePayload | null> {
+    try {
+      // Save the user's message
+      const savedUserMessage = await this.saveMessage(userMessage, true);
+      if (!savedUserMessage) {
+        throw new Error('Failed to save user message');
+      }
+      
+      // Load the chat history (including system prompt if available)
+      const history = await this.loadChatHistory();
 
-    // Save the user message
-    await this.saveMessage(userMessage, true);
+      // Add the new user message to the history if not already included
+      // (it should be included from loadChatHistory, but adding this check for robustness)
+      const lastMessage = history[history.length - 1];
+      if (!(lastMessage instanceof HumanMessage && lastMessage.content === userMessage)) {
+        history.push(new HumanMessage({ content: userMessage }));
+      }
 
-    // Load the chat history (including system prompt if available)
-    const history = await this.loadChatHistory();
+      // Get the AI response
+      if (!this.model) {
+        throw new Error('Model not initialized');
+      }
+      const response = await this.model.invoke(history);
+      const aiResponse = response.content as string;
 
-    // Add the new user message to the history if not already included
-    // (it should be included from loadChatHistory, but adding this check for robustness)
-    const lastMessage = history[history.length - 1];
-    if (!(lastMessage instanceof HumanMessage && lastMessage.content === userMessage)) {
-      history.push(new HumanMessage({ content: userMessage }));
+      // Save the AI's response
+      const savedAIMessage = await this.saveMessage(aiResponse, false);
+      if (!savedAIMessage) {
+        throw new Error('Failed to save AI response');
+      }
+      
+      // Return standardized message update payload with null check
+      return savedAIMessage ? createMessageUpdatePayload(savedAIMessage) : null;
+    } catch (error) {
+      console.error('Error processing message:', error);
+      return null;
     }
-
-    // Get the AI response
-    const response = await this.model.invoke(history);
-    const aiMessage = response.content as string;
-
-    // Save the AI response
-    await this.saveMessage(aiMessage, false);
-
-    return aiMessage;
   }
 }
 
