@@ -1,16 +1,16 @@
 // Create a more robust mock document
 const createMockMap = () => {
-  const mapData = new Map<string, any>();
+  const mapData = new Map<string, unknown>();
   return {
-    set: jest.fn((key: string, value: any) => mapData.set(key, value)),
+    set: jest.fn((key: string, value: unknown) => mapData.set(key, value)),
     get: jest.fn((key: string) => mapData.get(key)),
     delete: jest.fn((key: string) => mapData.delete(key)),
     has: jest.fn((key: string) => mapData.has(key)),
-    forEach: jest.fn((callback: (value: any, key: string) => void) => mapData.forEach(callback)),
-    observe: jest.fn((callback: any) => ({ unobserve: jest.fn() })),
+    forEach: jest.fn((callback: (value: unknown, key: string) => void) => mapData.forEach(callback)),
+    observe: jest.fn((_callback: (event: unknown) => void) => ({ unobserve: jest.fn() })),
     unobserve: jest.fn(),
     toJSON: jest.fn(() => {
-      const obj: Record<string, any> = {};
+      const obj: Record<string, unknown> = {};
       mapData.forEach((value, key) => {
         obj[key] = value;
       });
@@ -20,9 +20,9 @@ const createMockMap = () => {
 };
 
 const createMockArray = () => {
-  const arrayData: any[] = [];
+  const arrayData: unknown[] = [];
   return {
-    push: jest.fn((value: any) => arrayData.push(value)),
+    push: jest.fn((value: unknown) => arrayData.push(value)),
     delete: jest.fn((index: number) => arrayData.splice(index, 1)),
     get: jest.fn((index: number) => arrayData[index]),
     length: jest.fn(() => arrayData.length),
@@ -35,7 +35,20 @@ const createMockArray = () => {
 export const mockMap = createMockMap();
 export const mockArray = createMockArray();
 
-export const mockDoc = {
+// Define the type for the mock document to match the expected structure
+export interface MockYjsDoc {
+  on: jest.Mock;
+  off: jest.Mock;
+  clientID: number;
+  getMap: jest.Mock;
+  getArray: jest.Mock;
+  getText: jest.Mock;
+  transact: jest.Mock;
+  destroy: jest.Mock;
+  encodeStateAsUpdate: jest.Mock;
+}
+
+export const mockDoc: MockYjsDoc = {
   on: jest.fn(),
   off: jest.fn(),
   clientID: 1,
@@ -46,6 +59,18 @@ export const mockDoc = {
   destroy: jest.fn(),
   encodeStateAsUpdate: jest.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
 };
+
+// Define the type for awareness state
+export interface AwarenessState {
+  user: {
+    name: string;
+    id: string;
+  };
+  cursor: {
+    x: number;
+    y: number;
+  };
+}
 
 export const mockAwareness = {
   setLocalState: jest.fn(),

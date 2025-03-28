@@ -39,6 +39,11 @@ export function generateUser(options: generateUserOptions = {}): User {
 }
 
 // Node data types
+export interface NodeData {
+  content: string;
+  [key: string]: unknown;
+}
+
 export interface Node {
   id: string;
   type: string;
@@ -46,10 +51,7 @@ export interface Node {
     x: number;
     y: number;
   };
-  data: {
-    content: string;
-    [key: string]: any;
-  };
+  data: NodeData;
 }
 
 export interface generateNodeOptions {
@@ -61,7 +63,7 @@ export interface generateNodeOptions {
   };
   data?: {
     content?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -83,14 +85,16 @@ export function generateNode(options: generateNodeOptions = {}): Node {
 }
 
 // Edge data types
-export interface Edge {
+export interface EdgeData {
   id: string;
   source: string;
   target: string;
   animated?: boolean;
   label?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
+
+export interface Edge extends EdgeData {}
 
 export interface generateEdgeOptions {
   id?: string;
@@ -98,7 +102,7 @@ export interface generateEdgeOptions {
   target: string;
   animated?: boolean;
   label?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Generate a random edge
@@ -158,6 +162,10 @@ export function generateCanvas(options: generateCanvasOptions = {}): Canvas {
 }
 
 // Chat message data types
+export interface ChatMessageMetadata {
+  [key: string]: unknown;
+}
+
 export interface ChatMessage {
   id: string;
   nodeId: string;
@@ -165,7 +173,7 @@ export interface ChatMessage {
   isUser: boolean;
   timestamp: Date;
   userId?: string;
-  metadata?: Record<string, any>;
+  metadata?: ChatMessageMetadata;
 }
 
 export interface generateChatMessageOptions {
@@ -175,7 +183,7 @@ export interface generateChatMessageOptions {
   isUser?: boolean;
   timestamp?: Date;
   userId?: string;
-  metadata?: Record<string, any>;
+  metadata?: ChatMessageMetadata;
 }
 
 // Generate a random chat message
@@ -245,9 +253,9 @@ export function generateYjsUpdate(): Uint8Array {
 
 // Export a helper to generate multiple items
 export function generateMultiple<T>(
-  generator: (...args: any[]) => T, 
+  generator: (...args: unknown[]) => T, 
   count: number = 3, 
-  options: any = {}
+  options: Record<string, unknown> = {}
 ): T[] {
   return Array.from({ length: count }, () => generator(options));
 } 

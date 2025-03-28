@@ -5,24 +5,143 @@
  * for testing collaborative features without requiring a real Yjs setup.
  */
 
-import * as Y from 'yjs';
-import * as awarenessProtocol from 'y-protocols/awareness';
-import * as syncProtocol from 'y-protocols/sync';
+import * as _Y from 'yjs';
+import * as _awarenessProtocol from 'y-protocols/awareness';
+import * as _syncProtocol from 'y-protocols/sync';
 import * as encoding from 'lib0/encoding';
 import { EventEmitter } from 'events';
 
+// Define domain-specific types for our mock implementations
+interface _YjsMapValue {
+  [key: string]: unknown;
+}
+
+interface YjsMapUpdateEvent {
+  key?: string;
+  newValue?: unknown;
+  oldValue?: unknown;
+  keys?: string[];
+}
+
+interface YjsTextUpdateEvent {
+  index: number;
+  text?: string;
+  length?: number;
+  deletedText?: string;
+}
+
+interface YjsArrayUpdateEvent {
+  type: 'push' | 'insert' | 'delete';
+  index?: number;
+  item?: unknown;
+  length?: number;
+  deleted?: unknown[];
+}
+
+interface YjsTransactionEvent {
+  currentTarget: YjsDoc;
+  target: YjsDoc;
+  transaction: {
+    origin: string;
+    local: boolean;
+    changesets: unknown[];
+    changed: Map<unknown, unknown>;
+    deleteSet: { 
+      clients: Map<unknown, unknown> 
+    };
+  };
+}
+
+interface YjsAwarenessEvent {
+  currentTarget: YjsAwareness;
+  added: number[];
+  updated: number[];
+  removed: number[];
+}
+
+interface _YjsAwarenessChangeEvent {
+  added: number[];
+  updated: number[];
+  removed: number[];
+}
+
 // Utility type for event callbacks
-type EventCallback = (...args: any[]) => void;
+type EventCallback = (...args: unknown[]) => void;
+
+// Mock interfaces
+interface YjsMap {
+  set: (key: string, value: unknown) => unknown;
+  get: (key: string) => unknown;
+  delete: (key: string) => boolean;
+  has: (key: string) => boolean;
+  size: () => number;
+  observe: (callback: (event: YjsMapUpdateEvent) => void) => () => void;
+  toJSON: () => Record<string, unknown>;
+  clear: () => void;
+}
+
+interface YjsText {
+  toString: () => string;
+  insert: (index: number, text: string) => string;
+  delete: (index: number, length: number) => void;
+  toJSON: () => string;
+  length: () => number;
+  observe: (callback: (event: YjsTextUpdateEvent) => void) => () => void;
+}
+
+interface YjsArray {
+  push: (item: unknown) => void;
+  insert: (index: number, item: unknown) => void;
+  delete: (index: number, length?: number) => void;
+  get: (index: number) => unknown;
+  toArray: () => unknown[];
+  toJSON: () => unknown[];
+  length: () => number;
+  observe: (callback: (event: YjsArrayUpdateEvent) => void) => () => void;
+}
+
+interface YjsDoc {
+  clientID: number;
+  getMap: (name: string) => YjsMap;
+  getText: (name: string) => YjsText;
+  getArray: (name: string) => YjsArray;
+  on: (eventName: string, callback: EventCallback) => () => void;
+  off: (eventName: string, callback: EventCallback) => void;
+  emit: (eventName: string, ...args: unknown[]) => void;
+  transact: (fn: () => void, origin?: unknown) => void;
+  destroy: () => void;
+  share: {
+    maps: Record<string, YjsMap>;
+    texts: Record<string, YjsText>;
+    arrays: Record<string, YjsArray>;
+  };
+  gc: boolean;
+  shouldLoad: boolean;
+  isLoaded: boolean;
+}
+
+interface YjsAwareness {
+  getLocalState: () => Record<string, unknown> | null;
+  setLocalState: (state: Record<string, unknown>) => void;
+  setLocalStateField: (field: string, value: unknown) => void;
+  getStates: () => Map<number, Record<string, unknown>>;
+  setClientState: (clientId: number, state: Record<string, unknown>) => void;
+  removeClientState: (clientId: number) => void;
+  on: (eventName: string, callback: EventCallback) => () => void;
+  off: (eventName: string, callback: EventCallback) => void;
+  destroy: () => void;
+  doc: YjsDoc;
+}
 
 /**
  * Creates a mock Y.Map
  */
-export function mockMap() {
-  const store = new Map<string, any>();
+export function mockMap(): YjsMap {
+  const store = new Map<string, unknown>();
   const eventEmitter = new EventEmitter();
   
   return {
-    set: (key: string, value: any) => {
+    set: (key: string, value: unknown) => {
       store.set(key, value);
       eventEmitter.emit('update', { key, newValue: value });
       return value;
@@ -38,12 +157,12 @@ export function mockMap() {
     },
     has: (key: string) => store.has(key),
     size: () => store.size,
-    observe: (callback: EventCallback) => {
+    observe: (callback: (event: YjsMapUpdateEvent) => void) => {
       eventEmitter.on('update', callback);
       return () => eventEmitter.off('update', callback);
     },
     toJSON: () => {
-      const json: Record<string, any> = {};
+      const json: Record<string, unknown> = {};
       for (const [key, value] of store.entries()) {
         json[key] = value;
       }
@@ -59,7 +178,7 @@ export function mockMap() {
 /**
  * Creates a mock Y.Text
  */
-export function mockText() {
+export function mockText(): YjsText {
   let content = '';
   const eventEmitter = new EventEmitter();
   
@@ -77,7 +196,7 @@ export function mockText() {
     },
     toJSON: () => content,
     length: () => content.length,
-    observe: (callback: EventCallback) => {
+    observe: (callback: (event: YjsTextUpdateEvent) => void) => {
       eventEmitter.on('update', callback);
       return () => eventEmitter.off('update', callback);
     }
@@ -87,16 +206,16 @@ export function mockText() {
 /**
  * Creates a mock Y.Array
  */
-export function mockArray() {
-  const items: any[] = [];
+export function mockArray(): YjsArray {
+  const items: unknown[] = [];
   const eventEmitter = new EventEmitter();
   
   return {
-    push: (item: any) => {
+    push: (item: unknown) => {
       items.push(item);
       eventEmitter.emit('update', { type: 'push', item });
     },
-    insert: (index: number, item: any) => {
+    insert: (index: number, item: unknown) => {
       items.splice(index, 0, item);
       eventEmitter.emit('update', { type: 'insert', index, item });
     },
@@ -108,7 +227,7 @@ export function mockArray() {
     toArray: () => [...items],
     toJSON: () => [...items],
     length: () => items.length,
-    observe: (callback: EventCallback) => {
+    observe: (callback: (event: YjsArrayUpdateEvent) => void) => {
       eventEmitter.on('update', callback);
       return () => eventEmitter.off('update', callback);
     }
@@ -118,14 +237,14 @@ export function mockArray() {
 /**
  * Creates a mock Y.Doc
  */
-export function mockDoc() {
+export function mockDoc(): YjsDoc {
   const eventEmitter = new EventEmitter();
   const maps: Record<string, ReturnType<typeof mockMap>> = {};
   const texts: Record<string, ReturnType<typeof mockText>> = {};
   const arrays: Record<string, ReturnType<typeof mockArray>> = {};
   const clientID = Math.floor(Math.random() * 1000);
   
-  const doc = {
+  const doc: YjsDoc = {
     clientID,
     getMap: (name: string) => {
       if (!maps[name]) {
@@ -152,10 +271,10 @@ export function mockDoc() {
     off: (eventName: string, callback: EventCallback) => {
       eventEmitter.off(eventName, callback);
     },
-    emit: (eventName: string, args: any[]) => {
+    emit: (eventName: string, ...args: unknown[]) => {
       eventEmitter.emit(eventName, ...args);
     },
-    transact: (fn: () => void, origin?: any) => {
+    transact: (fn: () => void, origin?: unknown) => {
       fn();
       const update = mockUpdate();
       eventEmitter.emit('update', update, origin);
@@ -180,14 +299,14 @@ export function mockDoc() {
 /**
  * Creates a mock awareness instance
  */
-export function mockAwareness(doc: ReturnType<typeof mockDoc>) {
-  const states = new Map<number, any>();
+export function mockAwareness(doc: ReturnType<typeof mockDoc>): YjsAwareness {
+  const states = new Map<number, Record<string, unknown>>();
   const eventEmitter = new EventEmitter();
-  let localState: any = null;
+  let localState: Record<string, unknown> | null = null;
   
-  const awareness = {
+  const awareness: YjsAwareness = {
     getLocalState: () => localState,
-    setLocalState: (state: any) => {
+    setLocalState: (state: Record<string, unknown>) => {
       const prevState = localState;
       localState = state;
       states.set(doc.clientID, state);
@@ -197,12 +316,12 @@ export function mockAwareness(doc: ReturnType<typeof mockDoc>) {
         removed: []
       });
     },
-    setLocalStateField: (field: string, value: any) => {
-      const newState = { ...localState, [field]: value };
+    setLocalStateField: (field: string, value: unknown) => {
+      const newState = { ...(localState || {}), [field]: value };
       awareness.setLocalState(newState);
     },
     getStates: () => states,
-    setClientState: (clientId: number, state: any) => {
+    setClientState: (clientId: number, state: Record<string, unknown>) => {
       const prevState = states.get(clientId);
       states.set(clientId, state);
       eventEmitter.emit('change', {
@@ -251,7 +370,7 @@ export function mockUpdate(): Uint8Array {
 /**
  * Creates a mock transaction event
  */
-export function mockTransactionEvent(doc: ReturnType<typeof mockDoc>) {
+export function mockTransactionEvent(doc: ReturnType<typeof mockDoc>): YjsTransactionEvent {
   return {
     currentTarget: doc,
     target: doc,
@@ -268,7 +387,7 @@ export function mockTransactionEvent(doc: ReturnType<typeof mockDoc>) {
 /**
  * Creates a mock awareness event
  */
-export function mockAwarenessEvent(awareness: ReturnType<typeof mockAwareness>) {
+export function mockAwarenessEvent(awareness: ReturnType<typeof mockAwareness>): YjsAwarenessEvent {
   return {
     currentTarget: awareness,
     added: [],
@@ -308,7 +427,7 @@ export interface MockYjsProvider {
   isConnected: () => boolean;
   on: (eventName: string, callback: EventCallback) => void;
   off: (eventName: string, callback: EventCallback) => void;
-  emit: (eventName: string, args: any[]) => void;
+  emit: (eventName: string, args?: unknown[]) => void;
 }
 
 /**
@@ -340,7 +459,7 @@ export function createMockYjsProvider(): MockYjsProvider {
     off: (eventName: string, callback: EventCallback) => {
       eventEmitter.off(eventName, callback);
     },
-    emit: (eventName: string, args: any[] = []) => {
+    emit: (eventName: string, args: unknown[] = []) => {
       eventEmitter.emit(eventName, ...args);
     }
   };

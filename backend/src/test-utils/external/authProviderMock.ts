@@ -13,6 +13,7 @@ export interface MockAuthProviderResponseError {
   message: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface MockAuthProviderResponse<T = any> {
   success: boolean;
   data?: T;
@@ -25,7 +26,7 @@ export interface UserProfile {
   email: string;
   name: string;
   avatarUrl?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // Auth token response
@@ -47,7 +48,7 @@ export interface SignUpRequest {
   password: string;
   name: string;
   avatarUrl?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // Provider options
@@ -296,7 +297,7 @@ export function createMockAuthProvider(options: MockAuthProviderOptions = {}) {
     /**
      * Initiate password reset
      */
-    async resetPassword(email: string): Promise<MockAuthProviderResponse<{ message: string }>> {
+    async resetPassword(_email: string): Promise<MockAuthProviderResponse<{ message: string }>> {
       try {
         await simulateNetwork(null);
         

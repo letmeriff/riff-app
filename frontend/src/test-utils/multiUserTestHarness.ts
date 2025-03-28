@@ -9,6 +9,17 @@
 import * as Y from 'yjs';
 import { Node, Edge } from 'reactflow';
 
+// Define more specific types for node and edge data
+interface NodeData {
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
+interface EdgeData {
+  timestamp?: number;
+  [key: string]: unknown;
+}
+
 // Node and edge data structure as stored in Yjs
 interface YjsNode {
   id: string;
@@ -17,21 +28,17 @@ interface YjsNode {
     y: number;
     timestamp?: number;
   };
-  data: Record<string, any> & {
-    timestamp?: number;
-  };
+  data: NodeData;
   type?: string;
-  style?: Record<string, any>;
+  style?: Record<string, unknown>;
 }
 
 interface YjsEdge {
   id: string;
   source: string;
   target: string;
-  data?: Record<string, any> & {
-    timestamp?: number;
-  };
-  style?: Record<string, any>;
+  data?: EdgeData;
+  style?: Record<string, unknown>;
   animated?: boolean;
 }
 
@@ -80,7 +87,8 @@ export function createTestMultiUserEnvironment(numClients: number = 3): TestEnvi
     // Create shared data structures if they don't exist
     const nodesMap = doc.getMap('nodes');
     const edgesMap = doc.getMap('edges');
-    const metadataMap = doc.getMap('metadata');
+    // Commented out as it's unused
+    // const metadataMap = doc.getMap('metadata');
     
     // Helper function to get a node from the Yjs document
     const getNode = (id: string): Node | undefined => {

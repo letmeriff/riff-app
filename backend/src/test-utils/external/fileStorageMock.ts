@@ -6,7 +6,6 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
 
 // Response types
 export interface MockFileStorageResponseError {
@@ -14,7 +13,7 @@ export interface MockFileStorageResponseError {
   message: string;
 }
 
-export interface MockFileStorageResponse<T = any> {
+export interface MockFileStorageResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: MockFileStorageResponseError;
@@ -25,7 +24,7 @@ export interface FileMetadata {
   name: string;
   type: string;
   path: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // Stored file
@@ -37,7 +36,7 @@ export interface StoredFile {
   size: number;
   createdAt: Date;
   content?: Buffer;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // Provider options
@@ -117,7 +116,7 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
   /**
    * Creates an error response
    */
-  const createErrorResponse = (code: string, message: string): MockFileStorageResponse => {
+  const createErrorResponse = <T = unknown>(code: string, message: string): MockFileStorageResponse<T> => {
     return {
       success: false,
       error: {
@@ -163,7 +162,7 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
           mergedOptions.allowedFileTypes.length > 0 && 
           !mergedOptions.allowedFileTypes.includes(metadata.type)
         ) {
-          return createErrorResponse(
+          return createErrorResponse<StoredFile>(
             'storage/invalid-file-type',
             'File type not allowed'
           );
@@ -171,7 +170,7 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
         
         // Validate file size
         if (mergedOptions.maxFileSize && fileBuffer.length > mergedOptions.maxFileSize) {
-          return createErrorResponse(
+          return createErrorResponse<StoredFile>(
             'storage/file-too-large',
             `File size exceeds the maximum allowed size of ${mergedOptions.maxFileSize} bytes`
           );
@@ -193,10 +192,12 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
         state.files.push(newFile);
         
         // Return file metadata (without content)
-        const { content, ...fileMetadata } = newFile;
+        const fileMetadata = { ...newFile };
+        // Remove content from the returned metadata
+        delete fileMetadata.content;
         return createSuccessResponse(fileMetadata);
       } catch (error) {
-        return createErrorResponse(
+        return createErrorResponse<StoredFile>(
           'storage/network-error',
           error instanceof Error ? error.message : 'Network error'
         );
@@ -213,7 +214,10 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
         const file = findFileById(fileId);
         
         if (!file) {
-          return createErrorResponse('storage/file-not-found', 'File not found');
+          return createErrorResponse<{ file: StoredFile, content: Buffer }>(
+            'storage/file-not-found', 
+            'File not found'
+          );
         }
         
         // Return file metadata and content
@@ -222,7 +226,7 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
           content: file.content || Buffer.from([])
         });
       } catch (error) {
-        return createErrorResponse(
+        return createErrorResponse<{ file: StoredFile, content: Buffer }>(
           'storage/network-error',
           error instanceof Error ? error.message : 'Network error'
         );
@@ -245,7 +249,7 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
         // Always return success, even if file did not exist
         return createSuccessResponse({ success: true });
       } catch (error) {
-        return createErrorResponse(
+        return createErrorResponse<{ success: boolean }>(
           'storage/network-error',
           error instanceof Error ? error.message : 'Network error'
         );
@@ -263,13 +267,14 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
         
         // Return file metadata (without content)
         const filesWithoutContent = files.map(file => {
-          const { content, ...fileMetadata } = file;
-          return fileMetadata;
+          const fileWithoutContent = { ...file };
+          delete fileWithoutContent.content;
+          return fileWithoutContent;
         });
         
         return createSuccessResponse({ files: filesWithoutContent });
       } catch (error) {
-        return createErrorResponse(
+        return createErrorResponse<{ files: StoredFile[] }>(
           'storage/network-error',
           error instanceof Error ? error.message : 'Network error'
         );
@@ -289,7 +294,10 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
         const file = findFileById(fileId);
         
         if (!file) {
-          return createErrorResponse('storage/file-not-found', 'File not found');
+          return createErrorResponse<{ url: string, expiresAt: number }>(
+            'storage/file-not-found', 
+            'File not found'
+          );
         }
         
         // Generate mock signed URL
@@ -305,7 +313,7 @@ export function createMockFileStorage(options: MockFileStorageOptions = {}) {
           expiresAt
         });
       } catch (error) {
-        return createErrorResponse(
+        return createErrorResponse<{ url: string, expiresAt: number }>(
           'storage/network-error',
           error instanceof Error ? error.message : 'Network error'
         );
