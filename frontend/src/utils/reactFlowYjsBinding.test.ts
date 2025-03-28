@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Disabling explicit any for test mocks since we're mocking Yjs functionality
 import { 
   Node, 
   Edge, 
@@ -13,6 +15,19 @@ import {
   setupYjsSubscription
 } from './reactFlowYjsBinding';
 import * as yjsService from '../services/yjsService';
+
+// Adding type declarations for mocks
+type YDocMock = {
+  getMap: jest.Mock;
+};
+
+type YMapMock = {
+  observe: jest.Mock;
+  unobserve: jest.Mock;
+  forEach: jest.Mock;
+  has: jest.Mock;
+  delete: jest.Mock;
+};
 
 // Mock dependencies
 jest.mock('reactflow', () => ({
@@ -43,7 +58,7 @@ describe('reactFlowYjsBinding', () => {
       forEach: jest.fn(),
       has: jest.fn(),
       delete: jest.fn(),
-    };
+    } as YMapMock;
     
     mockEdgesMap = {
       observe: jest.fn(),
@@ -51,7 +66,7 @@ describe('reactFlowYjsBinding', () => {
       forEach: jest.fn(),
       has: jest.fn(),
       delete: jest.fn(),
-    };
+    } as YMapMock;
     
     mockDoc = {
       getMap: jest.fn((name) => {
@@ -59,7 +74,7 @@ describe('reactFlowYjsBinding', () => {
         if (name === 'edges') return mockEdgesMap;
         return new Map();
       }),
-    };
+    } as YDocMock;
   });
   
   describe('syncNodeChangesToYjs', () => {
@@ -113,25 +128,25 @@ describe('reactFlowYjsBinding', () => {
     it('should not delete node when doc is null', () => {
       syncNodeDeletionToYjs('1', null);
       
-      expect(mockNodesMap.delete).not.toHaveBeenCalled();
+      expect((mockNodesMap as YMapMock).delete).not.toHaveBeenCalled();
     });
     
     it('should delete node when it exists in Yjs', () => {
-      mockNodesMap.has.mockReturnValue(true);
+      (mockNodesMap as YMapMock).has.mockReturnValue(true);
       
       syncNodeDeletionToYjs('1', mockDoc);
       
-      expect(mockNodesMap.has).toHaveBeenCalledWith('1');
-      expect(mockNodesMap.delete).toHaveBeenCalledWith('1');
+      expect((mockNodesMap as YMapMock).has).toHaveBeenCalledWith('1');
+      expect((mockNodesMap as YMapMock).delete).toHaveBeenCalledWith('1');
     });
     
     it('should not delete node when it doesn\'t exist in Yjs', () => {
-      mockNodesMap.has.mockReturnValue(false);
+      (mockNodesMap as YMapMock).has.mockReturnValue(false);
       
       syncNodeDeletionToYjs('1', mockDoc);
       
-      expect(mockNodesMap.has).toHaveBeenCalledWith('1');
-      expect(mockNodesMap.delete).not.toHaveBeenCalled();
+      expect((mockNodesMap as YMapMock).has).toHaveBeenCalledWith('1');
+      expect((mockNodesMap as YMapMock).delete).not.toHaveBeenCalled();
     });
   });
   
@@ -143,8 +158,8 @@ describe('reactFlowYjsBinding', () => {
       const cleanup = setupYjsSubscription(null, setNodes, setEdges);
       
       expect(typeof cleanup).toBe('function');
-      expect(mockNodesMap.observe).not.toHaveBeenCalled();
-      expect(mockEdgesMap.observe).not.toHaveBeenCalled();
+      expect((mockNodesMap as YMapMock).observe).not.toHaveBeenCalled();
+      expect((mockEdgesMap as YMapMock).observe).not.toHaveBeenCalled();
     });
     
     it('should set up observers for nodes and edges', () => {
@@ -153,8 +168,8 @@ describe('reactFlowYjsBinding', () => {
       
       setupYjsSubscription(mockDoc, setNodes, setEdges);
       
-      expect(mockNodesMap.observe).toHaveBeenCalled();
-      expect(mockEdgesMap.observe).toHaveBeenCalled();
+      expect((mockNodesMap as YMapMock).observe).toHaveBeenCalled();
+      expect((mockEdgesMap as YMapMock).observe).toHaveBeenCalled();
     });
     
     it('should provide a cleanup function that unobserves', () => {
@@ -164,8 +179,9 @@ describe('reactFlowYjsBinding', () => {
       const cleanup = setupYjsSubscription(mockDoc, setNodes, setEdges);
       cleanup();
       
-      expect(mockNodesMap.unobserve).toHaveBeenCalled();
-      expect(mockEdgesMap.unobserve).toHaveBeenCalled();
+      expect((mockNodesMap as YMapMock).unobserve).toHaveBeenCalled();
+      expect((mockEdgesMap as YMapMock).unobserve).toHaveBeenCalled();
     });
   });
-}); 
+});
+/* eslint-enable @typescript-eslint/no-explicit-any */ 

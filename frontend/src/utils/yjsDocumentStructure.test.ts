@@ -16,6 +16,8 @@ import {
   createNodeWithId
 } from './yjsDocumentStructure'; // This file will be created after tests
 
+import { Node, Edge } from 'reactflow';
+
 // Mock Yjs module
 jest.mock('yjs', () => {
   return {
@@ -31,13 +33,31 @@ jest.mock('yjs', () => {
 // Import after mocking
 import * as yjs from 'yjs';
 
+// Define interfaces for our mock objects
+interface MockMap {
+  set: jest.Mock;
+  get: jest.Mock;
+  has: jest.Mock;
+  delete: jest.Mock;
+  toJSON: jest.Mock;
+}
+
+interface MockYjsDoc {
+  getMap: jest.Mock;
+  share: {
+    has: jest.Mock;
+  };
+  destroy: jest.Mock;
+  transact: jest.Mock;
+}
+
 describe('Yjs Document Structure', () => {
   // Create mock maps for our document structure
-  const mockMaps = {};
+  const mockMaps: Record<string, MockMap> = {};
   
   // Create mock doc before each test
-  let mockDoc;
-  let mockTransactFn;
+  let mockDoc: MockYjsDoc;
+  let mockTransactFn: jest.Mock;
   
   beforeEach(() => {
     // Clear mocks
@@ -68,8 +88,8 @@ describe('Yjs Document Structure', () => {
   });
 
   // Helper to create a mock Y.Map
-  function createMockMap() {
-    const data = new Map();
+  function createMockMap(): MockMap {
+    const data = new Map<string, unknown>();
     return {
       set: jest.fn((key, value) => {
         data.set(key, value);
@@ -79,7 +99,7 @@ describe('Yjs Document Structure', () => {
       has: jest.fn((key) => data.has(key)),
       delete: jest.fn((key) => data.delete(key)),
       toJSON: jest.fn(() => {
-        const obj = {};
+        const obj: Record<string, unknown> = {};
         data.forEach((value, key) => {
           obj[key] = value;
         });
@@ -92,7 +112,7 @@ describe('Yjs Document Structure', () => {
   describe('Document Initialization', () => {
     it('should initialize a document with required shared collections', () => {
       // Act
-      const initializedDoc = initializeDocument(mockDoc);
+      const initializedDoc = initializeDocument(mockDoc as unknown as yjs.Doc);
       
       // Assert
       expect(initializedDoc).toBe(mockDoc); // Should return the same document
@@ -107,7 +127,7 @@ describe('Yjs Document Structure', () => {
       mockDoc.getMap.mockReturnValue(mockMetadataMap);
       
       // Act
-      initializeDocument(mockDoc);
+      initializeDocument(mockDoc as unknown as yjs.Doc);
       
       // Assert
       expect(mockMetadataMap.set).toHaveBeenCalledWith('title', 'Untitled Canvas');
@@ -118,9 +138,9 @@ describe('Yjs Document Structure', () => {
 
   // Reference: REQ-301.2 Shared Types Operations
   describe('Shared Types Operations', () => {
-    let mockNodesMap;
-    let mockEdgesMap;
-    let mockMetadataMap;
+    let mockNodesMap: MockMap;
+    let mockEdgesMap: MockMap;
+    let mockMetadataMap: MockMap;
     
     beforeEach(() => {
       mockNodesMap = createMockMap();
@@ -137,7 +157,7 @@ describe('Yjs Document Structure', () => {
 
     it('should provide access to shared types', () => {
       // Act
-      const { nodes, edges, metadata } = getSharedTypes(mockDoc);
+      const { nodes, edges, metadata } = getSharedTypes(mockDoc as unknown as yjs.Doc);
 
       // Assert
       expect(mockDoc.getMap).toHaveBeenCalledWith('nodes');
@@ -151,7 +171,7 @@ describe('Yjs Document Structure', () => {
     it('should update a node in the nodes collection', () => {
       // Arrange
       const nodeId = 'node1';
-      const reactFlowNode = {
+      const reactFlowNode: Node = {
         id: nodeId,
         position: { x: 100, y: 200 },
         data: { label: 'Test Node' }
@@ -179,7 +199,7 @@ describe('Yjs Document Structure', () => {
       });
 
       // Act
-      updateNode(mockDoc, nodeId, reactFlowNode);
+      updateNode(mockDoc as unknown as yjs.Doc, nodeId, reactFlowNode);
 
       // Assert
       expect(mockNodesMap.set).toHaveBeenCalledWith(nodeId, expect.anything());
@@ -194,7 +214,7 @@ describe('Yjs Document Structure', () => {
     it('should update an edge in the edges collection', () => {
       // Arrange
       const edgeId = 'edge1';
-      const reactFlowEdge = {
+      const reactFlowEdge: Edge = {
         id: edgeId,
         source: 'node1',
         target: 'node2',
@@ -220,7 +240,7 @@ describe('Yjs Document Structure', () => {
       });
 
       // Act
-      updateEdge(mockDoc, edgeId, reactFlowEdge);
+      updateEdge(mockDoc as unknown as yjs.Doc, edgeId, reactFlowEdge);
 
       // Assert
       expect(mockEdgesMap.set).toHaveBeenCalledWith(edgeId, expect.anything());
@@ -233,7 +253,7 @@ describe('Yjs Document Structure', () => {
 
     it('should update metadata in the metadata collection', () => {
       // Act
-      updateMetadata(mockDoc, { title: 'Updated Canvas', customField: 'Value' });
+      updateMetadata(mockDoc as unknown as yjs.Doc, { title: 'Updated Canvas', customField: 'Value' });
 
       // Assert
       expect(mockMetadataMap.set).toHaveBeenCalledWith('title', 'Updated Canvas');
@@ -248,27 +268,27 @@ describe('Yjs Document Structure', () => {
       const mockUpdate = new Uint8Array([1, 2, 3]);
       
       // Act
-      applyYjsUpdate(mockDoc, mockUpdate);
+      applyYjsUpdate(mockDoc as unknown as yjs.Doc, mockUpdate);
 
       // Assert
       expect(yjs.applyUpdate).toHaveBeenCalledWith(mockDoc, mockUpdate);
     });
   });
 
-  // Reference: REQ-301.4 Transactional Changes
-  describe('Transactional Changes', () => {
-    it('should create a node in a transaction', () => {
+  // Reference: REQ-301.4 Node Creation
+  describe('Node Creation', () => {
+    it('should create a node with generated ID', () => {
       // Arrange
       const mockNodesMap = createMockMap();
       mockDoc.getMap.mockReturnValue(mockNodesMap);
       
       const nodeTemplate = {
         position: { x: 150, y: 250 },
-        data: { label: 'Transaction Node' }
+        data: { label: 'New Node' }
       };
       
       // Act
-      const nodeId = createNodeWithId(mockDoc, nodeTemplate);
+      const nodeId = createNodeWithId(mockDoc as unknown as yjs.Doc, nodeTemplate);
 
       // Assert
       expect(mockDoc.transact).toHaveBeenCalled();

@@ -11,6 +11,13 @@ import { Node, Edge } from 'reactflow';
 import { createTestMultiUserEnvironment } from '../test-utils/multiUserTestHarness';
 import { applyNodeUpdate, applyEdgeUpdate, resolveConflict } from './collaborativeEditing';
 
+// Add this interface near the top of the file, outside any tests
+interface ResolvedMetadata {
+  created: string;
+  updated: string;
+  author: string;
+}
+
 // Mock Yjs and related dependencies
 jest.mock('yjs', () => {
   // Create reusable mock maps
@@ -211,10 +218,10 @@ describe('Collaborative Editing', () => {
       const finalNode2 = clients[2].getNode(nodeId);
       
       // All clients should converge to the same state
-      expect(finalNode0.data.content).toEqual(finalNode1.data.content);
-      expect(finalNode1.data.content).toEqual(finalNode2.data.content);
-      expect(finalNode0.position).toEqual(finalNode1.position);
-      expect(finalNode1.position).toEqual(finalNode2.position);
+      expect(finalNode0?.data?.content).toEqual(finalNode1?.data?.content);
+      expect(finalNode1?.data?.content).toEqual(finalNode2?.data?.content);
+      expect(finalNode0?.position).toEqual(finalNode1?.position);
+      expect(finalNode1?.position).toEqual(finalNode2?.position);
     });
     
     it('should handle concurrent node deletion and editing', async () => {
@@ -339,8 +346,8 @@ describe('Collaborative Editing', () => {
       const finalEdge2 = clients[2].getEdge(edgeId);
       
       // All clients should converge to the same state
-      expect(finalEdge0.data.label).toEqual(finalEdge1.data.label);
-      expect(finalEdge1.data.label).toEqual(finalEdge2.data.label);
+      expect(finalEdge0?.data?.label).toEqual(finalEdge1?.data?.label);
+      expect(finalEdge1?.data?.label).toEqual(finalEdge2?.data?.label);
     });
   });
 
@@ -430,9 +437,9 @@ describe('Collaborative Editing', () => {
       expect(resolvedData.tags).toContain('tag2');
       expect(resolvedData.tags).toContain('tag3');
       expect(resolvedData.tags).toContain('tag4');
-      expect(resolvedData.metadata.created).toBe('2023-01-01');
-      expect(resolvedData.metadata.updated).toBe('2023-02-01');
-      expect(resolvedData.metadata.author).toBe('User B');
+      expect((resolvedData.metadata as ResolvedMetadata).created).toBe('2023-01-01');
+      expect((resolvedData.metadata as ResolvedMetadata).updated).toBe('2023-02-01');
+      expect((resolvedData.metadata as ResolvedMetadata).author).toBe('User B');
     });
   });
 
@@ -479,13 +486,13 @@ describe('Collaborative Editing', () => {
       const finalNode2 = clients[2].getNode(nodeId);
       
       // Position from online client, content from offline client
-      expect(finalNode0.position).toEqual({ x: 200, y: 200 });
-      expect(finalNode1.position).toEqual({ x: 200, y: 200 });
-      expect(finalNode2.position).toEqual({ x: 200, y: 200 });
+      expect(finalNode0?.position).toEqual({ x: 200, y: 200 });
+      expect(finalNode1?.position).toEqual({ x: 200, y: 200 });
+      expect(finalNode2?.position).toEqual({ x: 200, y: 200 });
       
-      expect(finalNode0.data.content).toBe('Updated Offline');
-      expect(finalNode1.data.content).toBe('Updated Offline');
-      expect(finalNode2.data.content).toBe('Updated Offline');
+      expect(finalNode0?.data?.content).toBe('Updated Offline');
+      expect(finalNode1?.data?.content).toBe('Updated Offline');
+      expect(finalNode2?.data?.content).toBe('Updated Offline');
     });
   });
 }); 

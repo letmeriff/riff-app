@@ -13,9 +13,14 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { setupYjsWebSocketProvider, getConnectionStatus, reconnect, disconnect, getAuthParams } from './yjsWebSocketProvider'; // To be implemented
 
+// Define event types for stronger typing
+type EventListener = (event: Event) => void;
+type _MessageEventListener = (event: MessageEvent) => void;
+type _CloseEventListener = (event: CloseEvent) => void;
+
 // Set up WebSocket and awareness mocks
 class MockWebSocket {
-  private eventListeners: Record<string, Function[]> = {};
+  private eventListeners: Record<string, EventListener[]> = {};
   url: string;
   readyState: number = 0; // 0: CONNECTING, 1: OPEN, 2: CLOSING, 3: CLOSED
   
@@ -23,7 +28,7 @@ class MockWebSocket {
     this.url = url;
   }
   
-  addEventListener(event: string, callback: Function) {
+  addEventListener(event: string, callback: EventListener) {
     if (!this.eventListeners[event]) {
       this.eventListeners[event] = [];
     }
@@ -31,14 +36,14 @@ class MockWebSocket {
     return this;
   }
   
-  removeEventListener(event: string, callback: Function) {
+  removeEventListener(event: string, callback: EventListener) {
     if (this.eventListeners[event]) {
       this.eventListeners[event] = this.eventListeners[event].filter(cb => cb !== callback);
     }
     return this;
   }
   
-  dispatchEvent(event: any) {
+  dispatchEvent(event: Event) {
     if (this.eventListeners[event.type]) {
       this.eventListeners[event.type].forEach(callback => callback(event));
     }
@@ -68,6 +73,33 @@ class MockWebSocket {
   }
 }
 
+// Define types for WebsocketProvider event handlers
+type _StatusEventCallback = (status: { status: string }) => void;
+type _YjsEventName = 'status' | 'connection-close' | 'connection-error' | 'sync' | 'message';
+
+// Define our mock provider interface - not extending WebsocketProvider
+interface MockAwareness {
+  setLocalState: jest.Mock;
+  getLocalState: jest.Mock;
+  getStates: jest.Mock;
+  on: jest.Mock;
+  off: jest.Mock;
+}
+
+interface MockWebsocketProvider {
+  awareness: MockAwareness;
+  wsconnected: boolean;
+  wsconnecting: boolean;
+  _ws: unknown;
+  on: jest.Mock;
+  off: jest.Mock;
+  connect: jest.Mock;
+  disconnect: jest.Mock;
+  destroy: jest.Mock;
+  broadcastMessage: jest.Mock;
+  _simulateStatusChange(status: string): void;
+}
+
 // Mock the WebsocketProvider constructor and prototype
 jest.mock('y-websocket', () => {
   const mockAwareness = {
@@ -82,7 +114,7 @@ jest.mock('y-websocket', () => {
     awareness: mockAwareness,
     wsconnected: false,
     wsconnecting: false,
-    _ws: null as any,
+    _ws: null as unknown,
     on: jest.fn(),
     off: jest.fn(),
     connect: jest.fn(),
@@ -124,7 +156,7 @@ jest.mock('yjs', () => {
 
 describe('Yjs WebSocket Provider', () => {
   let mockDoc: Y.Doc;
-  let mockProvider: WebsocketProvider;
+  let mockProvider: MockWebsocketProvider;
   let originalWebSocket: typeof WebSocket;
   
   beforeEach(() => {
@@ -132,7 +164,7 @@ describe('Yjs WebSocket Provider', () => {
     
     // Save original WebSocket and replace with our mock
     originalWebSocket = global.WebSocket;
-    global.WebSocket = MockWebSocket as any;
+    global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
     
     // Create a fresh document for each test
     mockDoc = new Y.Doc();
@@ -152,7 +184,7 @@ describe('Yjs WebSocket Provider', () => {
       const params = { token: 'test-token' };
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, params);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, params) as unknown as MockWebsocketProvider;
       
       // Assert
       expect(WebsocketProvider).toHaveBeenCalledWith(
@@ -171,10 +203,10 @@ describe('Yjs WebSocket Provider', () => {
       const roomName = 'test-room';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       
       // Simulate connection
-      (mockProvider as any)._simulateStatusChange('connected');
+      mockProvider._simulateStatusChange('connected');
       
       // Assert
       expect(getConnectionStatus()).toBe('connected');
@@ -186,10 +218,10 @@ describe('Yjs WebSocket Provider', () => {
       const roomName = 'test-room';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       
       // Simulate disconnection
-      (mockProvider as any)._simulateStatusChange('disconnected');
+      mockProvider._simulateStatusChange('disconnected');
       
       // Assert
       expect(getConnectionStatus()).toBe('disconnected');
@@ -201,7 +233,7 @@ describe('Yjs WebSocket Provider', () => {
       const roomName = 'test-room';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       disconnect();
       
       // Assert
@@ -217,7 +249,7 @@ describe('Yjs WebSocket Provider', () => {
       const roomName = 'test-room';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       
       // Simulate broadcasting a message
       mockProvider.broadcastMessage('test-message', 'test-data');
@@ -233,7 +265,7 @@ describe('Yjs WebSocket Provider', () => {
       const onMessage = jest.fn();
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       mockProvider.on('message', onMessage);
       
       // Assert
@@ -250,7 +282,7 @@ describe('Yjs WebSocket Provider', () => {
       const token = 'auth-token-123';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, { token });
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, { token }) as unknown as MockWebsocketProvider;
       
       // Assert
       expect(WebsocketProvider).toHaveBeenCalledWith(
@@ -270,7 +302,7 @@ describe('Yjs WebSocket Provider', () => {
       const token = 'auth-token-123';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, { token });
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, { token }) as unknown as MockWebsocketProvider;
       const params = getAuthParams();
       
       // Assert
@@ -286,10 +318,10 @@ describe('Yjs WebSocket Provider', () => {
       const roomName = 'test-room';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       
       // Simulate disconnection
-      (mockProvider as any)._simulateStatusChange('disconnected');
+      mockProvider._simulateStatusChange('disconnected');
       
       // Trigger manual reconnect
       reconnect();
@@ -308,17 +340,17 @@ describe('Yjs WebSocket Provider', () => {
       mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName, {}, {
         maxBackoffTime: 5000,
         initialBackoffTime: 1000
-      });
+      }) as unknown as MockWebsocketProvider;
       
       // Simulate multiple disconnections to trigger backoff
-      (mockProvider as any)._simulateStatusChange('disconnected');
+      mockProvider._simulateStatusChange('disconnected');
       reconnect();
       
       // Fast-forward time
       jest.advanceTimersByTime(1000);
       
       // Simulate another disconnection
-      (mockProvider as any)._simulateStatusChange('disconnected');
+      mockProvider._simulateStatusChange('disconnected');
       reconnect();
       
       // Assert that connect was called twice
@@ -334,15 +366,15 @@ describe('Yjs WebSocket Provider', () => {
       const roomName = 'test-room';
       
       // Act
-      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName);
+      mockProvider = setupYjsWebSocketProvider(mockDoc, wsUrl, roomName) as unknown as MockWebsocketProvider;
       
       // Simulate disconnection then reconnection
-      (mockProvider as any)._simulateStatusChange('disconnected');
+      mockProvider._simulateStatusChange('disconnected');
       reconnect();
-      (mockProvider as any)._simulateStatusChange('connected');
+      mockProvider._simulateStatusChange('connected');
       
       // Force another disconnection to check if backoff was reset
-      (mockProvider as any)._simulateStatusChange('disconnected');
+      mockProvider._simulateStatusChange('disconnected');
       reconnect();
       
       // Assert that connect was called with initial backoff time

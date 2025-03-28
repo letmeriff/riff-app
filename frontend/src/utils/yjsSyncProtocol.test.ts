@@ -300,6 +300,7 @@ describe('yjsSyncProtocol', () => {
       // Setup
       const syncPromise = handleReconnectionSync(
         mockDoc as unknown as Y.Doc,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mockWebsocketProvider as unknown as any
       );
       
@@ -322,7 +323,9 @@ describe('yjsSyncProtocol', () => {
       // Execute
       configureSyncProtocol(
         mockDoc as unknown as Y.Doc,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mockWebsocketProvider as unknown as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mockIndexeddbProvider as unknown as any
       );
       
@@ -352,7 +355,9 @@ describe('yjsSyncProtocol', () => {
       // Execute
       setupCanvasSyncProtocol(
         mockDoc as unknown as Y.Doc,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mockWebsocketProvider as unknown as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mockIndexeddbProvider as unknown as any,
         statusCallback
       );
