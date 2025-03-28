@@ -11,19 +11,30 @@
 import * as Y from 'yjs';
 import { Node, Edge } from 'reactflow';
 
+// Define generic record types for better type safety
+export interface GenericRecord {
+  [key: string]: unknown;
+}
+
+// Define timestamps for better type safety
+export interface TimestampedData extends GenericRecord {
+  timestamp?: number;
+}
+
+// Define position with timestamp
+export interface TimestampedPosition {
+  x: number;
+  y: number;
+  timestamp?: number;
+}
+
 // Node structure as stored in Yjs
 interface YjsNode {
   id: string;
-  position: {
-    x: number;
-    y: number;
-    timestamp?: number;
-  };
-  data: Record<string, any> & {
-    timestamp?: number;
-  };
+  position: TimestampedPosition;
+  data: TimestampedData;
   type?: string;
-  style?: Record<string, any>;
+  style?: GenericRecord;
 }
 
 // Edge structure as stored in Yjs
@@ -31,10 +42,8 @@ interface YjsEdge {
   id: string;
   source: string;
   target: string;
-  data?: Record<string, any> & {
-    timestamp?: number;
-  };
-  style?: Record<string, any>;
+  data?: TimestampedData;
+  style?: GenericRecord;
   animated?: boolean;
 }
 
@@ -205,19 +214,19 @@ export function resolveConflict<T>(
   // Data conflicts: deep merge with array concatenation
   if (type === 'data') {
     if (typeof userAValue === 'object' && typeof userBValue === 'object' && !Array.isArray(userAValue)) {
-      const mergedData = { ...userAValue as object } as Record<string, any>;
+      const mergedData = { ...userAValue as object } as Record<string, unknown>;
       
       // Merge properties from userB
       for (const key in userBValue as object) {
-        const valueA = (userAValue as Record<string, any>)[key];
-        const valueB = (userBValue as Record<string, any>)[key];
+        const valueA = (userAValue as Record<string, unknown>)[key];
+        const valueB = (userBValue as Record<string, unknown>)[key];
         
         // If both users modified the same nested object
         if (typeof valueA === 'object' && typeof valueB === 'object' && !Array.isArray(valueA)) {
           // Recursively resolve nested object conflicts
           mergedData[key] = resolveConflict(
             'data',
-            original ? (original as Record<string, any>)[key] : {},
+            original ? (original as Record<string, unknown>)[key] : {},
             valueA,
             valueB,
             timestampA,
@@ -238,8 +247,8 @@ export function resolveConflict<T>(
       
       // Add any properties from userA that weren't in userB
       for (const key in userAValue as object) {
-        if (!mergedData.hasOwnProperty(key)) {
-          mergedData[key] = (userAValue as Record<string, any>)[key];
+        if (!Object.prototype.hasOwnProperty.call(mergedData, key)) {
+          mergedData[key] = (userAValue as Record<string, unknown>)[key];
         }
       }
       

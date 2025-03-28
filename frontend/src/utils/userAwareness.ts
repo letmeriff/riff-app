@@ -40,13 +40,32 @@ export interface UserPresence {
   lastActive?: number;
 }
 
+// Define a type for the awareness state
+interface AwarenessState {
+  user?: {
+    id?: string;
+    name?: string;
+  };
+  cursor?: { x: number; y: number };
+  editing?: { nodeId?: string };
+  isOnline?: boolean;
+  lastActive?: number;
+}
+
+// Define a type for the window with YjsWebsocketProvider
+interface WindowWithYjs extends Window {
+  yjsWebsocketProvider?: {
+    awareness?: awarenessProtocol.Awareness;
+  };
+}
+
 /**
  * Helper function to get the awareness instance from a Y.Doc
  */
-const getAwareness = (doc: Y.Doc): awarenessProtocol.Awareness | null => {
+const getAwareness = (_doc: Y.Doc): awarenessProtocol.Awareness | null => {
   // In the real application, this would likely be stored in the window object
   // or passed via context rather than being derived from the doc
-  return (window as any).yjsWebsocketProvider?.awareness || null;
+  return ((window as unknown) as WindowWithYjs).yjsWebsocketProvider?.awareness || null;
 };
 
 /**
@@ -139,22 +158,26 @@ export function getUsersInCanvas(doc: Y.Doc): UserPresence[] {
   const users: UserPresence[] = [];
   
   // Loop through all states to gather connected users
-  states.forEach((state: any, clientId: number) => {
+  states.forEach((state: unknown, clientId: number) => {
+    const userState = state as AwarenessState;
     // Skip states without proper user info
-    if (!state.user || !state.user.id) return;
+    if (!userState.user || !userState.user.id) return;
     
     // Skip ourselves
     if (clientId === doc.clientID) return;
     
     // Skip users explicitly marked as offline
-    if (state.isOnline === false) return;
+    if (userState.isOnline === false) return;
+    
+    // Determine online status - default to true if not specified
+    const isOnline = userState.isOnline === undefined ? true : userState.isOnline;
     
     users.push({
-      userId: state.user.id,
+      userId: userState.user.id,
       clientId,
-      userName: state.user.name,
-      isOnline: state.isOnline !== false, // Treat as online unless explicitly marked offline
-      lastActive: state.lastActive || Date.now()
+      userName: userState.user.name,
+      isOnline,
+      lastActive: userState.lastActive || Date.now()
     });
   });
   
@@ -174,17 +197,18 @@ export function getEditingUsers(doc: Y.Doc): EditingStatus[] {
   const states = awareness.getStates();
   const editingUsers: EditingStatus[] = [];
   
-  states.forEach((state: any, clientId: number) => {
+  states.forEach((state: unknown, clientId: number) => {
+    const userState = state as AwarenessState;
     // Skip states without proper user info or editing status
-    if (!state.user || !state.user.id || !state.editing || !state.editing.nodeId) return;
+    if (!userState.user || !userState.user.id || !userState.editing || !userState.editing.nodeId) return;
     
     // Skip ourselves
     if (clientId === doc.clientID) return;
     
     editingUsers.push({
-      userId: state.user.id,
+      userId: userState.user.id,
       clientId,
-      nodeId: state.editing.nodeId
+      nodeId: userState.editing.nodeId
     });
   });
   
@@ -205,20 +229,24 @@ export function getUsersAtNode(doc: Y.Doc, nodeId: string): UserPresence[] {
   const states = awareness.getStates();
   const usersAtNode: UserPresence[] = [];
   
-  states.forEach((state: any, clientId: number) => {
+  states.forEach((state: unknown, clientId: number) => {
+    const userState = state as AwarenessState;
     // Skip states without proper user info or editing status
-    if (!state.user || !state.user.id) return;
+    if (!userState.user || !userState.user.id) return;
     
     // Skip ourselves
     if (clientId === doc.clientID) return;
     
     // Check if user is editing the specified node
-    if (state.editing && state.editing.nodeId === nodeId) {
+    if (userState.editing && userState.editing.nodeId === nodeId) {
+      // Determine online status - default to true if not specified
+      const isOnline = userState.isOnline === undefined ? true : userState.isOnline;
+      
       usersAtNode.push({
-        userId: state.user.id,
+        userId: userState.user.id,
         clientId,
-        userName: state.user.name,
-        isOnline: state.isOnline !== false
+        userName: userState.user.name,
+        isOnline
       });
     }
   });
@@ -239,18 +267,19 @@ export function getUserCursors(doc: Y.Doc): CursorPosition[] {
   const states = awareness.getStates();
   const cursors: CursorPosition[] = [];
   
-  states.forEach((state: any, clientId: number) => {
+  states.forEach((state: unknown, clientId: number) => {
+    const userState = state as AwarenessState;
     // Skip states without proper user info or cursor
-    if (!state.user || !state.user.id || !state.cursor) return;
+    if (!userState.user || !userState.user.id || !userState.cursor) return;
     
     // Skip ourselves
     if (clientId === doc.clientID) return;
     
     // Get user's cursor
     cursors.push({
-      userId: state.user.id,
+      userId: userState.user.id,
       clientId,
-      position: state.cursor
+      position: userState.cursor
     });
   });
   

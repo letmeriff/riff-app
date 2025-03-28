@@ -172,8 +172,8 @@ export const syncNodeContentToYjs = (
   try {
     const nodes = ydoc.getMap('nodes');
     if (nodes.has(nodeId)) {
-      const nodeY = nodes.get(nodeId) as Y.Map<any>;
-      const dataY = nodeY.get('data') as Y.Map<any>;
+      const nodeY = nodes.get(nodeId) as Y.Map<unknown>;
+      const dataY = nodeY.get('data') as Y.Map<unknown>;
       
       // Update data fields
       if (newData.title !== undefined) {
@@ -226,26 +226,26 @@ export const setupYjsSubscription = (
       const processedCount = { value: 0 };
       
       // Use a type-safe approach for iterating the Y.Map
-      nodes.forEach((nodeValue: any, key: string) => {
+      nodes.forEach((nodeValue: unknown, key: string) => {
         try {
-          const nodeY = nodeValue as Y.Map<any>;
-          const positionY = nodeY.get('position') as Y.Map<any>;
-          const dataY = nodeY.get('data') as Y.Map<any>;
+          const nodeY = nodeValue as Y.Map<unknown>;
+          const positionY = nodeY.get('position') as Y.Map<unknown>;
+          const dataY = nodeY.get('data') as Y.Map<unknown>;
           
           if (positionY && dataY) {
             nodesArray.push({
               id: key,
               position: {
-                x: positionY.get('x'),
-                y: positionY.get('y')
+                x: positionY.get('x') as number,
+                y: positionY.get('y') as number
               },
               type: 'chatNode',
               data: {
-                label: dataY.get('title'),
-                nodeId: nodeY.get('node_id'),
-                model: dataY.get('model'),
-                flavor: dataY.get('flavor'),
-                description: dataY.get('description'),
+                label: dataY.get('title') as string,
+                nodeId: nodeY.get('node_id') as string,
+                model: dataY.get('model') as string,
+                flavor: dataY.get('flavor') as string,
+                description: dataY.get('description') as string,
               }
             });
             processedCount.value++;
@@ -271,14 +271,14 @@ export const setupYjsSubscription = (
       const processedCount = { value: 0 };
       
       // Use a type-safe approach for iterating the Y.Map
-      edges.forEach((edgeValue: any, key: string) => {
+      edges.forEach((edgeValue: unknown, key: string) => {
         try {
-          const edgeY = edgeValue as Y.Map<any>;
+          const edgeY = edgeValue as Y.Map<unknown>;
           
           edgesArray.push({
             id: key,
-            source: edgeY.get('source'),
-            target: edgeY.get('target'),
+            source: edgeY.get('source') as string,
+            target: edgeY.get('target') as string,
             type: 'straight',
             animated: true,
           });
@@ -316,4 +316,4 @@ export const setupYjsSubscription = (
     nodes.unobserve(nodesObserver);
     edges.unobserve(edgesObserver);
   };
-}; 
+};

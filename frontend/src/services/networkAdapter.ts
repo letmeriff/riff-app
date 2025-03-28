@@ -3,12 +3,20 @@ import { WebsocketProvider } from 'y-websocket';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
+// Define payload types for better type safety
+export interface NetworkPayload {
+  [key: string]: unknown;
+}
+
+// Define callback types
+export type PayloadCallback = (payload: NetworkPayload) => void;
+
 export interface NetworkAdapter {
   connect(): Promise<boolean>;
   disconnect(): void;
   isConnected(): boolean;
-  sendMessage(eventName: string, payload: any): void;
-  subscribeToEvent(eventName: string, callback: (payload: any) => void): () => void;
+  sendMessage(eventName: string, payload: NetworkPayload): void;
+  subscribeToEvent(eventName: string, callback: PayloadCallback): () => void;
   updateUserPresence(nodeId: string, isTyping: boolean): void;
   setUserCursor(position: { x: number, y: number } | null): void;
 }
@@ -22,7 +30,7 @@ export const isYjsNetworkEnabled = (): boolean => {
 // Socket.IO implementation of the network adapter
 export class SocketIONetworkAdapter implements NetworkAdapter {
   private socket: Socket | null = null;
-  private callbacks: Map<string, Set<(payload: any) => void>> = new Map();
+  private callbacks: Map<string, Set<PayloadCallback>> = new Map();
   
   constructor(socket: Socket | null) {
     this.socket = socket;
@@ -71,7 +79,7 @@ export class SocketIONetworkAdapter implements NetworkAdapter {
     return this.socket?.connected || false;
   }
   
-  sendMessage(eventName: string, payload: any): void {
+  sendMessage(eventName: string, payload: NetworkPayload): void {
     if (this.socket?.connected) {
       this.socket.emit(eventName, payload);
     } else {
@@ -79,7 +87,7 @@ export class SocketIONetworkAdapter implements NetworkAdapter {
     }
   }
   
-  subscribeToEvent(eventName: string, callback: (payload: any) => void): () => void {
+  subscribeToEvent(eventName: string, callback: PayloadCallback): () => void {
     if (!this.socket) {
       console.warn(`Cannot subscribe to ${eventName} without a socket`);
       return () => {};
@@ -92,11 +100,11 @@ export class SocketIONetworkAdapter implements NetworkAdapter {
     this.callbacks.get(eventName)?.add(callback);
     
     // Add the actual socket.io listener
-    this.socket.on(eventName, callback);
+    this.socket.on(eventName, callback as (payload: unknown) => void);
     
     // Return unsubscribe function
     return () => {
-      this.socket?.off(eventName, callback);
+      this.socket?.off(eventName, callback as (payload: unknown) => void);
       this.callbacks.get(eventName)?.delete(callback);
     };
   }
@@ -112,13 +120,23 @@ export class SocketIONetworkAdapter implements NetworkAdapter {
   }
 }
 
+// Define awareness state types
+interface AwarenessState {
+  userId?: string;
+  user?: { id: string; [key: string]: unknown };
+  events?: Record<string, { payload: NetworkPayload; timestamp: number }>;
+  presence?: { nodeId?: string; isTyping?: boolean; [key: string]: unknown };
+  cursor?: { x: number; y: number } | null;
+  [key: string]: unknown;
+}
+
 // Yjs implementation of the network adapter
 export class YjsNetworkAdapter implements NetworkAdapter {
   private wsProvider: WebsocketProvider | null = null;
   private awareness: awarenessProtocol.Awareness | null = null;
   private doc: Y.Doc | null = null;
   private userId: string;
-  private eventEmitters: Map<string, Set<(payload: any) => void>> = new Map();
+  private eventEmitters: Map<string, Set<PayloadCallback>> = new Map();
   
   constructor(wsProvider: WebsocketProvider | null, doc: Y.Doc | null, userId: string) {
     this.wsProvider = wsProvider;
@@ -182,17 +200,17 @@ export class YjsNetworkAdapter implements NetworkAdapter {
   }
   
   // This maps traditional events to Yjs awareness updates
-  sendMessage(eventName: string, payload: any): void {
+  sendMessage(eventName: string, payload: NetworkPayload): void {
     if (!this.awareness || !this.wsProvider?.wsconnected) {
       console.warn(`Cannot send message ${eventName} while disconnected`);
       return;
     }
     
     // Get current state
-    const currentState = this.awareness.getLocalState() || {};
+    const currentState = this.awareness.getLocalState() as AwarenessState || {};
     
     // Update with the new event
-    const newState = {
+    const newState: AwarenessState = {
       ...currentState,
       userId: this.userId,
       user: { id: this.userId },
@@ -210,7 +228,7 @@ export class YjsNetworkAdapter implements NetworkAdapter {
   }
   
   // This maps Yjs awareness changes to traditional event callbacks
-  subscribeToEvent(eventName: string, callback: (payload: any) => void): () => void {
+  subscribeToEvent(eventName: string, callback: PayloadCallback): () => void {
     // Add callback to our tracking
     if (!this.eventEmitters.has(eventName)) {
       this.eventEmitters.set(eventName, new Set());
@@ -224,7 +242,7 @@ export class YjsNetworkAdapter implements NetworkAdapter {
   }
   
   // Handle awareness changes and emit corresponding events
-  private handleAwarenessChange(changes: any): void {
+  private handleAwarenessChange(_changes: unknown): void {
     const awareness = this.awareness;
     if (!awareness) return;
     
@@ -232,7 +250,7 @@ export class YjsNetworkAdapter implements NetworkAdapter {
     const awarenessStates = awareness.getStates();
     
     // Process each client in awareness states
-    awarenessStates.forEach((state: any, clientId: number) => {
+    awarenessStates.forEach((state: AwarenessState, clientId: number) => {
       // Skip our own changes
       if (clientId === this.doc?.clientID) return;
       
@@ -242,7 +260,7 @@ export class YjsNetworkAdapter implements NetworkAdapter {
           // Notify all registered callbacks for this event
           const callbacks = this.eventEmitters.get(eventName);
           if (callbacks) {
-            const data = (eventData as any).payload;
+            const data = eventData.payload;
             callbacks.forEach(callback => callback(data));
           }
         });
@@ -254,8 +272,8 @@ export class YjsNetworkAdapter implements NetworkAdapter {
   updateUserPresence(nodeId: string, isTyping: boolean): void {
     if (!this.awareness) return;
     
-    const state = this.awareness.getLocalState() || {};
-    const newState = {
+    const state = this.awareness.getLocalState() as AwarenessState || {};
+    const newState: AwarenessState = {
       ...state,
       userId: this.userId,
       user: { id: this.userId },
@@ -273,8 +291,8 @@ export class YjsNetworkAdapter implements NetworkAdapter {
   setUserCursor(position: { x: number, y: number } | null): void {
     if (!this.awareness) return;
     
-    const state = this.awareness.getLocalState() || {};
-    const newState = {
+    const state = this.awareness.getLocalState() as AwarenessState || {};
+    const newState: AwarenessState = {
       ...state,
       userId: this.userId,
       user: { id: this.userId },

@@ -19,6 +19,21 @@ interface CanvasChunk {
   loaded: boolean;
 }
 
+// Define position data type
+interface _NodePosition {
+  x: number;
+  y: number;
+}
+
+// Define node data structure
+interface _NodeData {
+  title: string;
+  nodeId: string;
+  model: string;
+  flavor: string;
+  description: string;
+}
+
 // Define chunk size constants
 const CHUNK_SIZE = 1000; // Size of each chunk in pixels
 const CHUNK_PADDING = 500; // Padding around viewport for preloading
@@ -170,15 +185,15 @@ export const selectivelyLoadNodes = (
     // currentViewport = viewport;
     
     // Process nodes selectively
-    nodesMap.forEach((nodeValue: any, nodeId: string) => {
+    nodesMap.forEach((nodeValue: unknown, nodeId: string) => {
       try {
-        const nodeY = nodeValue as Y.Map<any>;
-        const positionY = nodeY.get('position') as Y.Map<any>;
+        const nodeY = nodeValue as Y.Map<unknown>;
+        const positionY = nodeY.get('position') as Y.Map<unknown>;
         
         if (positionY) {
           const nodePosition = {
-            x: positionY.get('x'),
-            y: positionY.get('y')
+            x: positionY.get('x') as number,
+            y: positionY.get('y') as number
           };
           
           // Check if this node is in the viewport
@@ -189,18 +204,18 @@ export const selectivelyLoadNodes = (
             nodePosition.y <= viewport.maxY + (viewport.padding || CHUNK_PADDING)
           ) {
             // Node is visible, add it to our visible nodes
-            const dataY = nodeY.get('data') as Y.Map<any>;
+            const dataY = nodeY.get('data') as Y.Map<unknown>;
             
             visibleNodes.push({
               id: nodeId,
               position: nodePosition,
               type: 'chatNode',
               data: {
-                label: dataY.get('title'),
-                nodeId: nodeY.get('node_id'),
-                model: dataY.get('model'),
-                flavor: dataY.get('flavor'),
-                description: dataY.get('description'),
+                label: dataY.get('title') as string,
+                nodeId: nodeY.get('node_id') as string,
+                model: dataY.get('model') as string,
+                flavor: dataY.get('flavor') as string,
+                description: dataY.get('description') as string,
               }
             });
             
@@ -214,11 +229,11 @@ export const selectivelyLoadNodes = (
     });
     
     // Process edges - only include edges between visible nodes
-    edgesMap.forEach((edgeValue: any, edgeId: string) => {
+    edgesMap.forEach((edgeValue: unknown, edgeId: string) => {
       try {
-        const edgeY = edgeValue as Y.Map<any>;
-        const sourceId = edgeY.get('source');
-        const targetId = edgeY.get('target');
+        const edgeY = edgeValue as Y.Map<unknown>;
+        const sourceId = edgeY.get('source') as string;
+        const targetId = edgeY.get('target') as string;
         
         // Only include edges where both source and target are visible
         if (loadedNodeIds.has(sourceId) && loadedNodeIds.has(targetId)) {
@@ -286,8 +301,8 @@ export const createOptimizedPositionUpdater = (ydoc: Y.Doc | null) => {
     try {
       const nodes = ydoc.getMap('nodes');
       if (nodes.has(nodeId)) {
-        const nodeY = nodes.get(nodeId) as Y.Map<any>;
-        const positionY = nodeY.get('position') as Y.Map<any>;
+        const nodeY = nodes.get(nodeId) as Y.Map<unknown>;
+        const positionY = nodeY.get('position') as Y.Map<unknown>;
         
         // Update position
         positionY.set('x', position.x);

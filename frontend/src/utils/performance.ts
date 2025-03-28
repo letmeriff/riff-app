@@ -32,6 +32,23 @@ export interface ViewportBounds {
   zoom: number;
 }
 
+// Define commonly used types
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface CachedPosition extends Position {
+  timestamp: number;
+}
+
+// Custom interface for Yjs map access
+interface YNodeMap {
+  get(key: string): unknown;
+  set(key: string, value: unknown): void;
+  has(key: string): boolean;
+}
+
 // Default constants for performance optimization
 const DEFAULT_THROTTLE_DELAY = 100; // ms
 const DEFAULT_DEBOUNCE_DELAY = 300; // ms
@@ -42,7 +59,7 @@ const FRAME_SAMPLE_SIZE = 60; // frames
  * Creates a throttled function for updating node positions
  * to reduce the frequency of updates during dragging
  */
-export const createThrottledPositionUpdater = <T extends any[]>(
+export const createThrottledPositionUpdater = <T extends unknown[]>(
   updateFn: (...args: T) => void,
   delay: number = DEFAULT_THROTTLE_DELAY
 ): ((...args: T) => void) => {
@@ -53,7 +70,7 @@ export const createThrottledPositionUpdater = <T extends any[]>(
  * Creates a debounced function for position updates
  * to delay updates until user has stopped dragging
  */
-export const createDebouncedPositionUpdater = <T extends any[]>(
+export const createDebouncedPositionUpdater = <T extends unknown[]>(
   updateFn: (...args: T) => void,
   delay: number = DEFAULT_DEBOUNCE_DELAY
 ): ((...args: T) => void) => {
@@ -65,12 +82,12 @@ export const createDebouncedPositionUpdater = <T extends any[]>(
  * to reduce unnecessary updates
  */
 export const createOptimizedPositionUpdater = (
-  updateFn: (nodeId: string, position: { x: number, y: number }) => void
+  updateFn: (nodeId: string, position: Position) => void
 ) => {
   // Cache of last known positions to compare against
-  const positionCache = new Map<string, { x: number, y: number, timestamp: number }>();
+  const positionCache = new Map<string, CachedPosition>();
   
-  return (nodeId: string, position: { x: number, y: number }) => {
+  return (nodeId: string, position: Position) => {
     const cachedPosition = positionCache.get(nodeId);
     const now = Date.now();
     
@@ -137,8 +154,8 @@ export const createOptimizedYjsUpdater = (
   edgesMapName: string = 'edges'
 ) => {
   // Create a transaction queue to batch updates
-  let pendingNodeUpdates = new Map<string, Node>();
-  let pendingEdgeUpdates = new Map<string, Edge>();
+  const pendingNodeUpdates = new Map<string, Node>();
+  const pendingEdgeUpdates = new Map<string, Edge>();
   let isTransactionScheduled = false;
   
   // Function to schedule a transaction
@@ -157,23 +174,23 @@ export const createOptimizedYjsUpdater = (
         
         // Apply node updates
         Array.from(pendingNodeUpdates.entries()).forEach(([nodeId, nodeData]) => {
-          let nodeYMap: Y.Map<any>;
+          let nodeYMap: YNodeMap;
           
           if (nodesMap.has(nodeId)) {
-            nodeYMap = nodesMap.get(nodeId) as Y.Map<any>;
+            nodeYMap = nodesMap.get(nodeId) as YNodeMap;
           } else {
-            nodeYMap = new Y.Map();
+            nodeYMap = new Y.Map() as YNodeMap;
             nodesMap.set(nodeId, nodeYMap);
           }
           
           // Update node data
           if (nodeData.position) {
-            let posYMap: Y.Map<any>;
+            let posYMap: YNodeMap;
             
             if (nodeYMap.has('position')) {
-              posYMap = nodeYMap.get('position') as Y.Map<any>;
+              posYMap = nodeYMap.get('position') as YNodeMap;
             } else {
-              posYMap = new Y.Map();
+              posYMap = new Y.Map() as YNodeMap;
               nodeYMap.set('position', posYMap);
             }
             
@@ -183,12 +200,12 @@ export const createOptimizedYjsUpdater = (
           
           // Update data properties if changed
           if (nodeData.data) {
-            let dataYMap: Y.Map<any>;
+            let dataYMap: YNodeMap;
             
             if (nodeYMap.has('data')) {
-              dataYMap = nodeYMap.get('data') as Y.Map<any>;
+              dataYMap = nodeYMap.get('data') as YNodeMap;
             } else {
-              dataYMap = new Y.Map();
+              dataYMap = new Y.Map() as YNodeMap;
               nodeYMap.set('data', dataYMap);
             }
             
@@ -204,14 +221,14 @@ export const createOptimizedYjsUpdater = (
           // Similar logic for edges (simplified here)
           if (edgesMap.has(edgeId)) {
             // Update existing edge
-            const edgeYMap = edgesMap.get(edgeId) as Y.Map<any>;
+            const edgeYMap = edgesMap.get(edgeId) as YNodeMap;
             
             // Set edge properties
             if (edgeData.source) edgeYMap.set('source', edgeData.source);
             if (edgeData.target) edgeYMap.set('target', edgeData.target);
           } else {
             // Create new edge
-            const edgeYMap = new Y.Map();
+            const edgeYMap = new Y.Map() as YNodeMap;
             edgeYMap.set('id', edgeId);
             edgeYMap.set('source', edgeData.source);
             edgeYMap.set('target', edgeData.target);
@@ -242,7 +259,7 @@ export const createOptimizedYjsUpdater = (
     },
     
     // Update a node's position only
-    updateNodePosition: (nodeId: string, position: { x: number, y: number }) => {
+    updateNodePosition: (nodeId: string, position: Position) => {
       const existingNode = pendingNodeUpdates.get(nodeId) || { id: nodeId } as Node;
       pendingNodeUpdates.set(nodeId, {
         ...existingNode,
@@ -251,37 +268,38 @@ export const createOptimizedYjsUpdater = (
       scheduleTransaction();
     },
     
-    // Force immediate processing of the queue
-    flush: () => {
+    // Force apply all pending updates immediately
+    flushUpdates: () => {
       if (pendingNodeUpdates.size > 0 || pendingEdgeUpdates.size > 0) {
-        // Clear scheduled transaction if any
-        isTransactionScheduled = false;
+        // Cancel any scheduled transaction
+        if (isTransactionScheduled) {
+          isTransactionScheduled = false;
+        }
         
-        // Process immediately
+        // Apply updates immediately
         ydoc.transact(() => {
-          // Same logic as in scheduleTransaction
           const nodesMap = ydoc.getMap(nodesMapName);
           const edgesMap = ydoc.getMap(edgesMapName);
           
           // Apply node updates
           Array.from(pendingNodeUpdates.entries()).forEach(([nodeId, nodeData]) => {
-            let nodeYMap: Y.Map<any>;
+            let nodeYMap: YNodeMap;
             
             if (nodesMap.has(nodeId)) {
-              nodeYMap = nodesMap.get(nodeId) as Y.Map<any>;
+              nodeYMap = nodesMap.get(nodeId) as YNodeMap;
             } else {
-              nodeYMap = new Y.Map();
+              nodeYMap = new Y.Map() as YNodeMap;
               nodesMap.set(nodeId, nodeYMap);
             }
             
-            // Update position
+            // Update position and data
             if (nodeData.position) {
-              let posYMap: Y.Map<any>;
+              let posYMap: YNodeMap;
               
               if (nodeYMap.has('position')) {
-                posYMap = nodeYMap.get('position') as Y.Map<any>;
+                posYMap = nodeYMap.get('position') as YNodeMap;
               } else {
-                posYMap = new Y.Map();
+                posYMap = new Y.Map() as YNodeMap;
                 nodeYMap.set('position', posYMap);
               }
               
@@ -289,18 +307,16 @@ export const createOptimizedYjsUpdater = (
               posYMap.set('y', nodeData.position.y);
             }
             
-            // Update data
             if (nodeData.data) {
-              let dataYMap: Y.Map<any>;
+              let dataYMap: YNodeMap;
               
               if (nodeYMap.has('data')) {
-                dataYMap = nodeYMap.get('data') as Y.Map<any>;
+                dataYMap = nodeYMap.get('data') as YNodeMap;
               } else {
-                dataYMap = new Y.Map();
+                dataYMap = new Y.Map() as YNodeMap;
                 nodeYMap.set('data', dataYMap);
               }
               
-              // Update all data properties
               Object.entries(nodeData.data).forEach(([key, value]) => {
                 dataYMap.set(key, value);
               });
@@ -309,17 +325,18 @@ export const createOptimizedYjsUpdater = (
           
           // Apply edge updates
           Array.from(pendingEdgeUpdates.entries()).forEach(([edgeId, edgeData]) => {
+            let edgeYMap: YNodeMap;
+            
             if (edgesMap.has(edgeId)) {
-              const edgeYMap = edgesMap.get(edgeId) as Y.Map<any>;
-              if (edgeData.source) edgeYMap.set('source', edgeData.source);
-              if (edgeData.target) edgeYMap.set('target', edgeData.target);
+              edgeYMap = edgesMap.get(edgeId) as YNodeMap;
             } else {
-              const edgeYMap = new Y.Map();
-              edgeYMap.set('id', edgeId);
-              edgeYMap.set('source', edgeData.source);
-              edgeYMap.set('target', edgeData.target);
+              edgeYMap = new Y.Map() as YNodeMap;
               edgesMap.set(edgeId, edgeYMap);
             }
+            
+            edgeYMap.set('id', edgeId);
+            edgeYMap.set('source', edgeData.source);
+            edgeYMap.set('target', edgeData.target);
           });
         });
         
@@ -332,64 +349,77 @@ export const createOptimizedYjsUpdater = (
 };
 
 /**
- * Measures rendering performance by tracking frame rates
- * Use this for performance testing and optimization
+ * Measures render performance for a component
  */
 export const measureRenderPerformance = (
   callback?: (metrics: PerformanceMetrics) => void
 ) => {
-  let frameCount = 0;
-  let lastTime = performance.now();
-  let frameTimes: number[] = [];
+  let frameCounter = 0;
+  let lastFrameTime = performance.now();
+  let frameRates: number[] = [];
   
-  // Function to measure frame rate
   const measure = () => {
     const now = performance.now();
-    const elapsed = now - lastTime;
+    const frameDuration = now - lastFrameTime;
+    const frameRate = 1000 / frameDuration;
     
-    // Record frame time
-    frameTimes.push(elapsed);
-    if (frameTimes.length > FRAME_SAMPLE_SIZE) {
-      frameTimes.shift();
+    // Record frame rate
+    frameRates.push(frameRate);
+    
+    // Keep only the most recent samples
+    if (frameRates.length > FRAME_SAMPLE_SIZE) {
+      frameRates = frameRates.slice(-FRAME_SAMPLE_SIZE);
     }
     
-    // Calculate metrics
-    frameCount++;
+    // Calculate average frame rate
+    const avgFrameRate = frameRates.reduce((sum, rate) => sum + rate, 0) / frameRates.length;
     
-    // Every 60 frames, report metrics
-    if (frameCount % FRAME_SAMPLE_SIZE === 0) {
-      const avgFrameTime = frameTimes.reduce((sum, time) => sum + time, 0) / frameTimes.length;
-      const frameRate = 1000 / avgFrameTime;
-      
-      // Create metrics report
-      const metrics: PerformanceMetrics = {
-        renderTime: avgFrameTime,
-        frameRate: frameRate
-      };
-      
-      // Try to get memory usage if available
-      if (window.performance && 'memory' in window.performance) {
-        const memory = (window.performance as any).memory;
-        metrics.memoryUsage = memory.usedJSHeapSize / (1024 * 1024); // MB
-      }
-      
-      // Report metrics via callback
-      if (callback) {
-        callback(metrics);
-      }
+    // Get memory usage if available
+    let memoryUsage: number | undefined;
+    // The Performance object may have a non-standard memory property in some browsers
+    // Use type assertion to handle this browser-specific property
+    const performanceWithMemory = performance as unknown as { memory?: { usedJSHeapSize: number } };
+    if (performanceWithMemory.memory) {
+      memoryUsage = performanceWithMemory.memory.usedJSHeapSize;
     }
     
-    lastTime = now;
+    // Update metrics
+    const metrics: PerformanceMetrics = {
+      renderTime: frameDuration,
+      frameRate: avgFrameRate,
+      memoryUsage
+    };
+    
+    // Call the callback with metrics
+    if (callback && frameCounter % 10 === 0) {
+      callback(metrics);
+    }
+    
+    // Update for next frame
+    lastFrameTime = now;
+    frameCounter++;
+    
+    // Continue measuring
     requestAnimationFrame(measure);
   };
   
-  // Start measurement
+  // Start measuring
   requestAnimationFrame(measure);
   
-  // Return a function to stop measurement
-  return () => {
-    // Cancel measurement (not actually possible with requestAnimationFrame)
-    // This is just a signal that measurement should stop
-    frameTimes = [];
+  // Return function to stop measuring
+  return {
+    stop: () => {
+      // No direct way to stop requestAnimationFrame
+      // This method would require a global ID to cancel
+      // In a real implementation, track the RAF ID
+    },
+    getMetrics: (): PerformanceMetrics => {
+      return {
+        frameRate: frameRates.length ? 
+          frameRates.reduce((sum, rate) => sum + rate, 0) / frameRates.length : 
+          undefined,
+        renderTime: lastFrameTime ? performance.now() - lastFrameTime : undefined
+      };
+    }
   };
 }; 

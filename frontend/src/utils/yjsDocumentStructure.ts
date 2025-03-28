@@ -9,26 +9,42 @@
 import * as Y from 'yjs';
 import { Node, Edge } from 'reactflow';
 
-// Type definitions for Yjs shared types
-export interface YjsNode extends Y.Map<any> {
-  get(key: 'id'): string;
-  get(key: 'position'): Y.Map<number>;
-  get(key: 'data'): Y.Map<any>;
-  get(key: string): any;
+// Define more specific types for node data and edge data
+interface NodeData {
+  title?: string;
+  description?: string;
+  model?: string;
+  flavor?: string;
+  nodeId?: string | number;
+  [key: string]: unknown;
 }
 
-export interface YjsEdge extends Y.Map<any> {
+interface EdgeData {
+  label?: string;
+  animated?: boolean;
+  [key: string]: unknown;
+}
+
+// Type definitions for Yjs shared types
+export interface YjsNode extends Y.Map<unknown> {
+  get(key: 'id'): string;
+  get(key: 'position'): Y.Map<number>;
+  get(key: 'data'): Y.Map<unknown>;
+  get(key: string): unknown;
+}
+
+export interface YjsEdge extends Y.Map<unknown> {
   get(key: 'id'): string;
   get(key: 'source'): string;
   get(key: 'target'): string;
-  get(key: 'data'): Y.Map<any>;
-  get(key: string): any;
+  get(key: 'data'): Y.Map<unknown>;
+  get(key: string): unknown;
 }
 
 export interface YjsSharedTypes {
-  nodes: Y.Map<any>;
-  edges: Y.Map<any>;
-  metadata: Y.Map<any>;
+  nodes: Y.Map<YjsNode>;
+  edges: Y.Map<YjsEdge>;
+  metadata: Y.Map<unknown>;
 }
 
 /**
@@ -65,8 +81,8 @@ export function initializeDocument(doc: Y.Doc): Y.Doc {
  */
 export function getSharedTypes(doc: Y.Doc): YjsSharedTypes {
   // Get or create shared data structures
-  const nodes = doc.getMap('nodes');
-  const edges = doc.getMap('edges');
+  const nodes = doc.getMap('nodes') as Y.Map<YjsNode>;
+  const edges = doc.getMap('edges') as Y.Map<YjsEdge>;
   const metadata = doc.getMap('metadata');
 
   return { nodes, edges, metadata };
@@ -83,24 +99,24 @@ export function updateNode(doc: Y.Doc, nodeId: string, node: Node): void {
   const nodes = doc.getMap('nodes');
   
   // Create or get existing node
-  let nodeMap: Y.Map<any>;
+  let nodeMap: Y.Map<unknown>;
   if (!nodes.has(nodeId)) {
     nodeMap = new Y.Map();
     nodes.set(nodeId, nodeMap);
   } else {
-    nodeMap = nodes.get(nodeId) as Y.Map<any>;
+    nodeMap = nodes.get(nodeId) as Y.Map<unknown>;
   }
 
   // Set node ID
   nodeMap.set('id', nodeId);
   
   // Create or update position
-  let positionMap: Y.Map<any>;
+  let positionMap: Y.Map<number>;
   if (!nodeMap.has('position')) {
     positionMap = new Y.Map();
     nodeMap.set('position', positionMap);
   } else {
-    positionMap = nodeMap.get('position') as Y.Map<any>;
+    positionMap = nodeMap.get('position') as Y.Map<number>;
   }
   
   // Update position values
@@ -108,17 +124,17 @@ export function updateNode(doc: Y.Doc, nodeId: string, node: Node): void {
   positionMap.set('y', node.position.y);
   
   // Create or update data
-  let dataMap: Y.Map<any>;
+  let dataMap: Y.Map<unknown>;
   if (!nodeMap.has('data')) {
     dataMap = new Y.Map();
     nodeMap.set('data', dataMap);
   } else {
-    dataMap = nodeMap.get('data') as Y.Map<any>;
+    dataMap = nodeMap.get('data') as Y.Map<unknown>;
   }
   
   // Update data values
   if (node.data) {
-    Object.entries(node.data).forEach(([key, value]) => {
+    Object.entries(node.data as NodeData).forEach(([key, value]) => {
       dataMap.set(key, value);
     });
   }
@@ -135,12 +151,12 @@ export function updateEdge(doc: Y.Doc, edgeId: string, edge: Edge): void {
   const edges = doc.getMap('edges');
   
   // Create or get existing edge
-  let edgeMap: Y.Map<any>;
+  let edgeMap: Y.Map<unknown>;
   if (!edges.has(edgeId)) {
     edgeMap = new Y.Map();
     edges.set(edgeId, edgeMap);
   } else {
-    edgeMap = edges.get(edgeId) as Y.Map<any>;
+    edgeMap = edges.get(edgeId) as Y.Map<unknown>;
   }
 
   // Set basic edge properties
@@ -155,16 +171,16 @@ export function updateEdge(doc: Y.Doc, edgeId: string, edge: Edge): void {
   
   // Create or update data
   if (edge.data) {
-    let dataMap: Y.Map<any>;
+    let dataMap: Y.Map<unknown>;
     if (!edgeMap.has('data')) {
       dataMap = new Y.Map();
       edgeMap.set('data', dataMap);
     } else {
-      dataMap = edgeMap.get('data') as Y.Map<any>;
+      dataMap = edgeMap.get('data') as Y.Map<unknown>;
     }
     
     // Update data values
-    Object.entries(edge.data).forEach(([key, value]) => {
+    Object.entries(edge.data as EdgeData).forEach(([key, value]) => {
       dataMap.set(key, value);
     });
   }
@@ -176,7 +192,7 @@ export function updateEdge(doc: Y.Doc, edgeId: string, edge: Edge): void {
  * @param doc - The Yjs document
  * @param metadataUpdate - Object containing metadata updates
  */
-export function updateMetadata(doc: Y.Doc, metadataUpdate: Record<string, any>): void {
+export function updateMetadata(doc: Y.Doc, metadataUpdate: Record<string, unknown>): void {
   const metadata = doc.getMap('metadata');
   
   // Update metadata fields

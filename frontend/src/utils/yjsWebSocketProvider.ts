@@ -15,6 +15,34 @@
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 
+// Define interfaces for message handling
+interface CustomMessage {
+  type: string;
+  data: unknown;
+  from: string | number;
+}
+
+interface WebSocketMessage {
+  type: string;
+  data: unknown;
+}
+
+// Define parameter type for WebsocketProvider
+interface WebSocketParams {
+  [key: string]: string;
+}
+
+// Enhanced WebsocketProvider type with additional methods that aren't in the public types
+interface ExtendedWebsocketProvider {
+  disconnect(): void;
+  connect(): void;
+  awareness: WebsocketProvider['awareness'];
+  broadcastMessage: (messageType: string, message: CustomMessage) => void;
+  wsconnected: boolean;
+  on(event: 'message', callback: (message: WebSocketMessage) => void): void;
+  on(event: string, callback: (data: unknown) => void): void;
+}
+
 // Keep track of the active provider
 let activeProvider: WebsocketProvider | null = null;
 
@@ -22,7 +50,7 @@ let activeProvider: WebsocketProvider | null = null;
 let connectionStatus: string = 'disconnected';
 
 // Authentication parameters
-let authParams: Record<string, any> = {};
+let authParams: WebSocketParams = {};
 
 // Reconnection settings
 let backoffTime: number = 1000; // Initial backoff time in ms
@@ -53,7 +81,7 @@ export function setupYjsWebSocketProvider(
   doc: Y.Doc,
   url: string,
   roomName: string,
-  params: Record<string, any> = {},
+  params: WebSocketParams = {},
   options: ConnectionOptions = {}
 ): WebsocketProvider {
   // Clean up any existing provider
@@ -107,7 +135,7 @@ export function getConnectionStatus(): string {
  * 
  * @returns Authentication parameters object
  */
-export function getAuthParams(): Record<string, any> {
+export function getAuthParams(): WebSocketParams {
   return { ...authParams };
 }
 
@@ -150,7 +178,7 @@ export function disconnect(): void {
  * @param messageType Message type identifier
  * @param messageData Message data payload
  */
-export function broadcastMessage(messageType: string, messageData: any): void {
+export function broadcastMessage(messageType: string, messageData: unknown): void {
   if (!activeProvider) {
     console.warn('No active WebSocket provider to broadcast message');
     return;
@@ -164,8 +192,8 @@ export function broadcastMessage(messageType: string, messageData: any): void {
     from: activeProvider.awareness.getLocalState()?.clientID || 'unknown'
   };
   
-  // We need to use any here because broadcastMessage is not in the public types
-  (activeProvider as any).broadcastMessage(messageType, customMessage);
+  // We need to use a cast here because broadcastMessage is not in the public types
+  (activeProvider as unknown as ExtendedWebsocketProvider).broadcastMessage(messageType, customMessage);
 }
 
 /**
@@ -174,18 +202,21 @@ export function broadcastMessage(messageType: string, messageData: any): void {
  * @param messageType Message type to listen for
  * @param handler Handler function
  */
-export function onMessage(messageType: string, handler: (data: any) => void): void {
+export function onMessage(messageType: string, handler: (data: unknown) => void): void {
   if (!activeProvider) {
     console.warn('No active WebSocket provider to register message handler');
     return;
   }
   
-  // We need to use any here because 'message' event is not in the public types
-  (activeProvider as any).on('message', (msg: { type: string, data: any }) => {
+  // We need to use a cast here because 'message' event is not in the public types
+  // We create a wrapper function to handle the message typing
+  const messageHandler = (msg: WebSocketMessage) => {
     if (msg.type === messageType) {
       handler(msg.data);
     }
-  });
+  };
+  
+  (activeProvider as unknown as ExtendedWebsocketProvider).on('message', messageHandler);
 }
 
 /**
@@ -196,7 +227,7 @@ export function onMessage(messageType: string, handler: (data: any) => void): vo
 export function isConnected(): boolean {
   if (!activeProvider) return false;
   
-  return (activeProvider as any).wsconnected === true;
+  return (activeProvider as unknown as ExtendedWebsocketProvider).wsconnected === true;
 }
 
 /**
