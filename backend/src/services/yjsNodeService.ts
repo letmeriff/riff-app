@@ -2,6 +2,24 @@ import * as Y from 'yjs';
 import { supabase } from '../config/supabase';
 import { getYjsDocument, storeYjsUpdate, createDocumentSnapshot } from './yjsService';
 
+// Define interfaces for node data
+interface _NodePosition {
+  x: number;
+  y: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+interface NodePositionResult {
+  success: boolean;
+  data?: {
+    nodeId: string;
+    position: { x: number; y: number };
+    updatedAt: string;
+    updatedBy: string;
+  };
+}
+
 /**
  * Apply a node position update using Yjs instead of custom CRDT
  * @param documentId The canvas document ID
@@ -15,7 +33,7 @@ export const updateNodePositionYjs = async (
   nodeId: string,
   position: { x: number; y: number },
   userId: string
-): Promise<{ success: boolean; data?: any }> => {
+): Promise<NodePositionResult> => {
   try {
     // Validate inputs
     if (!documentId || !nodeId || !position || !userId) {
@@ -47,9 +65,9 @@ export const updateNodePositionYjs = async (
     const nodes = ydoc.getMap('nodes');
     
     // Get or create node in Yjs document
-    let nodeMap: Y.Map<any>;
+    let nodeMap: Y.Map<unknown>;
     if (nodes.has(nodeId)) {
-      nodeMap = nodes.get(nodeId) as Y.Map<any>;
+      nodeMap = nodes.get(nodeId) as Y.Map<unknown>;
     } else {
       // Create a new node entry if it doesn't exist
       nodeMap = new Y.Map();
@@ -57,9 +75,9 @@ export const updateNodePositionYjs = async (
     }
     
     // Get or create position data
-    let positionMap: Y.Map<any>;
+    let positionMap: Y.Map<unknown>;
     if (nodeMap.has('position')) {
-      positionMap = nodeMap.get('position') as Y.Map<any>;
+      positionMap = nodeMap.get('position') as Y.Map<unknown>;
     } else {
       positionMap = new Y.Map();
       nodeMap.set('position', positionMap);
@@ -87,7 +105,7 @@ export const updateNodePositionYjs = async (
     
     // Also update the traditional database for backward compatibility
     // This allows existing code to still work during the transition
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('chat_nodes')
       .update({
         position_x: validX,
@@ -141,14 +159,14 @@ export const getNodePositionYjs = async (
     if (!nodes.has(nodeId)) return null;
     
     // Get node position
-    const nodeMap = nodes.get(nodeId) as Y.Map<any>;
+    const nodeMap = nodes.get(nodeId) as Y.Map<unknown>;
     if (!nodeMap.has('position')) return null;
     
-    const positionMap = nodeMap.get('position') as Y.Map<any>;
+    const positionMap = nodeMap.get('position') as Y.Map<unknown>;
     
     return {
-      x: positionMap.get('x') || 0,
-      y: positionMap.get('y') || 0
+      x: (positionMap.get('x') as number) || 0,
+      y: (positionMap.get('y') as number) || 0
     };
   } catch (error) {
     console.error(`Error getting node position from Yjs:`, error);
