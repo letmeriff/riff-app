@@ -37,7 +37,13 @@ CREATE POLICY chat_attachments_insert ON chat_attachments
     )
   );
 
--- Allow all authenticated users to read attachments
+-- Allow users to read attachments for nodes they own or collaborate on
 CREATE POLICY chat_attachments_read ON chat_attachments
   FOR SELECT
-  USING (auth.role() = 'authenticated'); 
+  USING (
+    auth.role() = 'authenticated'
+    AND node_id IN (
+      SELECT node_id FROM chat_nodes WHERE owner_id = auth.uid()
+      OR node_id IN (SELECT node_id FROM collaborators WHERE user_id = auth.uid())
+    )
+  ); 
