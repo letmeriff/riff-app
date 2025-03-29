@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './styles/global.css'; // Import global styles
+import './styles/components.css';
 import App from './App';
 
 const root = ReactDOM.createRoot(
@@ -10,4 +12,4 @@ root.render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
-); 
+);

@@ -1,60 +1,216 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, Suspense, ErrorInfo } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SocketProvider } from './contexts/SocketContext';
+import { YjsProvider } from './contexts/YjsContext';
+import { NetworkProvider } from './contexts/NetworkContext';
 import Login from './components/Login';
 import Signup from './components/Signup';
+// Import the Canvas Page component
+import { CanvasPage } from './components/Canvas';
+import ChatUI from './components/ChatUI';
+import SettingsModal from './components/SettingsModal';
 import { supabase } from './services/supabase';
 import './styles/auth.css';
 import './styles/app.css';
+import ConnectionStatus from './components/ConnectionStatus';
+import { isYjsEnabled } from './services/positionAdapter';
 
-interface ChatNode {
-  node_id: number;
-  title: string;
-  model?: string;
-  flavor?: string;
-  created_at: string;
-}
+// Get the feature flag value once on load
+const USE_YJS = isYjsEnabled();
+
+// Error fallback component for Canvas
+const CanvasErrorFallback = ({ error, resetErrorBoundary }: { error: Error, resetErrorBoundary: () => void }) => (
+  <div style={{ 
+    padding: '20px', 
+    backgroundColor: '#f8d7da', 
+    color: '#721c24',
+    border: '1px solid #f5c6cb',
+    borderRadius: '4px',
+    margin: '20px',
+    textAlign: 'center'
+  }}>
+    <h3>Something went wrong with the Canvas</h3>
+    <p>{error.message}</p>
+    <button 
+      onClick={resetErrorBoundary}
+      style={{
+        padding: '8px 16px',
+        backgroundColor: '#dc3545',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        marginTop: '10px'
+      }}
+    >
+      Try Again
+    </button>
+  </div>
+);
+
+// Loading indicator for suspense
+const LoadingIndicator = () => (
+  <div style={{ 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    height: '100%',
+    flexDirection: 'column'
+  }}>
+    <div style={{ 
+      width: '40px', 
+      height: '40px', 
+      border: '4px solid #f3f3f3',
+      borderTop: '4px solid #3498db',
+      borderRadius: '50%',
+      animation: 'spin 1s linear infinite',
+    }} />
+    <p style={{ marginTop: '10px' }}>Loading Canvas...</p>
+    <style>{`
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `}</style>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const { user, session, signOut } = useAuth();
-  const [nodes, setNodes] = useState<ChatNode[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeTitle, setSelectedNodeTitle] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
+  const [canvasId] = useState<string>('default-canvas');
+  const [, setCanvasError] = useState<Error | null>(null);
 
+  const handleNodeSelect = (nodeId: string | null, nodeTitle: string | null) => {
+    setSelectedNodeId(nodeId);
+    setSelectedNodeTitle(nodeTitle);
+  };
+
+  const handleOpenSettings = () => {
+    setIsSettingsOpen(true);
+  };
+
+  // Reset canvas error when caught by error boundary
+  const handleCanvasErrorReset = () => {
+    setCanvasError(null);
+    console.log('Canvas error boundary reset');
+  };
+  
+  // Log canvas errors if detailed error reporting is enabled
+  const handleCanvasError = (error: Error) => {
+    setCanvasError(error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Canvas Error caught by ErrorBoundary:', error);
+    }
+  };
+
+  // Listen for custom event when a node is created via branching
   useEffect(() => {
-    if (user) {
-      fetchNodes();
-    }
-  }, [user]);
+    const handleSelectNodeEvent = (event: CustomEvent) => {
+      const { nodeId } = event.detail;
+      console.log('Custom event: select-node received with nodeId:', nodeId);
+      
+      setSelectedNodeId(nodeId);
+      
+      // Fetch the node title from Supabase
+      const fetchNodeTitle = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('chat_nodes')
+            .select('title')
+            .eq('node_id', parseInt(nodeId))
+            .single();
+          
+          if (error) {
+            console.error('Error fetching node title:', error);
+            return;
+          }
+          
+          setSelectedNodeTitle(data.title);
+        } catch (error) {
+          console.error('Error in fetchNodeTitle:', error);
+        }
+      };
+      
+      fetchNodeTitle();
+    };
 
-  const fetchNodes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('chat_nodes')
-        .select('*')
-        .order('created_at', { ascending: false });
+    // Add event listener
+    window.addEventListener('select-node', handleSelectNodeEvent as EventListener);
+    
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('select-node', handleSelectNodeEvent as EventListener);
+    };
+  }, []);
 
-      if (error) throw error;
-      setNodes(data || []);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching nodes:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch nodes');
-    }
-  };
+  // Listen for node updates to keep title in sync
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    
+    const channel = supabase
+      .channel('chat_nodes_updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_nodes',
+          filter: `node_id=eq.${selectedNodeId}`,
+        },
+        (payload) => {
+          if (payload.new && payload.new.title) {
+            setSelectedNodeTitle(payload.new.title);
+          }
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [selectedNodeId]);
 
-  const createTestNode = async () => {
-    if (!user) return;
-    try {
-      const { error } = await supabase
-        .from('chat_nodes')
-        .insert({ title: 'Test Node', user_id: user.id });
+  // Check if user has any API keys on login
+  useEffect(() => {
+    if (!user || hasCheckedApiKeys) return;
 
-      if (error) throw error;
-      await fetchNodes(); // Refresh the list
-    } catch (err) {
-      console.error('Error creating node:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create node');
-    }
-  };
+    const checkApiKeys = async () => {
+      try {
+        // Get the current session token using Supabase's current method
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        
+        if (!token) return;
+
+        const response = await fetch('http://localhost:3001/api/models', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          console.error('Failed to fetch models');
+          return;
+        }
+
+        const models = await response.json();
+        if (models.length === 0) {
+          // Open the settings modal if no API keys are found
+          setIsSettingsOpen(true);
+        }
+        setHasCheckedApiKeys(true);
+      } catch (error) {
+        console.error('Error checking API keys:', error);
+      }
+    };
+
+    checkApiKeys();
+  }, [user, hasCheckedApiKeys]);
 
   if (!user) {
     return (
@@ -68,43 +224,100 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return (
-    <div className="app-container">
-      <header>
-        <h1>Welcome to RIFF</h1>
-        <div className="user-info">
-          <span>Logged in as: {user.email}</span>
-          <button onClick={signOut}>Logout</button>
-        </div>
-      </header>
+  // Update the window property typing
+  interface CustomWindow extends Window {
+    __USE_YJS: boolean;
+  }
 
-      <main>
-        <div className="actions">
-          <button onClick={createTestNode}>Create Test Node</button>
-        </div>
+  // Set Yjs feature flag on window to allow non-React code to check
+  (window as unknown as CustomWindow).__USE_YJS = USE_YJS;
 
-        {error && <div className="error-message">{error}</div>}
+  // Prepare the content
+  const content = (
+    <div style={{ 
+      display: 'flex', 
+      height: '100vh', 
+      width: '100vw', 
+      overflow: 'hidden',
+      position: 'fixed', 
+      top: 0,
+      left: 0
+    }}>
+      {/* Canvas (61.8%) - Golden Ratio */}
+      <div style={{ width: '61.8%', height: '100%', overflow: 'hidden' }}>
+        <ErrorBoundary 
+          FallbackComponent={CanvasErrorFallback}
+          onReset={handleCanvasErrorReset}
+          onError={(error: Error, _info: ErrorInfo) => {
+            handleCanvasError(error);
+          }}
+        >
+          <Suspense fallback={<LoadingIndicator />}>
+            <CanvasPage onNodeSelect={handleNodeSelect} onOpenSettings={handleOpenSettings} />
+          </Suspense>
+        </ErrorBoundary>
+      </div>
 
-        <div className="nodes-list">
-          <h2>Your Chat Nodes</h2>
-          {nodes.length === 0 ? (
-            <p>No chat nodes found. Create one to get started!</p>
-          ) : (
-            <ul>
-              {nodes.map((node) => (
-                <li key={node.node_id}>
-                  <strong>{node.title}</strong>
-                  {node.model && <span> - Model: {node.model}</span>}
-                  {node.flavor && <span> - Flavor: {node.flavor}</span>}
-                  <br />
-                  <small>Created: {new Date(node.created_at).toLocaleString()}</small>
-                </li>
-              ))}
-            </ul>
-          )}
+      {/* Chat UI (38.2%) */}
+      <div style={{ width: '38.2%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ChatUI 
+            nodeId={selectedNodeId} 
+            nodeTitle={selectedNodeTitle} 
+            userId={user.id} 
+          />
         </div>
-      </main>
+        <div style={{ 
+          padding: '10px', 
+          background: '#fff', 
+          borderTop: '1px solid #ddd', 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          flexShrink: 0
+        }}>
+          <ConnectionStatus />
+          <div>
+            <button 
+              onClick={handleOpenSettings}
+              style={{ padding: '5px 10px', marginRight: '10px' }}
+            >
+              Settings
+            </button>
+            <button 
+              onClick={signOut} 
+              style={{ padding: '5px 10px' }}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+  );
+
+  // Add settings modal outside of the providers to avoid remounting
+  const settingsModal = (
+    <SettingsModal 
+      isOpen={isSettingsOpen} 
+      onClose={() => setIsSettingsOpen(false)} 
+    />
+  );
+
+  // Return with proper context providers
+  return (
+    <SocketProvider token={session?.access_token || null}>
+      <YjsProvider canvasId={canvasId} websocketUrl="ws://localhost:3001/yjs">
+        <NetworkProvider
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          wsProvider={(window as any).yjsWebsocketProvider || null}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          doc={(window as any).yjsDoc || null}
+        >
+          {content}
+        </NetworkProvider>
+      </YjsProvider>
+      {settingsModal}
+    </SocketProvider>
   );
 };
 
@@ -116,4 +329,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App; // Testing staging deployment
+export default App;

@@ -5,6 +5,7 @@ node_modules/
 
 # Testing
 /coverage
+/frontend/coverage/
 
 # Production
 /frontend/build
@@ -33,3 +34,5 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db 
+
+# Development Docs

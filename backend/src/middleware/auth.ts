@@ -1,24 +1,30 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../config/supabase';
+import { User } from '@supabase/supabase-js';
 
 // Extend Express Request type to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
+declare module 'express' {
+  interface Request {
+    user?: User;
   }
 }
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+export const authMiddleware = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const token = req.headers.authorization?.split('Bearer ')[1];
-    
+
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
 
     if (error || !user) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -31,4 +37,4 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     console.error('Auth middleware error:', err);
     return res.status(401).json({ error: 'Authentication failed' });
   }
-}; 
+};

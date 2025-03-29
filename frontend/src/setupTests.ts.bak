@@ -1,0 +1,160 @@
+// jest-dom adds custom jest matchers for asserting on DOM nodes.
+// allows you to do things like:
+// expect(element).toHaveTextContent(/react/i)
+// learn more: https://github.com/testing-library/jest-dom
+import '@testing-library/jest-dom';
+
+// Import mocks
+import './test-utils/mocks/reactflow.mock.tsx';
+import './test-utils/mocks/yjs.mock.ts';
+
+// Mock global fetch if needed
+global.fetch = jest.fn(() =>
+  Promise.resolve({
+    json: () => Promise.resolve({}),
+    ok: true,
+  } as unknown as Response)
+);
+
+// Reset mocks between tests
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+// Suppress React 18 console errors from tests
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (
+    typeof args[0] === 'string' &&
+    (args[0].includes('ReactDOM.render is no longer supported') ||
+      args[0].includes('act(...) is not supported in production builds'))
+  ) {
+    return;
+  }
+  originalConsoleError(...args);
+};
+
+// Set up React Flow mock
+jest.mock('reactflow', () => {
+  const originalModule = jest.requireActual('reactflow');
+  return {
+    __esModule: true,
+    ...originalModule,
+    // Mock the React Flow component with a simple div that renders children
+    default: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="react-flow">{children}</div>
+    ),
+    // Provide mock implementations of hooks and utilities
+    useReactFlow: jest.fn().mockReturnValue({
+      getNodes: jest.fn().mockReturnValue([]),
+      getEdges: jest.fn().mockReturnValue([]),
+      setNodes: jest.fn(),
+      setEdges: jest.fn(),
+      getViewport: jest.fn().mockReturnValue({ x: 0, y: 0, zoom: 1 }),
+      setViewport: jest.fn(),
+      fitView: jest.fn(),
+      getIntersectingNodes: jest.fn().mockReturnValue([]),
+      screenToFlowPosition: jest.fn().mockReturnValue({ x: 0, y: 0 }),
+    }),
+    // Mock other necessary components and hooks
+    Background: () => <div data-testid="react-flow-background" />,
+    Controls: () => <div data-testid="react-flow-controls" />,
+    MiniMap: () => <div data-testid="react-flow-minimap" />,
+    Handle: () => <div data-testid="react-flow-handle" />,
+    Panel: ({ children, position }: { children: React.ReactNode; position: string }) => (
+      <div data-testid={`react-flow-panel-${position}`}>{children}</div>
+    ),
+  };
+});
+
+// Mock Yjs and related ES modules
+jest.mock('yjs', () => {
+  // Create a more robust mock document
+  const createMockMap = () => {
+    const mapData = new Map();
+    return {
+      set: jest.fn((key, value) => mapData.set(key, value)),
+      get: jest.fn((key) => mapData.get(key)),
+      delete: jest.fn((key) => mapData.delete(key)),
+      has: jest.fn((key) => mapData.has(key)),
+      forEach: jest.fn((callback) => mapData.forEach(callback)),
+      observe: jest.fn((callback) => ({ unobserve: jest.fn() })),
+      unobserve: jest.fn(),
+      toJSON: jest.fn(() => {
+        const obj = {};
+        mapData.forEach((value, key) => {
+          obj[key] = value;
+        });
+        return obj;
+      }),
+    };
+  };
+
+  const createMockArray = () => {
+    const arrayData = [];
+    return {
+      push: jest.fn((value) => arrayData.push(value)),
+      delete: jest.fn((index) => arrayData.splice(index, 1)),
+      get: jest.fn((index) => arrayData[index]),
+      length: jest.fn(() => arrayData.length),
+      toArray: jest.fn(() => [...arrayData]),
+      observe: jest.fn(() => ({ unobserve: jest.fn() })),
+      unobserve: jest.fn(),
+    };
+  };
+
+  const mockMap = createMockMap();
+  const mockArray = createMockArray();
+
+  const mockDoc = {
+    on: jest.fn(),
+    off: jest.fn(),
+    clientID: 1,
+    getMap: jest.fn(() => mockMap),
+    getArray: jest.fn(() => mockArray),
+    getText: jest.fn(),
+    transact: jest.fn((fn) => fn()),
+    destroy: jest.fn(),
+    encodeStateAsUpdate: jest.fn().mockReturnValue(new Uint8Array([1, 2, 3])),
+  };
+  
+  return {
+    Doc: jest.fn(() => mockDoc),
+    Map: jest.fn(() => createMockMap()),
+    Array: jest.fn(() => createMockArray()),
+    applyUpdate: jest.fn(),
+    encodeStateAsUpdate: jest.fn(() => new Uint8Array([1, 2, 3])),
+  };
+});
+
+jest.mock('y-websocket', () => {
+  const mockAwareness = {
+    setLocalState: jest.fn(),
+    getLocalState: jest.fn(() => ({ user: { name: 'Test User', id: 'user1' }, cursor: { x: 0, y: 0 } })),
+    on: jest.fn(),
+    off: jest.fn(),
+    getStates: jest.fn(() => new Map([
+      [1, { user: { name: 'Test User', id: 'user1' }, cursor: { x: 0, y: 0 } }]
+    ])),
+  };
+  
+  return {
+    WebsocketProvider: jest.fn(() => ({
+      awareness: mockAwareness,
+      on: jest.fn(),
+      off: jest.fn(),
+      wsconnected: true,
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+    })),
+  };
+});
+
+jest.mock('y-indexeddb', () => ({
+  IndexeddbPersistence: jest.fn(() => ({
+    on: jest.fn(),
+    off: jest.fn(),
+    destroy: jest.fn(),
+    whenSynced: jest.fn().mockResolvedValue(true),
+  })),
+}));

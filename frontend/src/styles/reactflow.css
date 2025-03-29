@@ -1,0 +1,41 @@
+/* Custom styles for ReactFlow components */
+
+/* Fix minimap container issues */
+.react-flow__minimap {
+  overflow: hidden !important;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  width: 160px !important;
+  height: 120px !important;
+  background-color: #f5f5f6 !important;
+}
+
+/* Fix minimap mask */
+.react-flow__minimap-mask {
+  fill: rgba(240, 240, 240, 0.6);
+}
+
+/* Better minimap node styling */
+.react-flow__minimap-node {
+  fill: #fff;
+  stroke: #555;
+  stroke-width: 1;
+}
+
+/* Fix controls */
+.react-flow__controls {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 5px;
+}
+
+/* Base container styling */
+.react-flow {
+  background-color: #f5f5f6;
+}
+
+/* Fix the minimap SVG to prevent overflow */
+.react-flow__minimap svg {
+  height: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+} 

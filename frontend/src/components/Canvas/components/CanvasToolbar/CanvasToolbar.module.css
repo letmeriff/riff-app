@@ -1,0 +1,168 @@
+.toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 8px;
+  gap: 8px;
+  position: absolute;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+.toolbar.compact {
+  width: 50px;
+  overflow: hidden;
+}
+
+.toolbar.offline {
+  border: 2px solid #ff9800;
+}
+
+.buttonGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  border: none;
+  background-color: #f5f5f5;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+.button:hover {
+  background-color: #e0e0e0;
+}
+
+.button:disabled {
+  background-color: #f5f5f5;
+  color: #bdbdbd;
+  cursor: not-allowed;
+}
+
+.addNodeButton {
+  background-color: #4caf50;
+  color: white;
+}
+
+.addNodeButton:hover {
+  background-color: #43a047;
+}
+
+.addNodeButton:disabled {
+  background-color: #a5d6a7;
+}
+
+.layoutButton {
+  position: relative;
+}
+
+.layoutButton.open .layoutDropdown {
+  display: block;
+}
+
+.layoutDropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 180px;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 8px 0;
+  z-index: 11;
+}
+
+.menuItem {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.menuItem:hover {
+  background-color: #f5f5f5;
+}
+
+.separator {
+  width: 1px;
+  height: 24px;
+  background-color: #e0e0e0;
+  margin: 0 4px;
+}
+
+.compactToggle {
+  margin-left: auto;
+}
+
+.offlineIndicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  height: 24px;
+  background-color: #fff3e0;
+  color: #ff9800;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  margin-left: auto;
+}
+
+.buttonWithLabel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.buttonLabel {
+  font-size: 10px;
+  margin-top: 4px;
+  color: #666;
+}
+
+.dropdownMenu {
+  position: absolute;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  left: 48px;
+  top: 0;
+  min-width: 150px;
+  display: none;
+}
+
+.menuOpen .dropdownMenu {
+  display: block;
+}
+
+.menuSeparator {
+  height: 1px;
+  background-color: #eee;
+  margin: 4px 0;
+}
+
+.activeButton {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.activeButton:hover {
+  background-color: #bbdefb;
+} 

@@ -1,0 +1,337 @@
+---
+description: ALWAYS use these guidelines when implementing new components or modifying existing ones that interact with real-time messaging
+globs: 
+alwaysApply: false
+---
+# Type-Safe Messaging Architecture Patterns
+
+This document outlines the patterns and best practices for working with the type-safe messaging architecture in our application. Use these guidelines when implementing new components or modifying existing ones that interact with real-time messaging.
+
+## Core Concepts
+
+The messaging architecture is built on several key concepts that ensure type safety:
+
+1. **Centralized Type Definitions**: All message types are defined in `frontend/src/types/messaging.ts`
+2. **Type Guards**: Functions that validate payload types at runtime in `frontend/src/utils/typeGuards.ts`
+3. **Payload Validation**: A utility function that ensures payloads match their expected types
+4. **Type-Safe Hooks**: React hooks that handle network events with proper type checking
+5. **Safe ID Conversion**: Utilities for safely working with entity IDs that may be strings or numbers
+
+## Using the Type-Safe Architecture
+
+### 1. Import Required Types and Utilities
+
+```typescript
+// Import types
+import { 
+  NetworkPayload, 
+  MessageUpdatePayload, 
+  NodeId 
+} from '../types/messaging';
+
+// Import type guards and utilities
+import { 
+  isMessageUpdatePayload, 
+  parseNodeId, 
+  compareNodeIds 
+} from '../utils/typeGuards';
+
+// Import validation utility
+import { validatePayload } from '../services/networkService';
+
+// Import network context hooks
+import { 
+  useNetwork, 
+  useMessageUpdateEvent 
+} from '../contexts/NetworkContext';
+```
+
+### 2. Safe ID Handling
+
+When working with entity IDs (like node IDs) that may be represented as either strings or numbers:
+
+```typescript
+// Convert a string ID to a number safely
+const nodeId = parseNodeId(stringNodeId);
+if (nodeId === null) {
+  console.error('Invalid node ID:', stringNodeId);
+  return;
+}
+
+// Compare a numeric ID with a string ID
+if (compareNodeIds(numericNodeId, stringNodeId)) {
+  // IDs match
+}
+```
+
+### 3. Network Event Handling
+
+There are two recommended approaches for handling network events:
+
+#### Option 1: Using Type-Safe Hooks (Recommended for simple cases)
+
+```typescript
+import { useMessageUpdateEvent } from '../contexts/NetworkContext';
+
+function MyComponent() {
+  // Define a type-safe handler
+  const handleMessageUpdate = useCallback((payload: MessageUpdatePayload) => {
+    // The payload is already type-checked and validated
+    console.log('New message:', payload.new?.content);
+  }, []);
+
+  // Use the type-safe hook
+  const subscribeToMessages = useMessageUpdateEvent(handleMessageUpdate);
+  
+  useEffect(() => {
+    // Subscribe to events
+    const unsubscribe = subscribeToMessages();
+    
+    // Clean up
+    return () => {
+      unsubscribe();
+    };
+  }, [subscribeToMessages]);
+}
+```
+
+#### Option 2: Direct Network Adapter Subscription (For complex scenarios)
+
+```typescript
+import { useNetwork } from '../contexts/NetworkContext';
+import { validatePayload } from '../services/networkService';
+import { isMessageUpdatePayload } from '../utils/typeGuards';
+
+function MyComponent() {
+  const { networkAdapter } = useNetwork();
+  
+  useEffect(() => {
+    if (!networkAdapter) return;
+    
+    // Subscribe with validation
+    const unsubscribe = networkAdapter.subscribeToEvent('message-update', (payload) => {
+      const validPayload = validatePayload(payload, isMessageUpdatePayload);
+      if (validPayload) {
+        // Handle the validated payload
+        console.log('New message:', validPayload.new?.content);
+      }
+    });
+    
+    // Clean up
+    return () => {
+      unsubscribe();
+    };
+  }, [networkAdapter]);
+}
+```
+
+### 4. Sending Messages
+
+When sending messages, use the proper type interface:
+
+```typescript
+import { MessageUpdatePayload } from '../types/messaging';
+import { useNetwork } from '../contexts/NetworkContext';
+
+function MyComponent() {
+  const { sendMessage } = useNetwork();
+  
+  const sendChatMessage = (nodeId: number, content: string) => {
+    // Create a properly typed payload
+    const payload: MessageUpdatePayload = {
+      nodeId,
+      new: {
+        node_id: nodeId,
+        message_id: Date.now(),
+        content,
+        is_user: true,
+        timestamp: new Date().toISOString()
+      }
+    };
+    
+    // Send the message
+    sendMessage('message-update', payload);
+  };
+}
+```
+
+## Type Definitions
+
+### Core Types
+
+The key types you'll work with include:
+
+```typescript
+// Base network payload type
+export interface NetworkPayload {
+  [key: string]: unknown;
+}
+
+// Standard node ID type
+export type NodeId = number;
+
+// Base interface for entity IDs
+export interface EntityIds {
+  nodeId: NodeId;
+  messageId?: number | string;
+  attachmentId?: number | string;
+  userId?: string;
+}
+
+// Message payload
+export interface MessageUpdatePayload extends NetworkPayload, EntityIds {
+  new?: {
+    node_id: NodeId;
+    message_id: string | number;
+    content: string;
+    is_user: boolean;
+    timestamp: string;
+    [key: string]: unknown;
+  };
+}
+
+// Presence payload
+export interface PresenceUpdatePayload extends NetworkPayload, EntityIds {
+  presence: UserPresence[];
+}
+
+// Ownership payload
+export interface OwnershipUpdatePayload extends NetworkPayload, EntityIds {
+  ownerId: string;
+}
+```
+
+## Type Guards
+
+Use type guards to validate payloads at runtime:
+
+```typescript
+// Check if a payload is a message update
+if (isMessageUpdatePayload(payload)) {
+  // It's safe to access payload.new
+}
+
+// Check if a payload is a presence update
+if (isPresenceUpdatePayload(payload)) {
+  // It's safe to access payload.presence
+}
+```
+
+## Payload Validation
+
+Always validate payloads before using them:
+
+```typescript
+const validPayload = validatePayload(rawPayload, isMessageUpdatePayload);
+if (validPayload) {
+  // Safe to use the payload
+} else {
+  // Handle invalid payload
+  console.error('Invalid payload received');
+}
+```
+
+## Handling Both YJS and Standard Network Events
+
+For components that need to work with both YJS and standard network events:
+
+```typescript
+function MyComponent() {
+  const { ydoc, isFeatureEnabled } = useYjs();
+  const { networkAdapter } = useNetwork();
+  
+  // Handle YJS awareness updates
+  useEffect(() => {
+    if (!ydoc || !isFeatureEnabled) return;
+    
+    const awareness = (window as any).yjsWebsocketProvider?.awareness;
+    if (!awareness) return;
+    
+    const handleAwarenessChange = () => {
+      // Process awareness state
+    };
+    
+    awareness.on('change', handleAwarenessChange);
+    return () => {
+      awareness.off('change', handleAwarenessChange);
+    };
+  }, [ydoc, isFeatureEnabled]);
+  
+  // Handle standard network events
+  useEffect(() => {
+    if (isFeatureEnabled || !networkAdapter) return;
+    
+    const unsubscribe = networkAdapter.subscribeToEvent('event-name', (payload) => {
+      // Process standard network event
+    });
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [networkAdapter, isFeatureEnabled]);
+}
+```
+
+## Best Practices
+
+1. **Always use type interfaces** from `types/messaging.ts` for payloads
+2. **Always validate incoming payloads** using the appropriate type guards
+3. **Use safe ID conversion** to handle string vs. number IDs
+4. **Use type-safe hooks** when appropriate for simple event handling
+5. **Handle cleanup** by unsubscribing from events in useEffect cleanup functions
+6. **Support both YJS and standard modes** when implementing collaboration features
+7. **Add comprehensive tests** for new components that handle network events
+
+## Example Components
+
+For complete examples of components using the type-safe messaging architecture, refer to:
+
+- `ChatUI.tsx` - Comprehensive example with multiple event types
+- `NodeControls.tsx` - Example of handling node update and ownership events
+- `UserCursors.tsx` - Example of handling cursor position updates
+- `CollaborationStatus.tsx` - Example of displaying connection and user presence state
+- `YjsNodeControls.tsx` - Example of handling connection status updates
+- `EditIndicator.tsx` - Example of showing real-time editing state
+
+## Testing
+
+When testing components that use the messaging architecture:
+
+1. Mock the network adapter and event handlers
+2. Test type guards with both valid and invalid payloads
+3. Verify payload validation rejects invalid data
+4. Use the multi-user test harness for testing collaboration features
+
+```typescript
+// Example test for network event handling
+test('handles message updates correctly', async () => {
+  // Mock event subscription
+  mockSubscribeToEvent.mockImplementation((eventName, callback) => {
+    if (eventName === 'message-update') {
+      eventHandlers.add(callback);
+    }
+    return () => eventHandlers.delete(callback);
+  });
+  
+  // Render component
+  render(<MyComponent />);
+  
+  // Create a valid payload
+  const validPayload: MessageUpdatePayload = {
+    nodeId: 123,
+    new: {
+      node_id: 123,
+      message_id: 456,
+      content: 'Test message',
+      is_user: true,
+      timestamp: new Date().toISOString()
+    }
+  };
+  
+  // Trigger the event
+  eventHandlers.forEach(handler => handler(validPayload));
+  
+  // Verify the component updated correctly
+  expect(screen.getByText('Test message')).toBeInTheDocument();
+});
+``` 
