@@ -5,6 +5,7 @@
 This document provides a comprehensive guide for designing and implementing tests in a Test-Driven Development (TDD) workflow for the RIFF app. TDD involves writing tests before writing the code to implement the functionality, ensuring that the codebase is robust, maintainable, and aligned with requirements. The RIFF app is a collaborative idea exploration engine with a node-based canvas, AI chat instances, real-time collaboration via Yjs, and context management features. This document outlines the testing strategy, tools, and specific test cases for each major feature, ensuring thorough coverage across all development phases.
 
 ### Goals of TDD for RIFF
+
 - Ensure each feature meets its requirements before implementation.
 - Catch bugs early in the development cycle.
 - Facilitate refactoring by providing a safety net of tests.
@@ -16,14 +17,17 @@ This document provides a comprehensive guide for designing and implementing test
 ## 2. Testing Strategy
 
 ### 2.1 Testing Levels
+
 The TDD workflow for RIFF will include three levels of testing:
 
 1. **Unit Tests**:
+
    - Test individual functions, components, and services in isolation.
    - Focus on small, independent units of code (e.g., a function to pull chat history, a React component for a node).
    - Use mocking to isolate dependencies (e.g., mock Supabase database calls, mock LangChain responses, mock Yjs documents).
 
 2. **Integration Tests**:
+
    - Test interactions between components or services (e.g., API endpoints, Yjs shared documents, database operations).
    - Ensure that integrated components work together as expected (e.g., pulling context from one node to another).
 
@@ -32,24 +36,29 @@ The TDD workflow for RIFF will include three levels of testing:
    - Simulate real user interactions using a browser automation tool.
 
 ### 2.2 Testing Tools
+
 The following tools will be used for testing at each level:
 
 - **Unit Testing**:
+
   - **Jest**: Testing framework for JavaScript/TypeScript (backend and frontend).
   - **React Testing Library**: For testing React components (frontend).
   - **ts-mockito** or **Sinon.js**: For mocking dependencies (e.g., Supabase client, LangChain).
   - **y-protocols/testing**: For mocking Yjs documents and operations.
 
 - **Integration Testing**:
+
   - **Supertest**: For testing API endpoints (backend).
   - **y-websocket/mock**: For testing Yjs WebSocket provider.
   - **Jest**: For orchestrating integration tests.
 
 - **End-to-End Testing**:
+
   - **Playwright**: For browser-based E2E testing.
   - **Playwright Page Objects**: For organizing and structuring E2E tests.
 
 - **Test Utilities**:
+
   - **Supabase JavaScript Client**: For interacting with Supabase in integration tests.
   - **node-mocks-http**: For mocking HTTP requests in backend tests.
   - **msw** (Mock Service Worker): For mocking API responses in frontend tests.
@@ -59,13 +68,16 @@ The following tools will be used for testing at each level:
   - **GitHub Actions**: Run tests automatically on pull requests, merges, and deployments.
 
 ### 2.3 TDD Workflow
+
 For each feature or task in the development roadmap, follow these steps:
+
 1. **Write a failing test** (red): Define the expected behavior in a test case.
 2. **Write the minimal code to pass the test** (green): Implement just enough code to make the test pass.
 3. **Refactor**: Improve the code while ensuring all tests still pass.
 4. **Repeat**: Add more test cases to cover edge cases, errors, and additional requirements.
 
 ### 2.4 Test Coverage Goals
+
 - Aim for at least 80% test coverage for critical components (e.g., backend services, context management, collaboration logic).
 - Prioritize testing for user-facing features (e.g., chat UI, node interactions) and critical backend logic (e.g., context pulling, write permissions).
 - Use Jest's coverage reports to identify untested areas and improve coverage over time.
@@ -75,6 +87,7 @@ For each feature or task in the development roadmap, follow these steps:
 ## 3. Test Setup
 
 ### 3.1 Project Structure
+
 Organize tests within the monorepo to mirror the source code structure:
 
 ```
@@ -127,14 +140,18 @@ riff-app/
 This structure follows the current project organization, with tests colocated in `__tests__` directories adjacent to the code they test. End-to-end tests are stored in a dedicated `e2e` directory, and test utilities and fixtures are centralized in the `test` directory.
 
 ### 3.2 Setup Instructions
+
 1. **Install Dependencies**:
+
    - Frontend: `npm install --save-dev jest @testing-library/react @testing-library/jest-dom @testing-library/user-event ts-jest msw`.
    - Backend: `npm install --save-dev jest supertest ts-jest node-mocks-http`.
    - Yjs Testing: `npm install --save-dev y-protocols y-indexeddb y-websocket`
    - E2E: `npm install --save-dev @playwright/test`
 
 2. **Configure Jest**:
+
    - Add a `jest.config.js` file for both frontend and backend with TypeScript support:
+
      ```javascript
      // Frontend jest.config.js
      module.exports = {
@@ -144,12 +161,12 @@ This structure follows the current project organization, with tests colocated in
        moduleNameMapper: {
          // Add module name mappers for CSS, assets, etc.
          '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
-         '\\.(jpg|jpeg|png|gif|webp|svg)$': '<rootDir>/__mocks__/fileMock.js'
+         '\\.(jpg|jpeg|png|gif|webp|svg)$': '<rootDir>/__mocks__/fileMock.js',
        },
        transform: {
-         '^.+\\.(ts|tsx)$': 'ts-jest'
+         '^.+\\.(ts|tsx)$': 'ts-jest',
        },
-       testMatch: ['**/__tests__/**/*.test.(ts|tsx)']
+       testMatch: ['**/__tests__/**/*.test.(ts|tsx)'],
      };
 
      // Backend jest.config.js
@@ -157,18 +174,20 @@ This structure follows the current project organization, with tests colocated in
        preset: 'ts-jest',
        testEnvironment: 'node',
        transform: {
-         '^.+\\.(ts|tsx)$': 'ts-jest'
+         '^.+\\.(ts|tsx)$': 'ts-jest',
        },
-       testMatch: ['**/__tests__/**/*.test.ts']
+       testMatch: ['**/__tests__/**/*.test.ts'],
      };
      ```
 
 3. **Configure Playwright**:
+
    - Run `npx playwright install` to install browser binaries
    - Create a playwright.config.ts file:
+
      ```typescript
      import { PlaywrightTestConfig } from '@playwright/test';
-     
+
      const config: PlaywrightTestConfig = {
        testDir: './e2e',
        timeout: 30000,
@@ -178,50 +197,58 @@ This structure follows the current project organization, with tests colocated in
        use: {
          baseURL: 'http://localhost:3000',
          trace: 'on-first-retry',
-         screenshot: 'only-on-failure'
+         screenshot: 'only-on-failure',
        },
        projects: [
          {
            name: 'chromium',
-           use: { browserName: 'chromium' }
-         }
-       ]
+           use: { browserName: 'chromium' },
+         },
+       ],
      };
-     
+
      export default config;
      ```
 
 4. **Setup Yjs Testing Utilities**:
+
    - Create a `test-utils/yjs.ts` file for Yjs testing utilities:
+
      ```typescript
      import * as Y from 'yjs';
-     
+
      export const createTestDoc = () => {
        return new Y.Doc();
      };
-     
+
      export const syncDocs = (doc1: Y.Doc, doc2: Y.Doc) => {
        const update1 = Y.encodeStateAsUpdate(doc1);
        const update2 = Y.encodeStateAsUpdate(doc2);
        Y.applyUpdate(doc1, update2);
        Y.applyUpdate(doc2, update1);
      };
-     
+
      export const createTestDocWithContent = () => {
        const doc = new Y.Doc();
        const text = doc.getText('chat');
        text.insert(0, 'Hello, world!');
        const nodes = doc.getMap('nodes');
-       nodes.set('node1', { id: 'node1', type: 'chat', position: { x: 100, y: 100 } });
+       nodes.set('node1', {
+         id: 'node1',
+         type: 'chat',
+         position: { x: 100, y: 100 },
+       });
        return doc;
      };
      ```
 
 5. **Mock Supabase**:
+
    - Create a `mocks/supabase.ts` file to mock the Supabase client for unit and integration tests:
+
      ```typescript
      import { jest } from '@jest/globals';
-     
+
      export const mockSupabase = {
        from: jest.fn().mockReturnThis(),
        select: jest.fn().mockReturnThis(),
@@ -232,11 +259,11 @@ This structure follows the current project organization, with tests colocated in
        in: jest.fn().mockReturnThis(),
        single: jest.fn(),
        data: [],
-       error: null
+       error: null,
      };
-     
+
      export const resetMocks = () => {
-       Object.values(mockSupabase).forEach(fn => {
+       Object.values(mockSupabase).forEach((fn) => {
          if (typeof fn === 'function' && 'mockClear' in fn) {
            fn.mockClear();
          }
@@ -247,17 +274,21 @@ This structure follows the current project organization, with tests colocated in
      ```
 
 6. **Mock LangChain**:
+
    - Create a `mocks/langchain.ts` file to mock LangChain responses:
+
      ```typescript
      import { jest } from '@jest/globals';
-     
+
      export const mockOpenAI = {
-       invoke: jest.fn().mockResolvedValue({ text: "This is a mock AI response" }),
-       pipe: jest.fn()
+       invoke: jest
+         .fn()
+         .mockResolvedValue({ text: 'This is a mock AI response' }),
+       pipe: jest.fn(),
      };
-     
+
      export const mockChat = jest.fn().mockImplementation(() => mockOpenAI);
-     
+
      export const resetLangChainMocks = () => {
        mockOpenAI.invoke.mockClear();
        mockOpenAI.pipe.mockClear();
@@ -267,15 +298,16 @@ This structure follows the current project organization, with tests colocated in
 
 7. **Set Up CI/CD**:
    - Update GitHub Actions workflows to run Jest and Playwright tests:
+
      ```yaml
      # .github/workflows/test.yml
      name: Tests
      on:
        push:
-         branches: [ main ]
+         branches: [main]
        pull_request:
-         branches: [ main ]
-     
+         branches: [main]
+
      jobs:
        unit-tests:
          runs-on: ubuntu-latest
@@ -288,7 +320,7 @@ This structure follows the current project organization, with tests colocated in
            - run: npm ci
            - run: npm run test:unit
            - run: npm run test:coverage
-     
+
        e2e-tests:
          runs-on: ubuntu-latest
          steps:
@@ -314,7 +346,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.1 Phase 1: Project Setup, Supabase Deployment, Authentication, CI/CD
 
 #### Unit Tests
+
 - **Supabase Auth Service** (`server/services/AuthService.ts`):
+
   - Test `signUp`:
     - Should fail with invalid email format.
     - Should call Supabase Auth `signUp` with correct email and password.
@@ -334,6 +368,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return an empty list if the user has no nodes.
 
 #### Integration Tests
+
 - **Auth API Endpoints** (`server/routes/authRoutes.ts`):
   - Test `POST /signup`:
     - Should return 400 for invalid email.
@@ -345,6 +380,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return 200 on successful logout.
 
 #### E2E Tests
+
 - **Authentication Flow** (`e2e/auth.spec.ts`):
   - Test signup:
     - Visit the signup page, enter valid credentials, and verify redirection to the canvas.
@@ -358,13 +394,16 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.2 Phase 2: React Flow Canvas, Chat Node UI, Basic Chat UI
 
 #### Unit Tests
+
 - **ChatNode Component** (`app/components/Chat/ChatNode.tsx`):
+
   - Should render the node title correctly.
   - Should display the node ID.
   - Should dynamically resize based on content (mock React Flow's `useNodesState`).
   - Should not render user presence indicators if no users are present.
 
 - **ChatUI Component** (`app/components/Chat/ChatUI.tsx`):
+
   - Should render an empty message list when no messages exist.
   - Should display a message when added to the message list.
   - Should render placeholder buttons (e.g., "Attach," "Pull").
@@ -378,7 +417,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return an empty list if the node has no messages.
 
 #### Integration Tests
+
 - **Node Creation API** (`server/routes/nodeRoutes.ts`):
+
   - Test `POST /nodes`:
     - Should return 401 if the user is not authenticated.
     - Should return 201 and the node ID for an authenticated user.
@@ -390,6 +431,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return an empty list if the node has no messages.
 
 #### E2E Tests
+
 - **Canvas and Chat UI** (`e2e/canvas.spec.ts`):
   - Test node creation:
     - Click the floating menu button, create a new node, and verify it appears on the canvas.
@@ -403,7 +445,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.3 Phase 3: LangChain Integration, Model/Flavor Selection, AI Chat
 
 #### Unit Tests
+
 - **ChatService** (`server/services/ChatService.ts`):
+
   - Test `initializeChat`:
     - Should initialize LangChain with the selected model and Flavor.
     - Should throw an error if the API key is invalid.
@@ -417,6 +461,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
   - Should call the backend API with the selected model and Flavor when creating a node.
 
 #### Integration Tests
+
 - **Chat API** (`server/routes/chatRoutes.ts`):
   - Test `POST /nodes/:id/messages`:
     - Should return 401 if the user is not authenticated.
@@ -424,6 +469,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should store the message and response in the `chat_messages` table.
 
 #### E2E Tests
+
 - **AI Chat Flow** (`e2e/chat.spec.ts`):
   - Test model/Flavor selection:
     - Create a new node, select a model and Flavor, and verify the node is created with the correct settings.
@@ -435,7 +481,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.4 Phase 4: Context Pulling, Incremental Updates, Summarization, Branching
 
 #### Unit Tests
+
 - **ContextService** (`server/services/ContextService.ts`):
+
   - Test `pullContext`:
     - Should fetch the full chat history from the origin node.
     - Should store the pulled context in the `pulled_context` table.
@@ -456,6 +504,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
   - Should display a red dot if the origin node has updates since the last pull.
 
 #### Integration Tests
+
 - **Context API** (`server/routes/contextRoutes.ts`):
   - Test `POST /nodes/:id/pull-context`:
     - Should return 200 and the pulled context for a valid request.
@@ -466,6 +515,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return 200 and a summary of the node's chat history.
 
 #### E2E Tests
+
 - **Context Management** (`e2e/context.spec.ts`):
   - Test context pulling:
     - Create two nodes, send messages in the first node, pull context into the second node, and verify the placeholder in the chat UI.
@@ -481,7 +531,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.5 Phase 5: Real-Time Collaboration with Yjs, User Presence, Write Permissions
 
 #### Unit Tests
+
 - **YjsService** (`app/lib/yjs/YjsProvider.ts`):
+
   - Test `initDocument`:
     - Should create a new Y.Doc with the correct initial structure.
     - Should initialize awareness with user metadata.
@@ -493,6 +545,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should include user metadata (avatar, name, cursor position).
 
 - **AwarenessService** (`app/lib/yjs/useYjsAwareness.ts`):
+
   - Test `updateUserState`:
     - Should update the user's state in the awareness instance.
     - Should broadcast the state update to all connected clients.
@@ -506,6 +559,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
   - Should show typing indicators based on awareness state.
 
 #### Integration Tests
+
 - **Yjs Document Synchronization** (`server/__tests__/yjs.test.ts`):
   - Test document updates:
     - Create two Yjs documents, apply changes to one, sync, verify both have same state.
@@ -515,6 +569,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Update awareness in one client, verify other clients receive the update.
 
 #### E2E Tests
+
 - **Collaboration Flow** (`e2e/collaboration.spec.ts`):
   - Test user presence:
     - Log in as two users, join the same node, and verify both see each other's presence indicators.
@@ -530,7 +585,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.6 Phase 6: File Attachments with Supabase Storage
 
 #### Unit Tests
+
 - **FileService** (`server/services/FileService.ts`):
+
   - Test `uploadFile`:
     - Should store the file in Supabase Storage.
     - Should save metadata in the `chat_attachments` table.
@@ -544,6 +601,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
   - Should update the UI when a new file is attached (mock WebSocket event).
 
 #### Integration Tests
+
 - **File API** (`server/routes/fileRoutes.ts`):
   - Test `POST /nodes/:id/files`:
     - Should return 400 for invalid file types.
@@ -551,6 +609,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should store the file in Supabase Storage and metadata in the database.
 
 #### E2E Tests
+
 - **File Attachments** (`e2e/files.spec.ts`):
   - Test file upload:
     - Create a node, upload a PDF, and verify the placeholder in the chat UI.
@@ -564,7 +623,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.7 Phase 7: Frameworks, Templates, and Library Sidebar
 
 #### Unit Tests
+
 - **FrameworkService** (`server/services/FrameworkService.ts`):
+
   - Test `applyFramework`:
     - Should initialize a chat with the framework's prompts.
     - Should store the user's answers in the `chat_messages` table.
@@ -573,6 +634,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should update the framework in the `frameworks` table.
 
 - **TemplateService** (`server/services/TemplateService.ts`):
+
   - Test `applyTemplate`:
     - Should pull context from specified nodes.
     - Should apply the template prompt using LangChain.
@@ -584,6 +646,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
   - Should allow editing a framework/template and call the backend API.
 
 #### Integration Tests
+
 - **Framework API** (`server/routes/frameworkRoutes.ts`):
   - Test `POST /frameworks/apply`:
     - Should return 200 and the initial framework prompt.
@@ -592,6 +655,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return 200 and update the framework.
 
 #### E2E Tests
+
 - **Frameworks and Templates** (`e2e/frameworks.spec.ts`):
   - Test framework application:
     - Create a node with a framework, answer the interview questions, and verify the summary in the chat UI.
@@ -606,7 +670,9 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ### 4.8 Phase 8: Security, Performance Optimization, UI/UX Refinement
 
 #### Unit Tests
+
 - **Security Middleware** (`server/middleware/security.ts`):
+
   - Test `sanitizeInput`:
     - Should remove malicious scripts from user input.
     - Should allow safe HTML (e.g., bold text).
@@ -620,6 +686,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Should return the next 20 messages on the second call.
 
 #### Integration Tests
+
 - **Security Tests** (`server/__tests__/security.test.ts`):
   - Test XSS prevention:
     - Send a message with a script tag, verify the script is removed in the response.
@@ -627,6 +694,7 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
     - Send 100 requests in a minute, verify the 101st request returns 429.
 
 #### E2E Tests
+
 - **UI/UX Refinement** (`e2e/uiux.spec.ts`):
   - Test node transitions:
     - Switch between nodes, verify the chat UI updates smoothly.
@@ -638,9 +706,11 @@ Below are detailed test cases for each major feature of the RIFF app, aligned wi
 ---
 
 ### 4.9 Phase 9: Testing and Documentation
+
 This phase focuses on expanding test coverage and documenting the testing process. Since testing is already integrated into the TDD workflow, this phase will focus on edge cases and documentation.
 
 #### Additional Test Cases
+
 - **Edge Cases**:
   - Test large chat histories (e.g., 1,000 messages):
     - Verify summarization and embedding-based retrieval work correctly.
@@ -650,6 +720,7 @@ This phase focuses on expanding test coverage and documenting the testing proces
     - Send malformed messages, verify the backend sanitizes them.
 
 #### Documentation
+
 - Document the testing setup in `TESTING.md`:
   - Instructions for running unit, integration, and E2E tests.
   - Details on mocking Supabase and LangChain.
@@ -660,6 +731,7 @@ This phase focuses on expanding test coverage and documenting the testing proces
 ### 4.10 Phase 10: Deployment, Monitoring, and Finalization
 
 #### E2E Tests
+
 - **Production Environment** (`e2e/production.spec.ts`):
   - Test deployment:
     - Visit the production URL, log in, create a node, and send a message.
@@ -667,6 +739,7 @@ This phase focuses on expanding test coverage and documenting the testing proces
     - Verify Grafana dashboards show API response times and WebSocket event rates (manual check).
 
 #### Monitoring Tests
+
 - **Prometheus Metrics** (`server/__tests__/monitoring.test.ts`):
   - Test metric collection:
     - Send a request, verify the `http_request_duration_seconds` metric is recorded.
@@ -678,22 +751,27 @@ This phase focuses on expanding test coverage and documenting the testing proces
 ## 5. Best Practices for TDD
 
 1. **Write Tests First**:
+
    - Always write a failing test before implementing the feature.
    - Use the test to define the expected behavior and edge cases.
 
 2. **Keep Tests Focused**:
+
    - Each test should verify one specific behavior.
    - Avoid testing multiple features in a single test case.
 
 3. **Mock Dependencies**:
+
    - Mock external services (e.g., Supabase, LangChain) to isolate the unit under test.
    - Use realistic mock data to simulate real-world scenarios.
 
 4. **Test Edge Cases**:
+
    - Include tests for invalid inputs, large datasets, and concurrent users.
    - Ensure error handling is robust and user-friendly.
 
 5. **Run Tests Frequently**:
+
    - Run tests after every change to catch regressions early.
    - Use `jest --watch` for unit tests and `cypress open` for E2E tests during development.
 
@@ -706,7 +784,9 @@ This phase focuses on expanding test coverage and documenting the testing proces
 ## 6. Example TDD Workflow for a Feature
 
 ### Feature: Yjs Integration (Phase 5)
+
 #### Step 1: Write a Failing Test (Red)
+
 ```typescript
 // app/lib/yjs/__tests__/YjsProvider.test.ts
 import { YjsProvider } from '../YjsProvider';
@@ -726,26 +806,27 @@ describe('YjsProvider', () => {
     const documentId = 'doc_1';
     const userId = 'user_1';
     const userName = 'Test User';
-    
+
     const doc = yjsProvider.initDocument(documentId, userId, userName);
-    
+
     // Verify document structure
     expect(doc).toBeInstanceOf(Y.Doc);
     expect(doc.getText('chat')).toBeInstanceOf(Y.Text);
     expect(doc.getMap('nodes')).toBeInstanceOf(Y.Map);
     expect(doc.getMap('edges')).toBeInstanceOf(Y.Map);
-    
+
     // Verify awareness initialization
     const awareness = yjsProvider.getAwareness(documentId);
     expect(awareness.getLocalState()).toEqual({
       user: { id: userId, name: userName },
-      cursor: null
+      cursor: null,
     });
   });
 });
 ```
 
 #### Step 2: Write Minimal Code to Pass (Green)
+
 ```typescript
 // app/lib/yjs/YjsProvider.ts
 import * as Y from 'yjs';
@@ -759,23 +840,23 @@ export class YjsProvider {
 
   initDocument(documentId: string, userId: string, userName: string): Y.Doc {
     const doc = new Y.Doc();
-    
+
     // Initialize document structure
     doc.getText('chat'); // Create text type for chat messages
     doc.getMap('nodes'); // Create map for canvas nodes
     doc.getMap('edges'); // Create map for canvas edges
-    
+
     // Set up awareness
     const awareness = new Awareness(doc);
     awareness.setLocalState({
       user: { id: userId, name: userName },
-      cursor: null
+      cursor: null,
     });
-    
+
     // Store references
     this.docs.set(documentId, doc);
     this.awareness.set(documentId, awareness);
-    
+
     return doc;
   }
 
@@ -786,17 +867,19 @@ export class YjsProvider {
 ```
 
 #### Step 3: Refactor
+
 - Add error handling, input validation, and logging.
 - Set up proper cleanup of documents and awareness instances.
 - Run the test again to ensure it still passes.
 
 #### Step 4: Add More Tests
+
 - Add tests for document synchronization, updates, and awareness changes.
 - Repeat the TDD cycle for each new test.
 
 ## 7. Testing For Correctness Not Conformance
 
-A critical aspect of effective TDD is ensuring that tests validate what the code *should* do, rather than merely confirming what the code currently does. This distinction is essential for identifying and fixing bugs rather than cementing them into the codebase.
+A critical aspect of effective TDD is ensuring that tests validate what the code _should_ do, rather than merely confirming what the code currently does. This distinction is essential for identifying and fixing bugs rather than cementing them into the codebase.
 
 ### 7.1 Identifying the Source of Truth
 
@@ -839,6 +922,7 @@ When a test reveals a discrepancy between actual and expected behavior:
 ### 7.4 Example: Testing Chat Node Behavior
 
 **Incorrect Approach (Testing Current Behavior):**
+
 ```typescript
 // This test simply confirms what the code currently does
 it('filters out empty messages', () => {
@@ -849,6 +933,7 @@ it('filters out empty messages', () => {
 ```
 
 **Correct Approach (Testing Required Behavior):**
+
 ```typescript
 // This test validates against requirements
 it('should reject empty messages with a descriptive error message', () => {
@@ -858,7 +943,7 @@ it('should reject empty messages with a descriptive error message', () => {
   expect(result).toEqual({
     success: false,
     error: 'Message cannot be empty',
-    errorCode: 'EMPTY_MESSAGE'
+    errorCode: 'EMPTY_MESSAGE',
   });
 });
 ```
@@ -891,14 +976,17 @@ The TDD approach described in this document should be implemented in coordinatio
 To integrate TDD into your current workflow:
 
 1. **Start with Current Implementation Phase**:
+
    - Identify which phase of the testing implementation plan is currently active.
    - Focus TDD efforts on the features and components in that phase.
 
 2. **Review Existing Code**:
+
    - For areas with existing code but no tests, write tests based on requirements (not just current behavior).
    - Use these tests to identify potential bugs or inconsistencies with requirements.
 
 3. **Apply TDD for New Features**:
+
    - For new features, follow the pure TDD approach: test first, implementation second.
    - Reference this document for specific test cases relevant to the feature being developed.
 
@@ -911,11 +999,13 @@ To integrate TDD into your current workflow:
 Since the codebase has migrated to Yjs for real-time collaboration, apply these TDD principles with special consideration:
 
 1. **Yjs Document Testing**:
+
    - Test the structure of Yjs documents (e.g., Y.Text, Y.Map).
    - Test local changes to Yjs documents before testing synchronization.
    - Test conflict resolution with simulated concurrent changes.
 
 2. **Awareness Testing**:
+
    - Test awareness updates for user presence, cursor position, etc.
    - Test awareness state synchronization across clients.
 
@@ -928,10 +1018,12 @@ Since the codebase has migrated to Yjs for real-time collaboration, apply these 
 Enforce TDD principles through the pull request process:
 
 1. **Require Tests in PRs**:
+
    - Every pull request should include tests for new code.
    - Tests should be comprehensive and based on requirements.
 
 2. **Test Review**:
+
    - Code reviewers should verify that tests validate requirements, not just implementation.
    - Code reviewers should ensure tests cover edge cases and error conditions.
 
@@ -946,20 +1038,22 @@ Enforce TDD principles through the pull request process:
 **TDD Workflow**:
 
 1. **Identify Requirements**:
+
    - Review the feature requirements in product documentation.
    - Identify acceptance criteria (e.g., format of the JSON, included data).
 
 2. **Write Tests First**:
+
    ```typescript
    describe('Canvas Export Service', () => {
      it('should export nodes with their content and positions', () => {
        // Arrange: Set up a canvas with nodes
        const canvas = createTestCanvas();
        const exportService = new CanvasExportService();
-       
+
        // Act: Export the canvas
        const result = exportService.exportToJson(canvas);
-       
+
        // Assert: Verify the exported JSON contains expected data
        expect(result).toHaveProperty('nodes');
        expect(result.nodes).toBeInstanceOf(Array);
@@ -967,11 +1061,11 @@ Enforce TDD principles through the pull request process:
        expect(result.nodes[0]).toHaveProperty('position');
        expect(result.nodes[0]).toHaveProperty('content');
      });
-     
+
      it('should include edge connections between nodes', () => {
        // Similar test structure
      });
-     
+
      it('should handle empty canvas', () => {
        // Test edge case
      });
@@ -979,6 +1073,7 @@ Enforce TDD principles through the pull request process:
    ```
 
 3. **Implement the Feature**:
+
    - Write the implementation to make the tests pass.
    - Refactor as needed while keeping tests passing.
 
@@ -994,6 +1089,7 @@ This TDD approach complements and enhances the current testing strategy outlined
 ### 9.1 Alignment with Testing Pyramid
 
 The current testing strategy overview defines a balanced pyramid approach:
+
 - **Unit Tests (60%)**
 - **Integration Tests (25%)**
 - **End-to-End Tests (10%)**
@@ -1008,6 +1104,7 @@ This TDD document provides concrete implementation details for each layer:
 ### 9.2 Addressing Key Testing Areas
 
 The testing strategy overview identifies five key testing areas:
+
 1. Frontend Components
 2. Backend Services
 3. Yjs Integration
@@ -1015,12 +1112,14 @@ The testing strategy overview identifies five key testing areas:
 5. Data Persistence
 
 This TDD document provides detailed test cases for each area, particularly strengthening:
+
 - **Yjs Integration**: Detailed testing guidance for Yjs documents, awareness, and synchronization
 - **Collaborative Features**: Specific tests for real-time collaboration, conflict resolution, and offline support
 
 ### 9.3 Enhancing Best Practices
 
 The testing strategy overview lists ten best practices, which this TDD document expands upon with:
+
 - **Concrete examples** of test implementations following the AAA pattern
 - **Implementation guidance** for isolating test dependencies through mocking
 - **Practical approaches** to testing asynchronous code and edge cases
@@ -1028,6 +1127,7 @@ The testing strategy overview lists ten best practices, which this TDD document 
 ### 9.4 Strengthening Test Quality
 
 This TDD document introduces additional principles to improve test quality:
+
 1. **Testing for correctness, not conformance**: Ensuring tests validate requirements rather than existing behavior
 2. **Source of truth identification**: Using product requirements to define expected behavior
 3. **Bug discovery workflow**: Identifying and fixing bugs through test-first approach
@@ -1035,6 +1135,7 @@ This TDD document introduces additional principles to improve test quality:
 ### 9.5 Integration Into Workflow
 
 The primary enhancement this TDD approach adds to the testing strategy is a concrete workflow for:
+
 1. Writing tests before implementation for new features
 2. Reviewing and testing existing code against requirements
 3. Integrating testing into the pull request and code review process
