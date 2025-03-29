@@ -7,6 +7,23 @@
 
 import { Node, Edge } from 'reactflow';
 import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import type { Awareness } from 'y-protocols/awareness';
+
+// Extend Y.Doc type with application-specific methods
+declare module 'yjs' {
+  interface Doc {
+    updateAwareness(data: Partial<UserAwarenessState>): void;
+  }
+}
+
+// Global window augmentation for Yjs providers
+declare global {
+  interface Window {
+    yjsDoc?: Y.Doc;
+    yjsWebsocketProvider?: WebsocketProvider;
+  }
+}
 
 // Core Yjs document type extensions
 export interface YjsDocumentData {
@@ -57,22 +74,16 @@ export interface UserAwarenessState {
   [key: string]: unknown;
 }
 
-export interface YjsAwareness {
-  getLocalState(): UserAwarenessState;
-  setLocalState(state: UserAwarenessState): void;
-  getStates(): Record<number, UserAwarenessState>;
-  on(event: string, callback: (...args: unknown[]) => void): void;
-  off(event: string, callback: (...args: unknown[]) => void): void;
-  setLocalStateField(field: string, value: unknown): void;
-  getLocalClientId(): number;
-  destroy(): void;
-}
+// Use the actual Awareness type from y-protocols
+export type YjsAwareness = Awareness;
 
 // Provider interface for WebSocket or other network providers
 export interface YjsProvider {
   awareness: YjsAwareness;
   connect(): void;
   disconnect(): void;
+  on(event: 'status', callback: (data: { status: string }) => void): void;
+  on(event: 'sync', callback: (isSynced: boolean) => void): void;
   on(event: string, callback: (...args: unknown[]) => void): void;
   off(event: string, callback: (...args: unknown[]) => void): void;
   destroy(): void;

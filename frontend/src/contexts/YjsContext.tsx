@@ -6,7 +6,6 @@ import {
   destroyYjsDocument, 
   getNodesFromYjs, 
   getEdgesFromYjs, 
-  updateAwareness, 
   getConnectedUsers,
   subscribeToYjsChanges,
   forceDocumentSync,
@@ -99,7 +98,7 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
       setYdoc(doc);
       
       // Listen for connection status changes
-      const wsProvider = (window as any).yjsWebsocketProvider;
+      const wsProvider = window.yjsWebsocketProvider;
       
       if (wsProvider) {
         wsProvider.on('status', ({ status }: { status: string }) => {

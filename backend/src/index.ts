@@ -292,7 +292,7 @@ io.on('connection', (socket: Socket) => {
   socket.join(userRoom);
 
   // Keep track of nodes the user is viewing
-  const viewedNodes: number[] = [];
+  const viewedNodes = new Set<number>();
 
   // Handle join-node event
   socket.on('join-node', async ({ nodeId }) => {
@@ -305,7 +305,7 @@ io.on('connection', (socket: Socket) => {
       // Join the node-specific room
       const nodeRoom = `node:${nodeId}`;
       socket.join(nodeRoom);
-      viewedNodes.push(nodeId);
+      viewedNodes.add(nodeId);
 
       // Update presence for the node
       await updateUserPresence(nodeId, userId, email, false);
@@ -349,10 +349,7 @@ io.on('connection', (socket: Socket) => {
       socket.leave(nodeRoom);
       
       // Remove node from viewed nodes
-      const index = viewedNodes.indexOf(nodeId);
-      if (index !== -1) {
-        viewedNodes.splice(index, 1);
-      }
+      viewedNodes.delete(nodeId);
 
       // Remove the user from the node's presence
       await removeUserPresence(nodeId, userId);

@@ -13,7 +13,8 @@ import {
   cleanupOfflineSupport,
   SyncStatus
 } from '../utils/yjsOfflineSupport';
-import { YjsAwareness, UserAwarenessState } from '../types/yjs';
+import { UserAwarenessState } from '../types/yjs';
+import type { Awareness } from 'y-protocols/awareness';
 
 // Define document structure types for TypeScript
 // Commented out unused interfaces
@@ -53,7 +54,7 @@ interface YjsEdgeData {
 let doc: Y.Doc | null = null;
 let wsProvider: WebsocketProvider | null = null;
 let dbProvider: IndexeddbPersistence | null = null;
-let awareness: YjsAwareness | null = null;
+let awareness: Awareness | null = null;
 
 // Reference to the conflict resolver
 let conflictResolver: { updateSyncedState: () => void; detectConflict: (update: Uint8Array) => boolean } | null = null;
@@ -86,7 +87,7 @@ export const initYjsDocument = (
   doc = new Y.Doc();
 
   // Store the doc globally for debugging and for network adapter
-  (window as unknown as Record<string, unknown>).yjsDoc = doc;
+  window.yjsDoc = doc;
   
   // Set up the WebSocket provider for real-time collaboration
   wsProvider = new WebsocketProvider(websocketUrl, canvasId, doc, {
@@ -95,10 +96,10 @@ export const initYjsDocument = (
   });
   
   // Store the provider globally for debugging
-  (window as unknown as Record<string, unknown>).yjsWebsocketProvider = wsProvider;
+  window.yjsWebsocketProvider = wsProvider;
   
   // Get awareness instance for user presence features
-  awareness = wsProvider.awareness as unknown as YjsAwareness;
+  awareness = wsProvider.awareness as Awareness;
   
   // Set initial awareness state
   updateAwareness({
@@ -381,8 +382,8 @@ export const destroyYjsDocument = () => {
   offlineChangesCount = 0;
   
   // Remove global references
-  delete (window as unknown as Record<string, unknown>).yjsDoc;
-  delete (window as unknown as Record<string, unknown>).yjsWebsocketProvider;
+  delete window.yjsDoc;
+  delete window.yjsWebsocketProvider;
 };
 
 /**

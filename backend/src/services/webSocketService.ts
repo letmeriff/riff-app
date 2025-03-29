@@ -39,13 +39,16 @@ export interface SocketWithViewedNodes extends SocketWithIO {
   viewedNodes: number[];
 }
 
-// Declare global io object for server-wide broadcasts
+// Define the type for global io to avoid TypeScript errors
+interface GlobalIo {
+  to: (room: string) => { emit: (event: string, data: unknown) => void };
+  emit: (event: string, data: unknown) => void;
+}
+
+// Declare the io object in the global namespace
 declare global {
   // eslint-disable-next-line no-var
-  var io: {
-    to: (room: string) => { emit: (event: string, data: unknown) => void };
-    emit: (event: string, data: unknown) => void;
-  };
+  var io: GlobalIo;
 }
 
 /**
@@ -55,10 +58,10 @@ declare global {
  * @param handler The original handler function to wrap
  * @returns A function that wraps the handler in a try/catch block
  */
-export const withErrorHandling = (eventName: string, handler: (...args: unknown[]) => unknown) => {
-  return async (...args: unknown[]) => {
+export const withErrorHandling = <T>(eventName: string, handler: (data: T) => Promise<void>) => {
+  return async (data: T) => {
     try {
-      await handler(...args);
+      await handler(data);
     } catch (error) {
       console.error(`Error handling ${eventName} event:`, error);
     }
@@ -222,10 +225,10 @@ export const handleConnection = (socket: SocketWithViewedNodes) => {
   };
 
   // Register event handlers with error handling
-  socket.on('join-node', withErrorHandling('join-node', handleJoinNode));
-  socket.on('leave-node', withErrorHandling('leave-node', handleLeaveNode));
-  socket.on('typing', withErrorHandling('typing', handleTyping));
-  socket.on('node-position-update', withErrorHandling('node-position-update', handleNodePositionUpdate));
+  socket.on('join-node', withErrorHandling<{nodeId: number}>('join-node', handleJoinNode));
+  socket.on('leave-node', withErrorHandling<{nodeId: number}>('leave-node', handleLeaveNode));
+  socket.on('typing', withErrorHandling<{nodeId: number; isTyping: boolean}>('typing', handleTyping));
+  socket.on('node-position-update', withErrorHandling<{nodeId: number; position: {x: number; y: number}}>('node-position-update', handleNodePositionUpdate));
 
   // Handle disconnect
   socket.on('disconnect', () => {
