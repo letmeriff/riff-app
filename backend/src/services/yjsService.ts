@@ -479,3 +479,118 @@ export class YjsService {
     }
   }
 }
+
+/**
+ * Get statistics about a document
+ * @param documentId The document ID
+ * @returns Stats about document size and updates
+ */
+export async function getDocumentStats(
+  documentId: string
+): Promise<{ documentSize: number; updatesCount: number; totalUpdatesSize: number } | null> {
+  try {
+    // Get document size
+    const { data: docData, error: docError } = await supabase
+      .from('yjs_documents')
+      .select('document_state')
+      .eq('document_id', documentId)
+      .single();
+
+    if (docError) {
+      console.error('Error fetching document for stats:', docError);
+      return null;
+    }
+
+    // Get updates count and size
+    const { data: updatesData, error: updatesError } = await supabase
+      .from('yjs_updates')
+      .select('update')
+      .eq('document_id', documentId);
+
+    if (updatesError) {
+      console.error('Error fetching updates for stats:', updatesError);
+      return null;
+    }
+
+    // Calculate sizes
+    const documentSize = docData?.document_state ? docData.document_state.length : 0;
+    const updatesCount = updatesData?.length || 0;
+    let totalUpdatesSize = 0;
+
+    if (updatesData && updatesData.length > 0) {
+      totalUpdatesSize = updatesData.reduce((total, item) => {
+        return total + (item.update ? item.update.length : 0);
+      }, 0);
+    }
+
+    return {
+      documentSize,
+      updatesCount,
+      totalUpdatesSize
+    };
+  } catch (error) {
+    console.error('Exception getting document stats:', error);
+    return null;
+  }
+}
+
+/**
+ * Run database maintenance tasks to optimize storage and performance
+ * @returns Number of documents processed
+ */
+export async function runDatabaseMaintenanceJobs(): Promise<number> {
+  try {
+    console.log('Running YJS database maintenance jobs...');
+    
+    // 1. Clean up old updates that have been incorporated into snapshots
+    const { data: snapshots, error: snapshotsError } = await supabase
+      .from('yjs_documents')
+      .select('document_id, version')
+      .order('version', { ascending: false });
+
+    if (snapshotsError || !snapshots) {
+      console.error('Error fetching document snapshots:', snapshotsError);
+      return 0;
+    }
+
+    let processedCount = 0;
+
+    // For each document with a snapshot, delete updates older than the snapshot
+    for (const snapshot of snapshots) {
+      // First count how many records will be deleted
+      const { data: countData, error: countError } = await supabase
+        .from('yjs_updates')
+        .select('id', { count: 'exact' })
+        .eq('document_id', snapshot.document_id)
+        .lt('version', snapshot.version);
+
+      if (countError) {
+        console.error(`Error counting updates for document ${snapshot.document_id}:`, countError);
+        continue;
+      }
+
+      const count = countData?.length || 0;
+
+      if (count > 0) {
+        // Then delete the records
+        const { error: deleteError } = await supabase
+          .from('yjs_updates')
+          .delete()
+          .eq('document_id', snapshot.document_id)
+          .lt('version', snapshot.version);
+
+        if (deleteError) {
+          console.error(`Error cleaning up updates for document ${snapshot.document_id}:`, deleteError);
+        } else {
+          processedCount++;
+          console.log(`Cleaned up ${count} old updates for document ${snapshot.document_id}`);
+        }
+      }
+    }
+
+    return processedCount;
+  } catch (error) {
+    console.error('Exception running database maintenance:', error);
+    return 0;
+  }
+}

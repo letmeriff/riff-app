@@ -18,9 +18,16 @@ import {
   createDocumentSnapshot,
   recoverDocumentFromUpdates as getDocumentFromUpdates,
   getDocumentStats,
-  runDatabaseMaintenanceJobs,
+  runDatabaseMaintenanceJobs as _runDatabaseMaintenanceJobs,
   decompressContent
 } from './yjsService';
+
+// Import our new modular services
+import { DocumentManager } from './yjs/DocumentManager';
+import { MessageHandler } from './yjs/MessageHandler';
+import { PersistenceService } from './yjs/PersistenceService';
+import { AwarenessManager } from './yjs/AwarenessManager';
+import { MaintenanceService } from './yjs/MaintenanceService';
 
 const CALLBACK_DEBOUNCE_WAIT = 2000;
 const _CALLBACK_DEBOUNCE_MAXWAIT = 10000;
@@ -55,8 +62,19 @@ const snapshotTimers = new Map<string, NodeJS.Timeout>();
 // Map of throttled/debounced broadcast functions by document ID
 const throttledBroadcasts = new Map<string, (encoder: encoding.Encoder) => void>();
 
-let _yjsWss: WebSocketServer | null = null;
+let yjsWss: WebSocketServer | null = null;
 let maintenanceInterval: NodeJS.Timeout | null = null;
+
+// Create our service instances
+const documentManager = new DocumentManager();
+const awarenessManager = new AwarenessManager();
+const persistenceService = new PersistenceService(documentManager);
+const messageHandler = new MessageHandler(
+  documentManager, 
+  awarenessManager, 
+  persistenceService
+);
+const maintenanceService = new MaintenanceService();
 
 // Get or create Y.Doc instance for a document
 const getYDoc = async (documentId: string): Promise<Y.Doc> => {
@@ -459,39 +477,15 @@ const handleConnection = async (ws: WebSocket, req: http.IncomingMessage) => {
   }
   
   try {
-    // Get document
-    const doc = await getYDoc(documentId);
-    
-    // Generate a unique client ID for this connection
-    const clientId = doc.clientID;
-    
-    // Store client information
-    const clientInfo = { 
-      documentId, 
-      userId: user.id,
-      clientId 
-    };
-    
-    // Add client to tracking maps
-    clients.set(ws, clientInfo);
-    
-    // Add client to document subscribers
-    let subscribers = documentSubscribers.get(documentId);
-    if (!subscribers) {
-      subscribers = new Set();
-      documentSubscribers.set(documentId, subscribers);
-    }
-    subscribers.add(ws);
-    
-    // Get awareness instance
-    const _awareness = documentAwareness.get(documentId);
+    // Get document and register client
+    const clientId = await documentManager.registerClient(ws, documentId, user.id);
     
     console.log(`Client connected: ${user.id} to document: ${documentId}`);
 
     // Set up message handler
     ws.on('message', async (message: Buffer) => {
       try {
-        await processMessage(ws, new Uint8Array(message));
+        await messageHandler.processMessage(ws, new Uint8Array(message));
       } catch (error) {
         console.error('Error processing message:', error);
       }
@@ -519,36 +513,10 @@ const handleConnection = async (ws: WebSocket, req: http.IncomingMessage) => {
       // Clear the ping interval
       clearInterval(pingInterval);
       
-      // Clean up client
-      const clientInfo = clients.get(ws);
-      if (!clientInfo) return;
-      
-      const { documentId, clientId } = clientInfo;
-      
-      // Remove from clients map
-      clients.delete(ws);
-      
-      // Remove from subscribers
-      const subscribers = documentSubscribers.get(documentId);
-      if (subscribers) {
-        subscribers.delete(ws);
-        console.log(`Removed client from subscribers for document ${documentId}, ${subscribers.size} remaining`);
-      }
-      
-      // Remove from awareness
-      const awareness = documentAwareness.get(documentId);
-      if (awareness) {
-        // Remove client's awareness states
-        awarenessProtocol.removeAwarenessStates(
-          awareness,
-          [clientId],
-          'connection-closed'
-        );
-      }
-      
-      console.log(`Client disconnected from document: ${documentId}`);
+      // Clean up client through the document manager
+      documentManager.unregisterClient(ws);
     });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error(`Error handling connection for document ${documentId}:`, err);
     ws.close(1011, 'Internal server error');
   }
@@ -590,38 +558,25 @@ const cleanupDocument = async (documentId: string) => {
   console.log(`Document ${documentId} resources cleaned up`);
 };
 
-/**
- * Scheduled maintenance function that runs database optimization tasks
- */
-async function runScheduledMaintenance(): Promise<void> {
-  try {
-    console.log('Running scheduled Yjs database maintenance...');
-    const processedCount = await runDatabaseMaintenanceJobs();
-    console.log(`Database maintenance completed. Processed ${processedCount} documents.`);
-  } catch (error) {
-    console.error('Error during scheduled database maintenance:', error);
-  }
-}
-
 // Export the initialization function with proper cleanup
 export function startYjsWebSocketServer(httpServer: http.Server): WebSocketServer {
-  _yjsWss = new WebSocketServer({ noServer: true });
+  yjsWss = new WebSocketServer({ noServer: true });
   
   // Handle WebSocket connections
   httpServer.on('upgrade', (request, socket, head) => {
     if (request.url?.startsWith('/yjs')) {
-      if (_yjsWss) {
-        _yjsWss.handleUpgrade(request, socket, head, ws => {
-          if (_yjsWss) {
-            _yjsWss.emit('connection', ws, request);
+      if (yjsWss) {
+        yjsWss.handleUpgrade(request, socket, head, ws => {
+          if (yjsWss) {
+            yjsWss.emit('connection', ws, request);
           }
         });
       }
     }
   });
   
-  if (_yjsWss) {
-    _yjsWss.on('connection', handleConnection);
+  if (yjsWss) {
+    yjsWss.on('connection', handleConnection);
   }
   
   // Set up maintenance timer
@@ -632,14 +587,14 @@ export function startYjsWebSocketServer(httpServer: http.Server): WebSocketServe
   // Run maintenance every 12 hours
   maintenanceInterval = setInterval(async () => {
     try {
-      await runScheduledMaintenance();
-    } catch (err) {
+      await maintenanceService.runScheduledMaintenance();
+    } catch (err: unknown) {
       console.error('Error running scheduled maintenance:', err);
     }
   }, 12 * 60 * 60 * 1000);
   
   // Run maintenance once at startup
-  runScheduledMaintenance().catch(err => {
+  maintenanceService.runScheduledMaintenance().catch((err: unknown) => {
     console.error('Error running initial maintenance:', err);
   });
   
@@ -654,18 +609,16 @@ export function startYjsWebSocketServer(httpServer: http.Server): WebSocketServe
     }
     
     // Clean up all documents
-    for (const documentId of docs.keys()) {
-      await cleanupDocument(documentId);
-    }
+    await documentManager.cleanupAllDocuments();
     
     // Close all WebSocket connections
-    if (_yjsWss) {
-      _yjsWss.clients.forEach(client => {
+    if (yjsWss) {
+      yjsWss.clients.forEach(client => {
         client.close(1001, 'Server shutting down');
       });
       
       // Close the WebSocket server
-      _yjsWss.close();
+      yjsWss.close();
     }
     
     console.log('Yjs WebSocket server shut down');
@@ -674,14 +627,13 @@ export function startYjsWebSocketServer(httpServer: http.Server): WebSocketServe
   
   console.log('Yjs WebSocket server started with scheduled maintenance');
   
-  return _yjsWss;
+  return yjsWss;
 }
 
-// Non-null assertion for _yjsWss when needed
 export function stopYjsWebSocketServer(): void {
-  if (_yjsWss) {
-    _yjsWss.close();
-    _yjsWss = null;
+  if (yjsWss) {
+    yjsWss.close();
+    yjsWss = null;
   }
   
   // Clear maintenance interval
