@@ -13,6 +13,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useYjs } from '../contexts/YjsContext';
 import { useNetwork } from '../contexts/NetworkContext';
 import { NetworkPayload } from '../types/messaging';
+import { UserAwarenessState } from '../types/yjs';
 
 /**
  * Component props interface
@@ -28,16 +29,6 @@ interface EditingUser {
   userId: string;
   color: string;
   timestamp: number;
-}
-
-/**
- * Type-safe interface for awareness state
- */
-interface AwarenessState {
-  userId: string;
-  editingNode?: string | null;
-  user?: { id: string; [key: string]: unknown };
-  [key: string]: unknown;
 }
 
 /**
@@ -94,17 +85,19 @@ const EditIndicator: React.FC<EditIndicatorProps> = ({ nodeId }) => {
         // Skip our own edits
         if (ydoc && clientId === ydoc.clientID) return;
         
-        // Type-safe cast and validation
-        const state = stateData as AwarenessState;
+        // Type-safe cast and validation using the two-step casting approach
+        const state = stateData as unknown as UserAwarenessState;
         
         // Only add users who are editing this specific node
         if (
-          typeof state?.userId === 'string' && 
-          state.editingNode === nodeId
+          state.user && 
+          state.user.id && 
+          state.editing && 
+          state.editing.nodeId === nodeId
         ) {
           newEditingUsers.push({
-            userId: state.userId,
-            color: getUserColor(state.userId),
+            userId: state.user.id,
+            color: getUserColor(state.user.id),
             timestamp: Date.now()
           });
         }

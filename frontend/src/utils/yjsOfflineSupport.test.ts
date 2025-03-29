@@ -292,9 +292,9 @@ describe('yjsOfflineSupport', () => {
 
       // Act
       const result = await syncPendingChanges(
-        doc,
+        documentId,
         websocketProvider as unknown as WebsocketProvider,
-        documentId
+        indexeddbProvider as unknown as IndexeddbPersistence
       );
 
       // Assert
@@ -336,9 +336,9 @@ describe('yjsOfflineSupport', () => {
 
       // Act
       const syncPromise = syncPendingChanges(
-        doc,
+        documentId,
         websocketProvider as unknown as WebsocketProvider,
-        documentId
+        indexeddbProvider as unknown as IndexeddbPersistence
       );
 
       // Simulate successful sync

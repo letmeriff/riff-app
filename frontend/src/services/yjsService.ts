@@ -167,6 +167,11 @@ export const initYjsDocument = (
     });
   }
 
+  // Listen for document changes
+  subscribeToYjsChanges((changes, source) => {
+    console.log(`Yjs document changed (${source}):`, changes);
+  });
+
   return doc;
 };
 
@@ -348,7 +353,7 @@ export const destroyYjsDocument = () => {
   
   // Clean up offline support
   if (doc && wsProvider && dbProvider) {
-    cleanupOfflineSupport(doc);
+    cleanupOfflineSupport(doc.guid);
   }
   
   // Disconnect WebSocket provider
@@ -392,8 +397,8 @@ export const getConnectedUsers = () => {
   // Collect unique users
   Object.entries(states).forEach(([_, state]) => {
     const userState = state as UserAwarenessState;
-    if (userState.userId && !userState.isOffline) {
-      users[userState.userId] = userState;
+    if (userState.user?.id && !userState.isOffline) {
+      users[userState.user.id] = userState;
     }
   });
   
@@ -421,19 +426,19 @@ export const subscribeToYjsChanges = (
     const addedMap = new Map<string, unknown>();
     const deletedMap = new Map<string, unknown>();
     
-    // Process changed keys
-    event.keysChanged.forEach((value, key) => {
-      changedMap.set(key as string, value);
-    });
-    
-    // Process added keys
-    event.keys.added.forEach(key => {
-      addedMap.set(key as string, nodes.get(key as string));
-    });
-    
-    // Process deleted keys
-    event.keys.deleted.forEach(key => {
-      deletedMap.set(key as string, null);
+    // Process all changed keys
+    event.keysChanged.forEach((_, key) => {
+      const keyStr = key as string;
+      
+      // If node still exists, it was added or updated
+      if (nodes.has(keyStr)) {
+        const value = nodes.get(keyStr);
+        addedMap.set(keyStr, value);
+        changedMap.set(keyStr, value);
+      } else {
+        // Node no longer exists, it was deleted
+        deletedMap.set(keyStr, null);
+      }
     });
     
     callback({
@@ -450,19 +455,19 @@ export const subscribeToYjsChanges = (
     const addedMap = new Map<string, unknown>();
     const deletedMap = new Map<string, unknown>();
     
-    // Process changed keys
-    event.keysChanged.forEach((value, key) => {
-      changedMap.set(key as string, value);
-    });
-    
-    // Process added keys
-    event.keys.added.forEach(key => {
-      addedMap.set(key as string, edges.get(key as string));
-    });
-    
-    // Process deleted keys
-    event.keys.deleted.forEach(key => {
-      deletedMap.set(key as string, null);
+    // Process all changed keys
+    event.keysChanged.forEach((_, key) => {
+      const keyStr = key as string;
+      
+      // If edge still exists, it was added or updated
+      if (edges.has(keyStr)) {
+        const value = edges.get(keyStr);
+        addedMap.set(keyStr, value);
+        changedMap.set(keyStr, value);
+      } else {
+        // Edge no longer exists, it was deleted
+        deletedMap.set(keyStr, null);
+      }
     });
     
     callback({
@@ -519,7 +524,7 @@ export const forceDocumentSync = async (): Promise<boolean> => {
   
   try {
     // Try to sync pending changes with proper types
-    const result = await syncPendingChanges(doc);
+    const result = await syncPendingChanges(doc.guid, wsProvider, dbProvider);
     
     if (result) {
       console.log('Document synced successfully');

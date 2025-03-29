@@ -220,26 +220,27 @@ const YjsNodeControls: React.FC<YjsNodeControlsProps> = () => {
           <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
             {connectedUsers.map(user => (
               <li 
-                key={user.clientId}
+                key={`user-${user.userId}`}
                 style={{
                   padding: '4px 0',
                   borderBottom: '1px solid #eee',
-                  fontSize: '13px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px'
+                  gap: '8px',
                 }}
-                data-testid={`user-${user.clientId}`}
               >
                 <div 
                   style={{ 
-                    width: '8px', 
-                    height: '8px', 
-                    borderRadius: '50%',
-                    background: '#4CAF50'
+                    width: '10px', 
+                    height: '10px', 
+                    borderRadius: '50%', 
+                    background: user.color || '#4CAF50' 
                   }} 
                 />
-                <span>{user.userId}</span>
+                <span>
+                  {typeof user.name === 'string' ? user.name : 
+                   typeof user.userId === 'string' ? user.userId : 'Unknown User'}
+                </span>
               </li>
             ))}
           </ul>

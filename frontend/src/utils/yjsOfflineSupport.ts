@@ -168,14 +168,14 @@ export const getSyncStatus = (documentId: string): SyncStatus => {
 
 /**
  * Manually trigger synchronization of pending changes
- * @param doc Yjs document
+ * @param documentId Document identifier (guid)
  * @param websocketProvider WebSocket provider
- * @param documentId Document identifier
+ * @param _indexeddbProvider IndexedDB provider (optional)
  */
 export const syncPendingChanges = async (
-  doc: Y.Doc,
+  documentId: string,
   websocketProvider: WebsocketProvider,
-  documentId: string
+  _indexeddbProvider?: IndexeddbPersistence | null
 ): Promise<boolean> => {
   const status = documentSyncStatus.get(documentId);
   
@@ -257,7 +257,7 @@ export const registerOfflineChangeHandler = (
   doc: Y.Doc,
   handler: (update: Uint8Array, isOffline: boolean) => void
 ): () => void => {
-  const updateHandler = (update: Uint8Array, origin: any) => {
+  const updateHandler = (update: Uint8Array, origin: unknown) => {
     // Check if we're offline
     const isOffline = !navigator.onLine;
     

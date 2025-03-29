@@ -243,7 +243,10 @@ const UserCursors: React.FC = () => {
               textOverflow: 'ellipsis'
             }}
           >
-            {connectedUsers.find(u => u.clientId === cursor.clientId)?.userId || 'User'}
+            {(() => {
+              const user = connectedUsers.find(u => u.clientId === cursor.clientId);
+              return typeof user?.userId === 'string' ? user.userId : 'User';
+            })()}
           </div>
         </div>
       ))}

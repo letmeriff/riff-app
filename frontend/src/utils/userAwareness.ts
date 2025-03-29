@@ -50,6 +50,7 @@ interface AwarenessState {
   editing?: { nodeId?: string };
   isOnline?: boolean;
   lastActive?: number;
+  [key: string]: unknown;
 }
 
 // Define a type for the window with YjsWebsocketProvider
@@ -284,6 +285,91 @@ export function getUserCursors(doc: Y.Doc): CursorPosition[] {
   });
   
   return cursors;
+}
+
+/**
+ * Get all users currently editing a specific node
+ * 
+ * @param doc The Yjs document
+ * @param nodeId ID of the node to check
+ * @returns Array of user IDs editing the node
+ */
+export function getUsersEditingNode(doc: Y.Doc, nodeId: string): string[] {
+  const awareness = getAwareness(doc);
+  if (!awareness) return [];
+  
+  const states = awareness.getStates();
+  const userIds: string[] = [];
+  
+  states.forEach((state: unknown, clientId: number) => {
+    const userState = state as AwarenessState;
+    // Skip states without proper user info
+    if (!userState.user || !userState.user.id) return;
+    
+    // Skip ourselves
+    if (clientId === doc.clientID) return;
+    
+    // Check if user is editing the specified node
+    if (userState.editing && userState.editing.nodeId === nodeId) {
+      userIds.push(userState.user.id);
+    }
+  });
+  
+  return userIds;
+}
+
+/**
+ * Get all online users
+ * 
+ * @param doc The Yjs document
+ * @returns Array of user IDs that are online
+ */
+export function getOnlineUsers(doc: Y.Doc): string[] {
+  const awareness = getAwareness(doc);
+  if (!awareness) return [];
+  
+  const states = awareness.getStates();
+  const userIds: string[] = [];
+  
+  states.forEach((state: unknown, clientId: number) => {
+    const userState = state as AwarenessState;
+    // Skip states without proper user info
+    if (!userState.user || !userState.user.id) return;
+    
+    // Skip ourselves
+    if (clientId === doc.clientID) return;
+    
+    // Only include users that are online
+    if (userState.isOnline !== false) {
+      userIds.push(userState.user.id);
+    }
+  });
+  
+  return userIds;
+}
+
+/**
+ * Get the awareness state for a specific user
+ * 
+ * @param doc The Yjs document
+ * @param userId ID of the user to get state for
+ * @returns The user's awareness state or undefined if not found
+ */
+export function getAwarenessState(doc: Y.Doc, userId: string): AwarenessState | undefined {
+  const awareness = getAwareness(doc);
+  if (!awareness) return undefined;
+  
+  const states = awareness.getStates();
+  let result: AwarenessState | undefined = undefined;
+  
+  states.forEach((state: unknown, _clientId: number) => {
+    const userState = state as AwarenessState;
+    if (userState.user && userState.user.id === userId) {
+      result = userState;
+    }
+  });
+  
+  return result;
 }
 
 /**

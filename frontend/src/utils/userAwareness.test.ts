@@ -15,7 +15,10 @@ import {
   getUsersInCanvas,
   getEditingUsers,
   getUsersAtNode,
-  getUserCursors
+  getUserCursors,
+  getUsersEditingNode,
+  getOnlineUsers,
+  getAwarenessState
 } from './userAwareness';
 import { Awareness } from 'y-protocols/awareness';
 
@@ -37,6 +40,7 @@ interface AwarenessState {
   editing?: {
     nodeId: string;
   } | null;
+  editingNode?: string;
   isOnline?: boolean;
   lastActive?: number;
   [key: string]: unknown;
@@ -111,24 +115,21 @@ jest.mock('y-protocols/awareness', () => {
 // Define types for our test environment
 interface MockClient {
   id: string;
-  doc: any;
+  doc: Y.Doc;
+  clientId?: number;
   isOnline?: boolean;
+  awareness?: any;
   disconnect?: () => void;
   connect?: () => void;
-  // Add other properties as needed
+  updateCursor?: (position: { x: number; y: number }) => void;
+  updateEditingStatus?: (nodeId: string, isEditing: boolean) => void;
+  updatePresence?: (isOnline: boolean) => void;
 }
 
 // Add this at the top of the file, after imports
 // Define what the TestEnvironment should contain
 interface TestEnvironment {
-  clients: Array<{
-    id: string;
-    doc: any;
-    isOnline: boolean;
-    disconnect: () => void;
-    connect: () => void;
-    // Add other client properties as needed
-  }>;
+  clients: MockClient[];
   syncAll: () => void;
   cleanup: () => void;
   waitForSync: (timeout?: number) => Promise<void>;
@@ -233,12 +234,12 @@ jest.mock('../test-utils/multiUserTestHarness', () => {
         waitForSync: jest.fn().mockImplementation(() => Promise.resolve()),
         disconnectClient: jest.fn((clientIndex) => {
           if (clientIndex >= 0 && clientIndex < mockClients.length) {
-            mockClients[clientIndex].disconnect();
+            mockClients[clientIndex].disconnect!();
           }
         }),
         reconnectClient: jest.fn((clientIndex) => {
           if (clientIndex >= 0 && clientIndex < mockClients.length) {
-            mockClients[clientIndex].connect();
+            mockClients[clientIndex].connect!();
           }
         }),
       };
@@ -466,7 +467,7 @@ describe('User Awareness', () => {
       const userState = getAwarenessState(clients[1].doc, clients[0].id);
       
       expect(userState).toBeDefined();
-      expect(userState?.editingNode).toBe('node1');
+      expect(userState?.editing?.nodeId).toBe('node1');
       expect(userState?.cursor?.x).toBe(150);
       expect(userState?.cursor?.y).toBe(250);
     });

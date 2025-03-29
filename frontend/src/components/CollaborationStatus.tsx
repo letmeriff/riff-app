@@ -20,8 +20,9 @@ import ConnectionStatus from './ConnectionStatus';
  */
 interface ConnectedUser {
   userId: string;
-  clientId: number;
+  clientId?: number;
   email?: string;
+  name?: string;
   color?: string;
   isActive?: boolean;
   lastActive?: string;
@@ -226,7 +227,7 @@ const CollaborationStatus: React.FC = () => {
               }}>
                 {connectedUsers.map(user => (
                   <li
-                    key={user.clientId}
+                    key={`user-${user.userId}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -244,7 +245,8 @@ const CollaborationStatus: React.FC = () => {
                       }}
                     />
                     <span style={{ fontSize: '13px' }}>
-                      {user.userId}
+                      {typeof user.name === 'string' ? user.name : 
+                       typeof user.userId === 'string' ? user.userId : 'Unknown User'}
                     </span>
                   </li>
                 ))}

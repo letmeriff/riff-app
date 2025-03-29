@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import * as Y from 'yjs';
 import { Node, Edge } from 'reactflow';
 import { 
@@ -17,21 +17,16 @@ import {
 import { useAuth } from './AuthContext';
 import { SyncStatus } from '../utils/yjsOfflineSupport';
 import { isYjsEnabled } from '../services/positionAdapter';
+import { UserAwarenessState } from '../types/yjs';
+import { debounce } from 'lodash';
 
-// Import or define the YjsAwarenessState to match the one in yjsService
-interface YjsAwarenessState {
-  clientID: number;
-  userId: string;
-  user: { id: string; email?: string };
-  cursor?: { x: number; y: number };
-  isTyping?: boolean;
-  isOffline?: boolean;
-  syncStatus?: {
-    pendingChanges: boolean;
-    lastSyncedAt: number | null;
-    isReconnecting: boolean;
+// Define a partial version of UserAwarenessState for local updates
+type PartialUserAwarenessState = Partial<UserAwarenessState> & {
+  user?: {
+    id: string;
+    email?: string;
   };
-}
+};
 
 interface YjsContextType {
   ydoc: Y.Doc | null;
@@ -39,8 +34,8 @@ interface YjsContextType {
   isOffline: boolean;
   offlineChangesCount: number;
   syncStatus: SyncStatus | null;
-  connectedUsers: { userId: string; clientId: number }[];
-  updateAwareness: (state: any) => void;
+  connectedUsers: UserAwarenessState[];
+  updateAwareness: (state: PartialUserAwarenessState) => void;
   getNodesFromYjs: () => Node[];
   getEdgesFromYjs: () => Edge[];
   isFeatureEnabled: boolean;
@@ -65,7 +60,7 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
   const [ydoc, setYdoc] = useState<Y.Doc | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
-  const [connectedUsers, setConnectedUsers] = useState<{ userId: string; clientId: number }[]>([]);
+  const [connectedUsers, setConnectedUsers] = useState<UserAwarenessState[]>([]);
   const [hasPendingSyncs, setHasPendingSyncs] = useState<boolean>(false);
   const [offlineChangesCount, setOfflineChangesCount] = useState<number>(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -137,8 +132,8 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
       }, 1000);
       
       // Listen for document changes
-      subscribeToYjsChanges((changes) => {
-        console.log('Yjs document changed:', changes);
+      subscribeToYjsChanges((changes, source) => {
+        console.log(`Yjs document changed (${source}):`, changes);
       });
       
       // Listen for online/offline events
@@ -184,7 +179,7 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
   useEffect(() => {
     if (ydoc && user) {
       // Pass awareness info with the correct structure
-      const userState: Partial<YjsAwarenessState> = {
+      const userState: PartialUserAwarenessState = {
         userId: user.id,
         user: { id: user.id },
         isOffline
@@ -208,6 +203,20 @@ export const YjsProvider: React.FC<YjsProviderProps> = ({
       });
     }
   }, [isOffline, hasPendingSyncs]);
+  
+  // Debounced awareness update to avoid excessive updates
+  const updateAwareness = useCallback(
+    debounce((data: PartialUserAwarenessState) => {
+      if (!ydoc) return;
+      
+      try {
+        ydoc.updateAwareness(data);
+      } catch (error) {
+        console.error('Error updating awareness:', error);
+      }
+    }, 50),
+    [ydoc]
+  );
   
   const value = {
     ydoc,

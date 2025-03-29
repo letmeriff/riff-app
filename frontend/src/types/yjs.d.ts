@@ -39,11 +39,21 @@ export interface UserAwarenessState {
   id?: string;
   name?: string;
   color?: string;
+  user?: {
+    id: string;
+    name?: string;
+    email?: string;
+  };
   cursor?: {
     x: number;
     y: number;
   };
+  editing?: {
+    nodeId: string;
+  };
   selection?: string[];
+  isOnline?: boolean;
+  lastActive?: number;
   [key: string]: unknown;
 }
 

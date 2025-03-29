@@ -18,38 +18,38 @@ export * from './factories/canvasFactory';
 export * from './helpers/renderWithProviders';
 export * from './helpers/reactFlowTestUtils';
 
-// Re-export testing library
-export * from '@testing-library/react';
-
-import React from 'react';
+// Main exports
+import React, { ReactNode } from 'react';
 import { render, RenderOptions } from '@testing-library/react';
-
-// Import common context providers
 import { ReactFlowProvider } from 'reactflow';
 
+// Define a common wrapper props interface
 interface WrapperProps {
-  children?: React.ReactNode;
+  children?: ReactNode;
 }
+
+// Type for the provider component
+type ProviderComponent = React.ComponentType<WrapperProps>;
 
 /**
  * Create a test wrapper with specified context providers
- * @param providers Array of provider components with their props
- * @returns A wrapper component for testing
  */
-export function createTestWrapper(providers: Array<React.FC<WrapperProps>>) {
-  return ({ children }: WrapperProps) => {
-    return providers.reduceRight((acc, Provider) => {
-      return <Provider>{acc}</Provider>;
-    }, <>{children}</>);
+export function createTestWrapper(providers: ProviderComponent[]) {
+  return function Wrapper({ children }: WrapperProps) {
+    // Simplify the approach to avoid typing issues - wrap each provider around the children
+    return providers.reduceRight((wrapped, Provider) => {
+      // Safe cast of the provider component
+      return React.createElement(Provider, {}, wrapped);
+    }, children as React.ReactElement);
   };
 }
 
 /**
  * Common wrapper with ReactFlow provider
  */
-export const ReactFlowWrapper: React.FC<WrapperProps> = ({ children }) => (
-  <ReactFlowProvider>{children}</ReactFlowProvider>
-);
+export function ReactFlowWrapper({ children }: WrapperProps) {
+  return React.createElement(ReactFlowProvider, {}, children);
+}
 
 /**
  * Custom render function with ReactFlow provider
@@ -61,8 +61,5 @@ export function renderWithReactFlow(
   return render(ui, { wrapper: ReactFlowWrapper, ...options });
 }
 
-/**
- * Export testing utilities
- */
+// Re-export testing library
 export * from '@testing-library/react';
-export { renderWithReactFlow };

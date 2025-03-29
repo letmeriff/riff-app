@@ -20,19 +20,19 @@ interface ResolvedMetadata {
 
 // Mock Yjs and related dependencies
 jest.mock('yjs', () => {
-  // Create reusable mock maps
+  // Helper to create a mock Y.Map
   const createMockMap = () => {
-    const data = new Map();
+    const data = new Map<string, unknown>();
     return {
-      set: jest.fn((key, value) => {
+      set: jest.fn((key: string, value: unknown) => {
         data.set(key, value);
-        return value;
+        return true;
       }),
-      get: jest.fn((key) => data.get(key)),
-      has: jest.fn((key) => data.has(key)),
-      delete: jest.fn((key) => data.delete(key)),
+      get: jest.fn((key: string) => data.get(key)),
+      has: jest.fn((key: string) => data.has(key)),
+      delete: jest.fn((key: string) => data.delete(key)),
       toJSON: jest.fn(() => {
-        const obj = {};
+        const obj: Record<string, unknown> = {};
         data.forEach((value, key) => {
           obj[key] = value;
         });
@@ -44,18 +44,18 @@ jest.mock('yjs', () => {
   // Mock Doc implementation
   class MockDoc {
     clientID = Math.floor(Math.random() * 1000);
-    private maps = {
+    private maps: Record<string, ReturnType<typeof createMockMap>> = {
       nodes: createMockMap(),
       edges: createMockMap(),
       metadata: createMockMap()
     };
-    private eventHandlers = {};
+    private eventHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
 
-    getMap(name) {
+    getMap(name: string) {
       return this.maps[name] || createMockMap();
     }
 
-    on(event, callback) {
+    on(event: string, callback: (...args: unknown[]) => void) {
       if (!this.eventHandlers[event]) {
         this.eventHandlers[event] = [];
       }
@@ -63,7 +63,7 @@ jest.mock('yjs', () => {
       return this;
     }
 
-    off(event, callback) {
+    off(event: string, callback?: (...args: unknown[]) => void) {
       if (!callback) {
         delete this.eventHandlers[event];
       } else if (this.eventHandlers[event]) {
@@ -72,14 +72,14 @@ jest.mock('yjs', () => {
       return this;
     }
 
-    emit(event, ...args) {
+    emit(event: string, ...args: unknown[]) {
       if (this.eventHandlers[event]) {
         this.eventHandlers[event].forEach(callback => callback(...args));
       }
       return this;
     }
 
-    transact(fn) {
+    transact(fn: () => void) {
       fn();
       this.emit('update', [], this);
       return this;

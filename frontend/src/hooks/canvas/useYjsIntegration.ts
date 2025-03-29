@@ -9,10 +9,29 @@ import { useState, useCallback, useEffect } from 'react';
 import { useYjs } from '../../contexts/YjsContext';
 import { 
   UseYjsIntegrationResult,
-  UserPresence 
+  UserPresence,
+  AwarenessData
 } from '../../types/canvas';
+import { UserAwarenessState } from '../../types/yjs';
 import { SyncStatus } from '../../utils/yjsOfflineSupport';
 import { debounce } from 'lodash';
+
+/**
+ * Generate a consistent color from a string
+ */
+function getRandomColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Generate HSL color with high saturation and medium lightness for good contrast
+  const h = Math.abs(hash % 360);
+  const s = 75;  // High saturation
+  const l = 60;  // Medium lightness
+  
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
 
 /**
  * Hook for Yjs integration and collaboration features
@@ -57,14 +76,19 @@ export function useYjsIntegration(): UseYjsIntegrationResult {
     // Transform connected users to UserPresence format
     if (yjs.connectedUsers && yjs.connectedUsers.length > 0) {
       const transformedUsers: UserPresence[] = yjs.connectedUsers.map(user => {
-        // Basic user presence information
+        // Get user ID from the awareness state, with fallbacks
+        const userId = typeof user.user?.id === 'string' ? user.user.id : 
+                     typeof user.userId === 'string' ? user.userId : 
+                     `user-${Math.random().toString(36).slice(2, 7)}`;
+        
+        // Create a properly typed UserPresence object
         return {
-          userId: user.userId,
-          email: user.userId, // Use userId as fallback for email
-          name: user.userId, // Use userId as fallback for name
+          userId,
+          email: userId, // Use userId as fallback for email
+          name: user.user?.name || userId, // Use name if available, otherwise userId
           isTyping: false,
           lastActive: new Date().toISOString(),
-          color: getRandomColor(user.userId), // Generate a color based on userId
+          color: getRandomColor(userId), // Generate a color based on userId
         };
       });
       
@@ -83,7 +107,7 @@ export function useYjsIntegration(): UseYjsIntegrationResult {
   
   // Debounced awareness update to avoid excessive updates
   const updateAwareness = useCallback(
-    debounce((data: any) => {
+    debounce((data: AwarenessData) => {
       if (!yjs) return;
       
       try {
@@ -143,21 +167,4 @@ export function useYjsIntegration(): UseYjsIntegrationResult {
     updateCursorPosition,
     setTypingStatus
   };
-}
-
-/**
- * Helper function to generate a consistent color from a string
- */
-function getRandomColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
-  // Generate HSL color with high saturation and medium lightness for good contrast
-  const h = Math.abs(hash % 360);
-  const s = 75;  // High saturation
-  const l = 60;  // Medium lightness
-  
-  return `hsl(${h}, ${s}%, ${l}%)`;
 } 
